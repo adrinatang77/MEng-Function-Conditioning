@@ -3,9 +3,6 @@ class Track:
         self.cfg = cfg
 
     def tokenize(self, batch):
-        ## this should be called in each DATASET object
-        ## at the end of all the tokenize calls, the batch
-        ## must be of type Dict[str, np.ndarray]
         NotImplemented
 
     def add_modules(self, model):

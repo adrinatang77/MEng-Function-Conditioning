@@ -18,11 +18,9 @@ import torch, os
 import pytorch_lightning as pl
 from pytorch_lightning.callbacks import ModelCheckpoint, ModelSummary
 
-from openprot.data.datamodule import OpenProtDataModule
+from openprot.data import OpenProtDataset
 from openprot.model.wrapper import OpenProtWrapper
 
-
-data_module = OpenProtDataModule(cfg.data_module)
 
 model = OpenProtWrapper(cfg)
 
@@ -38,7 +36,11 @@ trainer = pl.Trainer(
     ],
 )
 
+dataset = OpenProtDataset(cfg, trainer.global_rank, trainer.world_size)
+
+loader = torch.utils.data.DataLoader(dataset, batch_size=cfg.data.batch)
+
 if cfg.validate:
-    trainer.validate(model, data_module, ckpt_path=cfg.ckpt)
+    trainer.validate(model, loader, ckpt_path=cfg.ckpt)
 else:
-    trainer.fit(model, data_module, ckpt_path=cfg.ckpt)
+    trainer.fit(model, loader, ckpt_path=cfg.ckpt)

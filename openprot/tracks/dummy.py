@@ -7,11 +7,10 @@ class DummyTrack(Track):
     def __init__(self, cfg):
         self.cfg = cfg
 
-    def tokenize(self, batch):
-        ## this should be called in each DATASET object
-        ## at the end of all the tokenize calls, the batch
-        ## must be of type Dict[str, np.ndarray]
-        pass
+    def tokenize(self, data, data_tok):
+        # the dummy tokenizer just copies everything
+        for key in data:
+            data_tok[key] = data[key]
 
     def add_modules(self, model):
         model.dummy_embed = nn.Linear(3, model.cfg.dim)
