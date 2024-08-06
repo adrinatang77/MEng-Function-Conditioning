@@ -1,12 +1,13 @@
 import torch
 import torch.nn as nn
 
+
 class OpenProtModel(nn.Module):
     def __init__(self, cfg):
         super().__init__()
         self.cfg = cfg
-        self.lin_out = nn.Linear(3, 5)
+        self.linear = nn.Linear(cfg.dim, cfg.dim)
 
-    def forward(self, batch):
-        
-        return self.lin_out(batch['a'])
+    def forward(self, x, c):
+
+        return self.linear(x)

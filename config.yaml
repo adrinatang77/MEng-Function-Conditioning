@@ -1,26 +1,40 @@
-data_module:
-    batch_size: 5
-
+ckpt: null
+validate: false
+logger:
+    neptune: false
+    project: openprot/test
+    name: default
+    logfile: null
+    train_log_freq: null
+    val_log_freq: null
 trainer:
     accelerator: auto
+    devices: 1
     max_epochs: 5
-    enable_progress_bar: true
+    enable_progress_bar: false
     limit_train_batches: 1.0
     limit_val_batches: 1.0
     num_sanity_val_steps: 0
     gradient_clip_val: 1.0
     accumulate_grad_batches: 1
-    val_check_interval: 200
-    check_val_every_n_epoch: null
+    val_check_interval: null
+    check_val_every_n_epoch: 1
     logger: false
+data_module:
+    batch_size: 5
 
-logger:
-    neptune: true
-    project: openprot/test
-    train_log_freq: 100
-    val_log_freq: null
+datasets:
+    DummyDataset:
+        fraction: 1.0
+
+tracks:
+    DummyTrack:
+        param: 1
 
 model:
+    dim: 1024
+    layers: 24
+    heads: 12
 
 optimizer:
     type: Adam

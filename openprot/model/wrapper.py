@@ -4,6 +4,8 @@ from collections import defaultdict
 from ..utils.logging import Logger
 
 from .model import OpenProtModel
+from .. import tracks
+
 
 class Wrapper(pl.LightningModule):
 
@@ -12,19 +14,19 @@ class Wrapper(pl.LightningModule):
         self.save_hyperparameters()
         self.cfg = cfg
         self._logger = Logger(cfg.logger)
-        
+
     def training_step(self, batch, batch_idx):
-        self._logger.prefix = 'train'
+        self._logger.prefix = "train"
         out = self.general_step(batch)
-        self._logger.step(self.trainer)
+        self._logger.step(self.trainer, "train")
         return out
 
     def validation_step(self, batch, batch_idx):
-        self._logger.prefix = 'val'
+        self._logger.prefix = "val"
         self.general_step(batch)
         self.validation_step_extra(batch, batch_idx)
-        self._logger.step(self.trainer)
-        
+        self._logger.step(self.trainer, "val")
+
     def general_step(self, batch):
         pass
 
@@ -32,11 +34,11 @@ class Wrapper(pl.LightningModule):
         pass
 
     def on_train_epoch_end(self):
-        self._logger.epoch_end(self.trainer)
+        self._logger.epoch_end(self.trainer, prefix="train")
 
     def on_validation_epoch_end(self):
-        self._logger.epoch_end(self.trainer)
-    
+        self._logger.epoch_end(self.trainer, prefix="val")
+
     def configure_optimizers(self):
         cls = getattr(torch.optim, self.cfg.optimizer.type)
         optimizer = cls(
@@ -45,19 +47,44 @@ class Wrapper(pl.LightningModule):
         )
         return optimizer
 
+
 class OpenProtWrapper(Wrapper):
     def __init__(self, cfg):
         super().__init__(cfg)
         self.model = OpenProtModel(cfg.model)
+        self.tracks = []
+        for name in cfg.tracks:
+            track = getattr(tracks, name)(cfg.tracks[name])
+            track.add_modules(self.model)
+            self.tracks.append(track)
 
     def general_step(self, batch):
-        out = self.model(batch)
-        loss = torch.square(out - batch['b']).mean()
-        self._logger.log('loss', loss)
-        return loss
-                
 
-        
-        
-    
-    
+        ## corrupt all the tracks
+        noisy_batch, target = {}, {}
+        target = {}
+        for track in self.tracks:
+            track.corrupt(batch, noisy_batch, target, self._logger)
+
+        ## embed the tracks into an input and conditioning vector
+        inp, cond = 0, 0
+        for track in self.tracks:
+            x, c = track.embed(self.model, noisy_batch)
+            inp = inp + x
+            cond = cond + c
+
+        ## run it thorugh the model
+        out = self.model(inp, cond)
+
+        ## place the readouts in a dict
+        readout = {}
+        for track in self.tracks:
+            track.predict(self.model, out, readout)
+
+        ## compute the loss
+        loss = 0
+        for track in self.tracks:
+            loss_ = track.compute_loss(readout, target)
+            loss = loss + loss_
+        self._logger.log("loss", loss)
+        return loss
