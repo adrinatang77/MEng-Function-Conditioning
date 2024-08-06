@@ -1,0 +1,44 @@
+ckpt: null # eventually this will control resuming runs
+validate: false # if true, only validate the model, don't train
+logger:
+    neptune: false # set to true to log to neptune.ai
+    project: openprot/test # please change "test" to something unique to your task
+    name: default # will log to workdir and neptune.ai with this name
+    logfile: null # if not null, will duplicate stdout and stderr to workdir/{name}/{logfile}
+    train_log_freq: 100 # if null, will log every epoch, otherwise every this number of steps
+    val_log_freq: null 
+trainer:
+    accelerator: auto
+    devices: 1
+    max_epochs: 5
+    enable_progress_bar: false
+    limit_train_batches: 1.0
+    limit_val_batches: 1.0
+    num_sanity_val_steps: 0
+    gradient_clip_val: 1.0
+    accumulate_grad_batches: 1
+    val_check_interval: null
+    check_val_every_n_epoch: 1
+    logger: false
+
+data: # custom args to OpenProtDataset and elsewhere
+    path: null
+    batch: 32
+
+datasets: # register datasets
+    DummyDataset: # custom args for every dataset
+        fraction: 1.0
+
+
+tracks: # register tracks here
+    DummyTrack: # custom args for every track
+        param: 1
+
+model: # custom args
+    dim: 1024
+    layers: 24
+    heads: 12
+
+optimizer:
+    type: Adam
+    lr: 1e-4
