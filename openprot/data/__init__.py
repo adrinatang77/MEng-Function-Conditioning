@@ -28,7 +28,7 @@ class OpenProtDataset(torch.utils.data.IterableDataset):
         data_tok = {}
         for track in self.tracks:
             track.tokenize(data, data_tok)
-        return data_out
+        return data_tok
 
     def __iter__(self):
         worker_info = torch.utils.data.get_worker_info()
