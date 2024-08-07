@@ -3,14 +3,16 @@ This is all boilerplate code, safe to skip / ignore!
 """
 
 import logging
-import time
-import torch
 import os
-import numpy as np
 import socket
+import subprocess
+import sys
+import time
 from collections import defaultdict
+
 import neptune
-import subprocess, os, sys
+import numpy as np
+import torch
 from pytorch_lightning.utilities.rank_zero import rank_zero_only
 
 

@@ -1,9 +1,11 @@
-import numpy as np
-import torch
-import pytorch_lightning as pl
-from .dummy import DummyDataset
-from .. import tracks
 import sys
+
+import numpy as np
+import pytorch_lightning as pl
+import torch
+
+from .. import tracks
+from .dummy import DummyDataset
 
 
 class OpenProtDataset(torch.utils.data.IterableDataset):

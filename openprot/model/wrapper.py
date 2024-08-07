@@ -1,14 +1,15 @@
-import torch, time
-import pytorch_lightning as pl
+import time
 from collections import defaultdict
-from ..utils.logging import Logger
 
-from .model import OpenProtModel
+import pytorch_lightning as pl
+import torch
+
 from .. import tracks
+from ..utils.logging import Logger
+from .model import OpenProtModel
 
 
 class Wrapper(pl.LightningModule):
-
     def __init__(self, cfg):
         super().__init__()
         self.save_hyperparameters()
