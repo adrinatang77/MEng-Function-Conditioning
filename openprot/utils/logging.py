@@ -12,6 +12,7 @@ from collections import defaultdict
 
 import neptune
 import numpy as np
+import pandas as pd
 import torch
 from pytorch_lightning.utilities.rank_zero import rank_zero_only
 
@@ -50,7 +51,7 @@ def gather_log(log, world_size):
         return log
     log_list = [None] * world_size
     torch.distributed.all_gather_object(log_list, log)
-    log = {key: sum([l[key] for l in log_list], []) for key in log}
+    log = {key: sum([lg[key] for lg in log_list], []) for key in log}
     return log
 
 
@@ -59,7 +60,7 @@ def get_log_mean(log):
     for key in log:
         try:
             out[key] = np.nanmean(log[key])
-        except:
+        except Exception as _:
             pass
     return out
 

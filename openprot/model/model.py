@@ -1,4 +1,3 @@
-import torch
 import torch.nn as nn
 
 
@@ -9,5 +8,4 @@ class OpenProtModel(nn.Module):
         self.linear = nn.Linear(cfg.dim, cfg.dim)
 
     def forward(self, x, c):
-
         return self.linear(x)

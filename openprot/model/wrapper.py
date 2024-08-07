@@ -1,6 +1,3 @@
-import time
-from collections import defaultdict
-
 import pytorch_lightning as pl
 import torch
 
@@ -60,7 +57,6 @@ class OpenProtWrapper(Wrapper):
             self.tracks.append(track)
 
     def general_step(self, batch):
-
         ## corrupt all the tracks
         noisy_batch, target = {}, {}
         target = {}

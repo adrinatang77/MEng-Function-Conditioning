@@ -5,7 +5,7 @@
 * pytorch
 * pytorch-lightning
 * omegaconf
-* black
+* ruff
 * neptune
 
 Install the dependencies with `mamba env create -f environment.yml` and activate the environment with `conda activate openprot`.
@@ -14,7 +14,7 @@ Install the dependencies with `mamba env create -f environment.yml` and activate
 
 For sprint targets, make a new branch with `git branch [NAME]` and switch to it with `git checkout [NAME]`. Run `git push -u origin [NAME]` when pushing for the first time.
 
-Prior to your first contribution, `cd` into the repository and run `pre-commit install`. This will install a pre-commit hook that will run formatting checks (`black`, `isort`), as well as eventual tests for breaking changes, on all files in the repository.
+Prior to your first contribution, `cd` into the repository and run `pre-commit install`. This will install a pre-commit hook that will run formatting checks (`ruff`), as well as eventual tests for breaking changes, on all files in the repository.
 
 All PRs should pass the pre-commit checks before they are merged into `master`.
 
