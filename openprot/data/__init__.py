@@ -4,9 +4,6 @@ import pytorch_lightning as pl
 import importlib
 import sys
 
-import numpy as np
-import pytorch_lightning as pl
-import torch
 
 from .. import tracks
 from .dummy import DummyDataset
@@ -21,39 +18,41 @@ class OpenProtDataset(torch.utils.data.IterableDataset):
 
         self.datasets = []
         for name in cfg.datasets:  # autoload the datasets
-            module, name_ = name.rsplit('.', 1)
+            module, name_ = name.rsplit(".", 1)
             ds = getattr(importlib.import_module(module), name_)(cfg.datasets[name])
             self.datasets.append(ds)
 
         self.tracks = []  # autoload the tracks
         for name in cfg.tracks:
-            module, name_ = name.rsplit('.', 1)
+            module, name_ = name.rsplit(".", 1)
             track = getattr(importlib.import_module(module), name_)(cfg.tracks[name])
             self.tracks.append(track)
 
     def process(self, data):
-        
+
         # crop or pad the protein here
-        L = len(data['seqres'])
+        L = len(data["seqres"])
         pad_mask = np.zeros(self.cfg.data.crop, dtype=np.float32)
-        pad_mask[:min(self.cfg.data.crop, L)] = 1.0
-        
-        if L > self.cfg.data.crop: # needs crop
+        pad_mask[: min(self.cfg.data.crop, L)] = 1.0
+
+        if L > self.cfg.data.crop:  # needs crop
             start = np.random.randint(0, L - self.cfg.data.crop + 1)
             end = start + self.cfg.data.crop
             for key in data:
                 data[key] = data[key][start:end]
-        elif L < self.cfg.data.crop: # needs pad
+        elif L < self.cfg.data.crop:  # needs pad
             pad = self.cfg.data.crop - L
             for key in data:
                 # unfortunately this is a string, unlike everything else
-                if key == 'seqres': 
-                    data[key] += 'X'*pad
+                if key == "seqres":
+                    data[key] += "X" * pad
                 else:
                     shape = data[key].shape
                     dtype = data[key].dtype
-                    data[key] = np.concatenate([data[key], np.zeros((pad, *shape[1:]), dtype=dtype)])
-        
+                    data[key] = np.concatenate(
+                        [data[key], np.zeros((pad, *shape[1:]), dtype=dtype)]
+                    )
+
         data_tok = {}
         for track in self.tracks:
             track.tokenize(data, data_tok)
@@ -62,7 +61,7 @@ class OpenProtDataset(torch.utils.data.IterableDataset):
     def __iter__(self):
         worker_info = torch.utils.data.get_worker_info()
         i = 0
-        while True: # very temporary
+        while True:  # very temporary
             data = self.datasets[0][i]
             i += 1
             yield self.process(data)

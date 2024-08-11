@@ -1,6 +1,7 @@
 class Track:
-    def __init__(self, cfg):
+    def __init__(self, cfg, logger=None):
         self.cfg = cfg
+        self.logger = logger
 
     def tokenize(self, batch):
         NotImplemented
@@ -8,7 +9,7 @@ class Track:
     def add_modules(self, model):
         NotImplemented
 
-    def corrupt(self, batch, logger):
+    def corrupt(self, batch):
         NotImplemented
 
     def embed(self, batch):

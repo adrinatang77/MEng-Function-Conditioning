@@ -1,4 +1,5 @@
-import argparse, os
+import argparse
+import os
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--config", type=str, default="config.yaml")
@@ -14,7 +15,8 @@ from openprot.utils.logger import setup_logging
 
 setup_logging(cfg.logger)
 
-import torch, os
+import torch
+import os
 import pytorch_lightning as pl
 from pytorch_lightning.callbacks import ModelCheckpoint, ModelSummary
 

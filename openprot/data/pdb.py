@@ -11,12 +11,14 @@ class PDBDataset(torch.utils.data.Dataset):
 
     def __len__(self):
         return len(self.df)
-        
+
     def __getitem__(self, idx):
         name = self.df.index[idx]
-        prot = dict(np.load(f"{self.cfg.path}/{name[1:3]}/{name}.npz", allow_pickle=True))
+        prot = dict(
+            np.load(f"{self.cfg.path}/{name[1:3]}/{name}.npz", allow_pickle=True)
+        )
         return {
             "seqres": self.df.seqres[name],
-            "atom37": prot['all_atom_positions'],
-            "atom37_mask": prot['all_atom_mask'],
+            "atom37": prot["all_atom_positions"],
+            "atom37_mask": prot["all_atom_mask"],
         }

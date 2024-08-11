@@ -5,8 +5,6 @@ from .track import Track
 
 
 class DummyTrack(Track):
-    def __init__(self, cfg):
-        self.cfg = cfg
 
     def tokenize(self, data, data_tok):
         # the dummy tokenizer just copies everything
@@ -17,7 +15,7 @@ class DummyTrack(Track):
         model.dummy_embed = nn.Linear(3, model.cfg.dim)
         model.dummy_out = nn.Linear(model.cfg.dim, 3)
 
-    def corrupt(self, batch, noisy_batch, target, logger):
+    def corrupt(self, batch, noisy_batch, target):
         noisy_batch["trans"] = batch["trans"]
         target["dummy"] = batch["trans"]
 
