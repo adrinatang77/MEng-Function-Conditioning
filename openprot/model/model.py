@@ -8,6 +8,6 @@ class OpenProtModel(nn.Module):
         self.cfg = cfg
         self.linear = nn.Linear(cfg.dim, cfg.dim)
 
-    def forward(self, x, c):
+    def forward(self, x):
 
         return self.linear(x)

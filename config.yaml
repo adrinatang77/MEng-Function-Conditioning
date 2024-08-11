@@ -24,14 +24,15 @@ trainer:
 data: # custom args to OpenProtDataset and elsewhere
     path: null
     batch: 32
+    crop: 512
+    
 
 datasets: # register datasets
-    DummyDataset: # custom args for every dataset
-        fraction: 1.0
-
+    openprot.data.pdb.PDBDataset: # custom args for every dataset
+        path: /data/cb/scratch/datasets/pdb_npz
 
 tracks: # register tracks here
-    DummyTrack: # custom args for every track
+    openprot.tracks.structure.StructureTrack: # custom args for every track
         param: 1
 
 model: # custom args

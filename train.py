@@ -10,7 +10,7 @@ cfg = OmegaConf.load(args.config)
 os.environ["MODEL_DIR"] = model_dir = os.path.join("workdir", cfg.logger.name)
 os.makedirs(model_dir, exist_ok=True)
 
-from openprot.utils.logging import setup_logging
+from openprot.utils.logger import setup_logging
 
 setup_logging(cfg.logger)
 
