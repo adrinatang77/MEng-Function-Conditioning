@@ -1,4 +1,3 @@
-import torch, time
 import pytorch_lightning as pl
 from collections import defaultdict
 from ..utils.logger import Logger
@@ -6,9 +5,7 @@ from ..utils.logger import Logger
 from .model import OpenProtModel
 import importlib
 
-
 class Wrapper(pl.LightningModule):
-
     def __init__(self, cfg):
         super().__init__()
         self.save_hyperparameters()
@@ -60,7 +57,6 @@ class OpenProtWrapper(Wrapper):
             self.tracks.append(track)
 
     def general_step(self, batch):
-
         ## corrupt all the tracks
         noisy_batch, target = {}, {}
         target = {}
