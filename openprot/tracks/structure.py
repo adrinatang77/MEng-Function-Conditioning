@@ -1,15 +1,24 @@
 import torch
 import torch.nn as nn
-
 from .track import Track
+from ..utils.geometry import atom37_to_frames, atom37_to_torsions
+from ..utils import residue_constants as rc
+import numpy as np
 
 
-class DummyTrack(Track):
+class StructureTrack(Track):
 
     def tokenize(self, data, data_tok):
-        # the dummy tokenizer just copies everything
-        for key in data:
-            data_tok[key] = data[key]
+
+        frames = atom37_to_frames(torch.from_numpy(data["atom37"]))
+        data_tok["trans"] = frames._trans
+        data_tok["rots"] = frames._rots._rot_mats
+        aatype = np.array([rc.restype_order_with_x[c] for c in data["seqres"]])
+        torsions, torsion_mask = atom37_to_torsions(
+            torch.from_numpy(data["atom37"]), torch.from_numpy(aatype)
+        )
+        data_tok["torsions"] = torsions
+        data_tok["torsion_mask"] = torsion_mask
 
     def add_modules(self, model):
         model.dummy_embed = nn.Linear(3, model.cfg.dim)

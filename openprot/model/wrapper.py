@@ -1,9 +1,8 @@
 import pytorch_lightning as pl
+from ..utils.logger import Logger
 import torch
-
-from .. import tracks
-from ..utils.logging import Logger
 from .model import OpenProtModel
+import importlib
 
 
 class Wrapper(pl.LightningModule):
@@ -52,7 +51,10 @@ class OpenProtWrapper(Wrapper):
         self.model = OpenProtModel(cfg.model)
         self.tracks = []
         for name in cfg.tracks:
-            track = getattr(tracks, name)(cfg.tracks[name])
+            module, name_ = name.rsplit(".", 1)
+            track = getattr(importlib.import_module(module), name_)(
+                cfg.tracks[name], self.logger
+            )
             track.add_modules(self.model)
             self.tracks.append(track)
 
@@ -61,17 +63,16 @@ class OpenProtWrapper(Wrapper):
         noisy_batch, target = {}, {}
         target = {}
         for track in self.tracks:
-            track.corrupt(batch, noisy_batch, target, self._logger)
+            track.corrupt(batch, noisy_batch, target)
 
         ## embed the tracks into an input and conditioning vector
         inp, cond = 0, 0
         for track in self.tracks:
-            x, c = track.embed(self.model, noisy_batch)
+            x = track.embed(self.model, noisy_batch)
             inp = inp + x
-            cond = cond + c
 
         ## run it thorugh the model
-        out = self.model(inp, cond)
+        out = self.model(inp)
 
         ## place the readouts in a dict
         readout = {}
