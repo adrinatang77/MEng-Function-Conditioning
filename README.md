@@ -8,6 +8,7 @@
 * omegaconf
 * ruff (optional, see below)
 * neptune
+* pytest
 
 Install the dependencies with `mamba env create -f environment.yml` and activate the environment with `conda activate openprot`. (Note: this is Sam's workflow, Bowen recommends installing things manually)
 
@@ -16,6 +17,8 @@ Install the dependencies with `mamba env create -f environment.yml` and activate
 For sprint targets, make a new branch with `git branch [NAME]` and switch to it with `git checkout [NAME]`. Run `git push -u origin [NAME]` when pushing for the first time.
 
 Prior to your first contribution, `cd` into the repository and run `pre-commit install`. This will install a pre-commit hook that will run formatting checks (`ruff`), as well as eventual tests for breaking changes, on all files in the repository. (Note: this is also Sam's workflow, Bowen thinks this is optional)
+
+To run tests, add a module to `tests/` and run `pytest tests -s`. Or, to run a specific module, run `pytest tests/{module} -s`. (The `-s` flag allows normal stdout to be printed)
 
 All PRs should pass the pre-commit checks before they are merged into `master`.
 

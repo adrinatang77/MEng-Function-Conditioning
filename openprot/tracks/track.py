@@ -19,4 +19,4 @@ class Track:
         NotImplemented
 
     def compute_loss(self, cfg, logger):
-        pass
+        NotImplemented

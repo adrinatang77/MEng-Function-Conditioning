@@ -10,13 +10,11 @@ class StructureTrack(Track):
 
     def tokenize(self, data, data_tok):
 
-        frames = atom37_to_frames(torch.from_numpy(data["atom37"]))
+        frames = atom37_to_frames(data["atom37"])
         data_tok["trans"] = frames._trans
         data_tok["rots"] = frames._rots._rot_mats
         aatype = np.array([rc.restype_order_with_x[c] for c in data["seqres"]])
-        torsions, torsion_mask = atom37_to_torsions(
-            torch.from_numpy(data["atom37"]), torch.from_numpy(aatype)
-        )
+        torsions, torsion_mask = atom37_to_torsions(data["atom37"], aatype)
         data_tok["torsions"] = torsions
         data_tok["torsion_mask"] = torsion_mask
 
