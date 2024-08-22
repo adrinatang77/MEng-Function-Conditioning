@@ -9,7 +9,8 @@ TODO: optimize
 """
 
 
-def atom14_to_atom37(atom14, aatype):
+def atom14_to_atom37(atom14: np.ndarray, aatype: np.ndarray):
+    assert len(aatype.shape) == 1
     L = len(aatype)
     atom37 = np.zeros(atom14.shape[:-2] + (37, 3))
     for i in range(L):
@@ -24,6 +25,7 @@ TODO: optimize
 
 
 def atom14_to_atom37(atom14, aatype):
+    assert len(aatype.shape) == 1
     L = len(aatype)
     atom37 = np.zeros(atom14.shape[:-2] + (37, 3))
     for i in range(L):
@@ -78,11 +80,11 @@ def frames_torsions_to_atom14(frames, torsions, aatype):
     )
 
 
-def atom37_to_torsions(all_atom_positions, aatype):
-
-    all_atom_mask = torch.from_numpy(
-        rc.RESTYPE_ATOM37_MASK[aatype]
-    )  # this can be a better mask
+def atom37_to_torsions(all_atom_positions, aatype, all_atom_mask=None):
+    
+    if all_atom_mask is None:
+        all_atom_mask = rc.RESTYPE_ATOM37_MASK[aatype]
+    
     pad = all_atom_positions.new_zeros([*all_atom_positions.shape[:-3], 1, 37, 3])
     prev_all_atom_positions = torch.cat(
         [pad, all_atom_positions[..., :-1, :, :]], dim=-3
@@ -319,14 +321,4 @@ def get_chi_atom_indices():
     return chi_atom_indices
 
 
-def batched_gather(data, inds, dim=0, no_batch_dims=0):
-    ranges = []
-    for i, s in enumerate(data.shape[:no_batch_dims]):
-        r = torch.arange(s)
-        r = r.view(*(*((1,) * i), -1, *((1,) * (len(inds.shape) - i - 1))))
-        ranges.append(r)
 
-    remaining_dims = [slice(None) for _ in range(len(data.shape) - no_batch_dims)]
-    remaining_dims[dim - no_batch_dims if dim >= 0 else dim] = inds
-    ranges.extend(remaining_dims)
-    return data[ranges]
