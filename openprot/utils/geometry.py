@@ -48,7 +48,7 @@ def atom37_to_atom14(atom37: np.ndarray, aatype, atom37_mask=None):
         return atom14
 
 
-def atom37_to_frames(atom37):
+def atom37_to_frames(atom37, atom37_mask=None):
     if type(atom37) is np.ndarray:
         atom37 = torch.from_numpy(atom37)
     n_coords = atom37[..., rc.atom_order["N"], :]
@@ -56,7 +56,18 @@ def atom37_to_frames(atom37):
     c_coords = atom37[..., rc.atom_order["C"], :]
     rot_mats = gram_schmidt(origin=ca_coords, x_axis=c_coords, xy_plane=n_coords)
     rots = Rotation(rot_mats=rot_mats)
-    return Rigid(rots, ca_coords)
+    if atom37_mask is not None:
+        if type(atom37_mask) is np.ndarray:
+            atom37_mask = torch.from_numpy(atom37_mask)
+        frame_mask = torch.prod(
+            atom37_mask[
+                ..., [rc.atom_order["N"], rc.atom_order["CA"], rc.atom_order["C"]]
+            ],
+            dim=-1,
+        )
+        return Rigid(rots, ca_coords), frame_mask
+    else:
+        return Rigid(rots, ca_coords)
 
 
 def frames_torsions_to_atom37(
@@ -213,7 +224,87 @@ def atom37_to_torsions(all_atom_positions, aatype, all_atom_mask=None):
     return torsion_angles_sin_cos, torsion_angles_mask
 
 
-#################################################################
+def compute_fape(
+    pred_frames,
+    target_frames,
+    frames_mask,
+    pred_positions,
+    target_positions,
+    positions_mask,
+    length_scale,
+    l1_clamp_distance=None,
+    thresh=None,
+    eps=1e-8,
+) -> torch.Tensor:
+    """
+    Computes FAPE loss.
+
+    Args:
+        pred_frames:
+            [*, N_frames] Rigid object of predicted frames
+        target_frames:
+            [*, N_frames] Rigid object of ground truth frames
+        frames_mask:
+            [*, N_frames] binary mask for the frames
+        pred_positions:
+            [*, N_pts, 3] predicted atom positions
+        target_positions:
+            [*, N_pts, 3] ground truth positions
+        positions_mask:
+            [*, N_pts] positions mask
+        length_scale:
+            Length scale by which the loss is divided
+        pair_mask:
+            [*,  N_frames, N_pts] mask to use for
+            separating intra- from inter-chain losses.
+        l1_clamp_distance:
+            Cutoff above which distance errors are disregarded
+        thresh:
+            Loss will only be applied to pt-frame distances under this value
+        eps:
+            Small value used to regularize denominators
+    Returns:
+        [*] loss tensor
+    """
+
+    # [*, N_frames, N_pts, 3]
+    local_pred_pos = pred_frames.invert()[..., None].apply(
+        pred_positions[..., None, :, :],
+    )
+    local_target_pos = target_frames.invert()[..., None].apply(
+        target_positions[..., None, :, :],
+    )
+
+    error_dist = torch.sqrt(
+        torch.sum((local_pred_pos - local_target_pos) ** 2, dim=-1) + eps
+    )
+
+    if l1_clamp_distance is not None:
+        error_dist = torch.clamp(error_dist, min=0, max=l1_clamp_distance)
+
+    normed_error = error_dist / length_scale
+
+    if thresh is not None:
+
+        thresh_mask = torch.sqrt(torch.sum(local_target_pos**2, dim=-1)) < thresh
+        mask = thresh_mask * frames_mask[..., None] * positions_mask[..., None, :]
+
+        normed_error = normed_error * mask
+        normed_error = torch.sum(normed_error, dim=(-1, -2))
+        normed_error = normed_error / (eps + torch.sum(mask, dim=(-1, -2)))
+
+    else:
+        normed_error = normed_error * frames_mask[..., None]
+        normed_error = normed_error * positions_mask[..., None, :]
+
+        normed_error = torch.sum(normed_error, dim=-1)
+        normed_error = normed_error / (eps + torch.sum(frames_mask, dim=-1))[..., None]
+        normed_error = torch.sum(normed_error, dim=-1)
+        normed_error = normed_error / (eps + torch.sum(positions_mask, dim=-1))
+
+    return normed_error
+
+
 def gram_schmidt(origin, x_axis, xy_plane, eps=1e-8):
     x_axis = torch.unbind(x_axis, dim=-1)
     origin = torch.unbind(origin, dim=-1)
