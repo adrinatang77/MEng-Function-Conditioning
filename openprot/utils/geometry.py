@@ -3,69 +3,78 @@ import numpy as np
 
 from .rigid_utils import Rigid, Rotation
 from . import residue_constants as rc
-
-"""
-TODO: optimize
-"""
+from .tensor_utils import batched_gather
 
 
-def atom14_to_atom37(atom14: np.ndarray, aatype: np.ndarray):
-    assert len(aatype.shape) == 1
-    L = len(aatype)
-    atom37 = np.zeros(atom14.shape[:-2] + (37, 3))
-    for i in range(L):
-        atom37[..., i, :, :] = atom14[..., i, rc.RESTYPE_ATOM37_TO_ATOM14[aatype[i]], :]
-        atom37[..., i, :, :] *= rc.RESTYPE_ATOM37_MASK[aatype[i]][:, None]
-    return atom37
+def atom14_to_atom37(atom14: np.ndarray, aatype, atom14_mask=None):
+    atom37 = batched_gather(
+        atom14,
+        rc.RESTYPE_ATOM37_TO_ATOM14[aatype],
+        dim=-2,
+        no_batch_dims=len(atom14.shape[:-2]),
+    )
+    atom37 *= rc.RESTYPE_ATOM37_MASK[aatype, :, None]
+    if atom14_mask is not None:
+        atom37_mask = batched_gather(
+            atom14_mask,
+            rc.RESTYPE_ATOM37_TO_ATOM14[aatype],
+            dim=-1,
+            no_batch_dims=len(atom14.shape[:-2]),
+        )
+        atom37_mask *= rc.RESTYPE_ATOM37_MASK[aatype]
+        return atom37, atom37_mask
+    else:
+        return atom37
 
 
-"""
-TODO: optimize
-"""
-
-
-def atom14_to_atom37(atom14, aatype):
-    assert len(aatype.shape) == 1
-    L = len(aatype)
-    atom37 = np.zeros(atom14.shape[:-2] + (37, 3))
-    for i in range(L):
-        atom37[..., i, :, :] = atom14[..., i, rc.RESTYPE_ATOM37_TO_ATOM14[aatype[i]], :]
-        atom37[..., i, :, :] *= rc.RESTYPE_ATOM37_MASK[aatype[i]][:, None]
-    return atom37
+def atom37_to_atom14(atom37: np.ndarray, aatype, atom37_mask=None):
+    atom14 = batched_gather(
+        atom37,
+        rc.RESTYPE_ATOM14_TO_ATOM37[aatype],
+        dim=-2,
+        no_batch_dims=len(atom37.shape[:-2]),
+    )
+    atom14 *= rc.RESTYPE_ATOM14_MASK[aatype, :, None]
+    if atom37_mask is not None:
+        atom14_mask = batched_gather(
+            atom37_mask,
+            rc.RESTYPE_ATOM14_TO_ATOM37[aatype],
+            dim=-1,
+            no_batch_dims=len(atom37.shape[:-2]),
+        )
+        atom14_mask *= rc.RESTYPE_ATOM14_MASK[aatype]
+        return atom14, atom14_mask
+    else:
+        return atom14
 
 
 def atom37_to_frames(atom37):
-    n_coords = atom37[:, rc.atom_order["N"]]
-    ca_coords = atom37[:, rc.atom_order["CA"]]
-    c_coords = atom37[:, rc.atom_order["C"]]
-    prot_frames = Rigid.from_3_points(
-        c_coords,
-        ca_coords,
-        n_coords,
-    )
-    rots = torch.eye(3, device=atom37.device)  # [None].repeat(atom14.shape[0], 1, 1)
-    rots[0, 0] = -1
-    rots[2, 2] = -1
-    rots = Rotation(rot_mats=rots)
-    return prot_frames.compose(Rigid(rots, None))
+    if type(atom37) is np.ndarray:
+        atom37 = torch.from_numpy(atom37)
+    n_coords = atom37[..., rc.atom_order["N"], :]
+    ca_coords = atom37[..., rc.atom_order["CA"], :]
+    c_coords = atom37[..., rc.atom_order["C"], :]
+    rot_mats = gram_schmidt(origin=ca_coords, x_axis=c_coords, xy_plane=n_coords)
+    rots = Rotation(rot_mats=rot_mats)
+    return Rigid(rots, ca_coords)
 
 
-def frames_torsions_to_atom14(frames, torsions, aatype):
-    default_frames = torch.from_numpy(rc.restype_rigid_group_default_frame).to(
-        aatype.device
-    )
-    lit_positions = torch.from_numpy(rc.restype_atom14_rigid_group_positions).to(
-        aatype.device
-    )
-    group_idx = torch.from_numpy(rc.restype_atom14_to_rigid_group).to(aatype.device)
-    atom_mask = torch.from_numpy(rc.restype_atom14_mask).to(aatype.device)
-    frames_out = torsion_angles_to_frames(frames, torsions, aatype, default_frames)
-    return frames_and_literature_positions_to_atom14_pos(
-        frames_out, aatype, default_frames, group_idx, atom_mask, lit_positions
-    )
+def frames_torsions_to_atom37(
+    frames: Rigid,
+    torsions: torch.Tensor,
+    aatype: torch.Tensor,
+):
+    atom14 = frames_torsions_to_atom14(frames, torsions, aatype)
+    return atom14_to_atom37(atom14, aatype)
 
 
-def frames_torsions_to_atom14(frames, torsions, aatype):
+def frames_torsions_to_atom14(
+    frames: Rigid, torsions: torch.Tensor, aatype: torch.Tensor
+):
+    if type(torsions) is np.ndarray:
+        torsions = torch.from_numpy(torsions)
+    if type(aatype) is np.ndarray:
+        aatype = torch.from_numpy(aatype)
     default_frames = torch.from_numpy(rc.restype_rigid_group_default_frame).to(
         aatype.device
     )
@@ -81,10 +90,18 @@ def frames_torsions_to_atom14(frames, torsions, aatype):
 
 
 def atom37_to_torsions(all_atom_positions, aatype, all_atom_mask=None):
-    
+
+    if type(all_atom_positions) is np.ndarray:
+        all_atom_positions = torch.from_numpy(all_atom_positions)
+    if type(aatype) is np.ndarray:
+        aatype = torch.from_numpy(aatype)
     if all_atom_mask is None:
-        all_atom_mask = rc.RESTYPE_ATOM37_MASK[aatype]
-    
+        all_atom_mask = torch.from_numpy(rc.RESTYPE_ATOM37_MASK[aatype]).to(
+            aatype.device
+        )
+    if type(all_atom_mask) is np.ndarray:
+        all_atom_mask = torch.from_numpy(all_atom_mask)
+
     pad = all_atom_positions.new_zeros([*all_atom_positions.shape[:-3], 1, 37, 3])
     prev_all_atom_positions = torch.cat(
         [pad, all_atom_positions[..., :-1, :, :]], dim=-3
@@ -121,7 +138,7 @@ def atom37_to_torsions(all_atom_positions, aatype, all_atom_mask=None):
 
     atom_indices = chi_atom_indices[..., aatype, :, :]
     chis_atom_pos = batched_gather(
-        all_atom_positions, atom_indices, -2, len(atom_indices.shape[:-2])
+        all_atom_positions, atom_indices, -2, len(atom_indices.shape[:-2]), np=torch
     )
 
     chi_angles_mask = list(rc.chi_angles_mask)
@@ -135,6 +152,7 @@ def atom37_to_torsions(all_atom_positions, aatype, all_atom_mask=None):
         atom_indices,
         dim=-1,
         no_batch_dims=len(atom_indices.shape[:-2]),
+        np=torch,
     )
     chi_angle_atoms_mask = torch.prod(
         chi_angle_atoms_mask, dim=-1, dtype=chi_angle_atoms_mask.dtype
@@ -195,6 +213,32 @@ def atom37_to_torsions(all_atom_positions, aatype, all_atom_mask=None):
     return torsion_angles_sin_cos, torsion_angles_mask
 
 
+#################################################################
+def gram_schmidt(origin, x_axis, xy_plane, eps=1e-8):
+    x_axis = torch.unbind(x_axis, dim=-1)
+    origin = torch.unbind(origin, dim=-1)
+    xy_plane = torch.unbind(xy_plane, dim=-1)
+
+    e0 = [c1 - c2 for c1, c2 in zip(x_axis, origin)]
+    e1 = [c1 - c2 for c1, c2 in zip(xy_plane, origin)]
+
+    denom = torch.sqrt(sum((c * c for c in e0)) + eps)
+    e0 = [c / denom for c in e0]
+    dot = sum((c1 * c2 for c1, c2 in zip(e0, e1)))
+    e1 = [c2 - c1 * dot for c1, c2 in zip(e0, e1)]
+    denom = torch.sqrt(sum((c * c for c in e1)) + eps)
+    e1 = [c / denom for c in e1]
+    e2 = [
+        e0[1] * e1[2] - e0[2] * e1[1],
+        e0[2] * e1[0] - e0[0] * e1[2],
+        e0[0] * e1[1] - e0[1] * e1[0],
+    ]
+
+    rots = torch.stack([c for tup in zip(e0, e1, e2) for c in tup], dim=-1)
+    rots = rots.reshape(rots.shape[:-1] + (3, 3))
+    return rots
+
+
 def frames_and_literature_positions_to_atom14_pos(
     r: Rigid,
     aatype: torch.Tensor,
@@ -210,7 +254,7 @@ def frames_and_literature_positions_to_atom14_pos(
     group_mask = group_idx[aatype, ...]
 
     # [*, N, 14, 8]
-    group_mask = nn.functional.one_hot(
+    group_mask = torch.nn.functional.one_hot(
         group_mask,
         num_classes=default_frames.shape[-3],
     )
@@ -319,6 +363,3 @@ def get_chi_atom_indices():
     chi_atom_indices.append([[0, 0, 0, 0]] * 4)  # For UNKNOWN residue.
 
     return chi_atom_indices
-
-
-
