@@ -48,7 +48,8 @@ tracks:
             num_freqs: 50
             max_period: 100
         decoder:
-            type: linear
+            type: sinusoidal
+            max_period: 100
     openprot.tracks.sequence.SequenceTrack:
         param: 0
 

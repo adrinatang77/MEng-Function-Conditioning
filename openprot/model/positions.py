@@ -18,17 +18,19 @@ class PositionDecoder(nn.Module):
 
         if cfg.type == "linear":
             self.decoder = nn.Linear(dim, 3)
+        elif cfg.type == "sinusoidal":
+            self.decoder = nn.Linear(dim, 6)
 
         else:
-            raise RuntimeException(f"PositionDecoder type {cfg.type} not recognized")
+            raise Exception(f"PositionDecoder type {cfg.type} not recognized")
 
     def forward(self, x):
         if self.cfg.type == "linear":
             return self.decoder(x)
+        elif self.cfg.type == "sinusoidal":
+            return self.decoder(x)
         else:
-            raise RuntimeException(
-                f"PositionDecoder type {self.cfg.type} not recognized"
-            )
+            raise Exception(f"PositionDecoder type {self.cfg.type} not recognized")
 
 
 class PositionEmbedder(nn.Module):
@@ -44,7 +46,7 @@ class PositionEmbedder(nn.Module):
             self.embedder = nn.Linear(6 * cfg.num_freqs, dim)
 
         else:
-            raise RuntimeException(f"PositionEmbedder type {cfg.type} not recognized")
+            raise Exception(f"PositionEmbedder type {cfg.type} not recognized")
 
     def forward(self, pos):
         if self.cfg.type == "linear":
@@ -53,6 +55,4 @@ class PositionEmbedder(nn.Module):
             emb = sinusoidal_embedding(pos, self.cfg.num_freqs, self.cfg.max_period)
             return self.embedder(emb.reshape(*emb.shape[:-2], -1))
         else:
-            raise RuntimeException(
-                f"PositionEmbedder type {self.cfg.type} not recognized"
-            )
+            raise Exception(f"PositionEmbedder type {self.cfg.type} not recognized")

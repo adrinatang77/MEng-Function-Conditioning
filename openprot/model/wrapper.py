@@ -53,7 +53,7 @@ class OpenProtWrapper(Wrapper):
         for name in cfg.tracks:
             module, name_ = name.rsplit(".", 1)
             track = getattr(importlib.import_module(module), name_)(
-                cfg.tracks[name], self.logger
+                cfg.tracks[name], self._logger
             )
             track.add_modules(self.model)
             self.tracks.append(track)

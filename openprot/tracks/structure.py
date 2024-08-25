@@ -14,6 +14,27 @@ from functools import partial
 import numpy as np
 
 
+def log_I0(x):
+    k_star = torch.round(x / 2)
+    logx = torch.log(x)
+    log_A_k_star = 2 * (k_star * (logx - np.log(2)) - torch.lgamma(k_star + 1))
+    ks = torch.arange(-30, 31, device=x.device) + k_star[..., None]
+
+    log_A_k_ratio = 2 * (ks - k_star[..., None]) * (logx[..., None] - np.log(2)) + 2 * (
+        torch.lgamma(k_star[..., None] + 1) - torch.lgamma(ks + 1)
+    )
+    log_sum_A_k_ratio = torch.logsumexp(log_A_k_ratio, -1)
+    return log_sum_A_k_ratio + log_A_k_star
+
+
+def torus_logZ(x):  # x = 1 / sigma^2
+    return torch.where(
+        x < 100,
+        np.log(2 * np.pi) + log_I0(x) - x,
+        0.5 * np.log(2 * np.pi) - 0.5 * torch.log(x),
+    )
+
+
 class StructureTrack(Track):
 
     def tokenize(self, data, data_tok):
@@ -70,11 +91,55 @@ class StructureTrack(Track):
         # readout["rots"] = model.rots_out(out)
 
     def compute_loss(self, readout, target):
-        rmsd_loss = self.compute_rmsd_loss(
-            readout["trans"], target["trans"], target["ca_mask"]
-        )
-        return rmsd_loss
+        if self.cfg.decoder.type == "linear":
+            rmsd_loss = self.compute_rmsd_loss(
+                readout["trans"], target["trans"], target["ca_mask"]
+            )
+            return rmsd_loss
+
+        elif self.cfg.decoder.type == "sinusoidal":
+            sinusoidal_loss = self.compute_sinusoidal_loss(readout, target)
+            return sinusoidal_loss
+
+        else:
+            raise Exception(
+                f"PositionDecoder type {self.cfg.decoder.type} not recognized"
+            )
+
         # fape_loss = self.compute_fape_loss(readout, target)
+
+    def compute_sinusoidal_loss(self, readout, target):
+        logits = readout["trans"]
+        ang = torch.atan2(logits[..., 1::2], logits[..., ::2])
+        gt_ang = 2 * np.pi * target["trans"] / self.cfg.decoder.max_period
+        ang_error = ((gt_ang - ang) + np.pi) % (2 * np.pi) - np.pi
+        self.logger.log(
+            "rmsd",
+            torch.sqrt(
+                (torch.square(ang_error).sum(-1) * target["ca_mask"]).sum(-1)
+                / target["ca_mask"].sum(-1)
+            )
+            * self.cfg.decoder.max_period
+            / (2 * np.pi),
+        )
+        norm = torch.sqrt(logits[..., 1::2] ** 2 + logits[..., ::2] ** 2 + 1e-5)
+        logp = (
+            torch.cos(gt_ang) * logits[..., ::2] + torch.sin(gt_ang) * logits[..., 1::2]
+        )
+        logz = np.log(2 * np.pi) + log_I0(norm)
+        nll = logz - logp
+
+        # prec = norm**2
+        # logp_ = torch.where(
+        #     prec < 100,
+        #     prec * (torch.cos(ang_error) - 1),
+        #     - ang_error**2 * prec / 2
+        # )
+        # logz_ = torus_logZ(prec)
+        # nll_ = logz_ - logp_
+
+        self.logger.log("trans_logit_norm", norm)
+        return (nll.sum(-1) * target["ca_mask"]).sum(-1) / target["ca_mask"].sum()
 
     def compute_fape_loss(self, readout, target):
         shape = readout["rots"].shape[:-1] + (3, 3)
