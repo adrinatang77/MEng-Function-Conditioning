@@ -86,8 +86,10 @@ class Logger:
         if interval is not None and self.iter_step[prefix] % interval == 0:
             self.print_log(trainer, prefix)
 
-    def log(self, key, data):
+    def log(self, key, data, mask=None):
         if isinstance(data, torch.Tensor):
+            if mask is not None:
+                data = (data * mask).sum() / mask.sum()
             data = data.mean().item()
         self._log[self.prefix + "/" + key].append(data)
 

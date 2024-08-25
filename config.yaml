@@ -28,16 +28,18 @@ trainer:
 
 # custom args to OpenProtDataset and elsewhere
 data: 
-    path: null
+    num_workers: 0
     batch: 32
     crop: 512
-    
+    overfit: false
 
 datasets:
     # register datasets
-    openprot.data.pdb.PDBDataset: 
-        # custom args for every dataset
-        path: /data/cb/scratch/datasets/pdb_npz
+    # openprot.data.pdb.PDBDataset: 
+    #     # custom args for every dataset
+    #     path: /data/cb/scratch/datasets/pdb_npz
+    openprot.data.afdb.AFDBDataset:
+        path: /data/cb/scratch/datasets/afdb_swissprot_v4/afdb_swissprot_v4
 
 tracks:
     # register tracks here

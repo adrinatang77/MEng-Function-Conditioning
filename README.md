@@ -1,6 +1,8 @@
 # OpenProt
 
 ## Dependencies
+* python==3.12
+* biopython
 * numpy==1.26.4
 * pytorch==2.2.0 (`pip install torch==2.2.0+cu121 -f https://download.pytorch.org/whl/torch_stable.html` on the csail machines)
 * pytorch-lightning==2.4.0
@@ -9,6 +11,7 @@
 * ruff (optional, see below)
 * neptune
 * pytest
+* foldcomp (must install with `pip install git+https://github.com/steineggerlab/foldcomp@f868b95` repo, see https://github.com/steineggerlab/foldcomp/issues/52)
 
 Install the dependencies with `mamba env create -f environment.yml` and activate the environment with `conda activate openprot`. (Note: this is Sam's workflow, Bowen recommends installing things manually)
 

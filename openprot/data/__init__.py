@@ -36,7 +36,7 @@ class OpenProtDataset(torch.utils.data.IterableDataset):
         pad_mask[: min(self.cfg.data.crop, L)] = 1.0
         new_data["pad_mask"] = pad_mask
 
-        if L > self.cfg.data.crop:  # needs crop
+        if L >= self.cfg.data.crop:  # needs crop
             start = np.random.randint(0, L - self.cfg.data.crop + 1)
             end = start + self.cfg.data.crop
             for key in data:
@@ -53,14 +53,14 @@ class OpenProtDataset(torch.utils.data.IterableDataset):
                     new_data[key] = np.concatenate(
                         [data[key], np.zeros((pad, *shape[1:]), dtype=dtype)]
                     )
+        
 
         return new_data
 
     def process(self, data):
-
         # tokenize the data
         data = self.crop_or_pad(data)
-
+        
         data_tok = {"pad_mask": data["pad_mask"]}
         for track in self.tracks:
             track.tokenize(data, data_tok)
@@ -71,5 +71,6 @@ class OpenProtDataset(torch.utils.data.IterableDataset):
         i = 0
         while True:  # very temporary
             data = self.datasets[0][i]
-            # i += 1
+            if not self.cfg.data.overfit:
+                i += 1
             yield self.process(data)
