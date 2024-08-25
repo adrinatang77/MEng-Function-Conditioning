@@ -9,6 +9,7 @@ from ..utils.geometry import (
 )
 from ..utils.rigid_utils import Rigid, Rotation
 from ..utils import residue_constants as rc
+from ..model.positions import PositionEmbedder, PositionDecoder
 from functools import partial
 import numpy as np
 
@@ -28,32 +29,50 @@ class StructureTrack(Track):
         data_tok["torsion_mask"] = torsion_mask
 
     def add_modules(self, model):
-        model.trans_embed = nn.Linear(3, model.cfg.dim)
-        model.rots_embed = nn.Linear(9, model.cfg.dim)
-        model.trans_out = nn.Linear(model.cfg.dim, 3)
-        model.rots_out = nn.Linear(model.cfg.dim, 9)
+        model.trans_mask = nn.Parameter(torch.zeros(model.cfg.dim))
+        model.trans_embed = PositionEmbedder(self.cfg.embedder, model.cfg.dim)
+        model.trans_out = PositionDecoder(self.cfg.decoder, model.cfg.dim)
+        # model.rots_embed = nn.Linear(9, model.cfg.dim)
+        # model.trans_out = nn.Linear(model.cfg.dim, 3)
+        # model.rots_out = nn.Linear(model.cfg.dim, 9)
 
     def corrupt(self, batch, noisy_batch, target):
-        noisy_batch["trans"] = batch["trans"]
-        target["trans"] = batch["trans"]
-        target["rots"] = batch["rots"]
-        target["frame_mask"] = batch["frame_mask"]
+
+        com = (batch['trans'] * batch['ca_mask'][...,None]).sum(-2) / batch['ca_mask'].sum(-1)[...,None]
+        trans = batch['trans'] - com[...,None,:] * batch['ca_mask'][...,None]
+
+        # for now delete everything with +x
+        noisy_batch['trans_noise'] = trans[...,0] > 0
+        noisy_batch['trans'] = torch.where(noisy_batch['trans_noise'][...,None], 0.0, trans)
+        
+        target["trans"] = trans
         target["ca_mask"] = batch["ca_mask"]
+        
+        # noisy_batch["trans"] = batch["trans"]
+        # target["trans"] = batch["trans"]
+        # target["rots"] = batch["rots"]
+        # target["frame_mask"] = batch["frame_mask"]
+        # target["ca_mask"] = batch["ca_mask"]
 
     def embed(self, model, batch):
-        x = model.trans_embed(batch["trans"])
+        pos_embed = model.trans_embed(batch['trans'])
+        x = torch.where(
+            batch['trans_noise'][...,None], 
+            model.trans_mask[None,None],
+            pos_embed
+        )
         return x
 
     def predict(self, model, out, readout):
         readout["trans"] = model.trans_out(out)
-        readout["rots"] = model.rots_out(out)
+        # readout["rots"] = model.rots_out(out)
 
     def compute_loss(self, readout, target):
-
-        rmsd_loss = self.compute_rmsd_loss(readout["trans"], target["trans"])
-        fape_loss = self.compute_fape_loss(readout, target)
-        breakpoint()
-
+        rmsd_loss = self.compute_rmsd_loss(
+            readout["trans"], target["trans"], target['ca_mask'])
+        return rmsd_loss
+        # fape_loss = self.compute_fape_loss(readout, target)
+        
     def compute_fape_loss(self, readout, target):
         shape = readout["rots"].shape[:-1] + (3, 3)
         pred_rots = readout["rots"].reshape(*shape)
@@ -83,5 +102,7 @@ class StructureTrack(Track):
         )
         return fape_loss
 
-    def compute_rmsd_loss(self, pred, target, eps=1e-5):
-        return torch.sqrt(torch.square(pred - target).sum(-1) + eps)
+    def compute_rmsd_loss(self, pred, target, mask, eps=1e-5):
+        err = torch.square(pred - target).sum(-1)
+        err = (err * mask).sum(-1) / mask.sum(-1)
+        return torch.sqrt(err + eps)

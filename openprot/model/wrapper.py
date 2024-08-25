@@ -72,7 +72,7 @@ class OpenProtWrapper(Wrapper):
             inp = inp + x
 
         ## run it thorugh the model
-        out = self.model(inp)
+        out = self.model(inp, batch['pad_mask'])
 
         ## place the readouts in a dict
         readout = {}
@@ -85,4 +85,4 @@ class OpenProtWrapper(Wrapper):
             loss_ = track.compute_loss(readout, target)
             loss = loss + loss_
         self._logger.log("loss", loss)
-        return loss
+        return loss.mean()
