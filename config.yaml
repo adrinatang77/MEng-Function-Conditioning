@@ -49,6 +49,8 @@ tracks:
             max_period: 100
         decoder:
             type: linear
+    openprot.tracks.sequence.SequenceTrack:
+        param: 0
 
 model: # custom args
     in_norm: false

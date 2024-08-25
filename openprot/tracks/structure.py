@@ -38,16 +38,20 @@ class StructureTrack(Track):
 
     def corrupt(self, batch, noisy_batch, target):
 
-        com = (batch['trans'] * batch['ca_mask'][...,None]).sum(-2) / batch['ca_mask'].sum(-1)[...,None]
-        trans = batch['trans'] - com[...,None,:] * batch['ca_mask'][...,None]
+        com = (batch["trans"] * batch["ca_mask"][..., None]).sum(-2) / batch[
+            "ca_mask"
+        ].sum(-1)[..., None]
+        trans = batch["trans"] - com[..., None, :] * batch["ca_mask"][..., None]
 
         # for now delete everything with +x
-        noisy_batch['trans_noise'] = trans[...,0] > 0
-        noisy_batch['trans'] = torch.where(noisy_batch['trans_noise'][...,None], 0.0, trans)
-        
+        noisy_batch["trans_noise"] = trans[..., 0] > 0
+        noisy_batch["trans"] = torch.where(
+            noisy_batch["trans_noise"][..., None], 0.0, trans
+        )
+
         target["trans"] = trans
         target["ca_mask"] = batch["ca_mask"]
-        
+
         # noisy_batch["trans"] = batch["trans"]
         # target["trans"] = batch["trans"]
         # target["rots"] = batch["rots"]
@@ -55,11 +59,9 @@ class StructureTrack(Track):
         # target["ca_mask"] = batch["ca_mask"]
 
     def embed(self, model, batch):
-        pos_embed = model.trans_embed(batch['trans'])
+        pos_embed = model.trans_embed(batch["trans"])
         x = torch.where(
-            batch['trans_noise'][...,None], 
-            model.trans_mask[None,None],
-            pos_embed
+            batch["trans_noise"][..., None], model.trans_mask[None, None], pos_embed
         )
         return x
 
@@ -69,10 +71,11 @@ class StructureTrack(Track):
 
     def compute_loss(self, readout, target):
         rmsd_loss = self.compute_rmsd_loss(
-            readout["trans"], target["trans"], target['ca_mask'])
+            readout["trans"], target["trans"], target["ca_mask"]
+        )
         return rmsd_loss
         # fape_loss = self.compute_fape_loss(readout, target)
-        
+
     def compute_fape_loss(self, readout, target):
         shape = readout["rots"].shape[:-1] + (3, 3)
         pred_rots = readout["rots"].reshape(*shape)

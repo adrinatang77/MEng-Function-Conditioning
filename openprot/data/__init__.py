@@ -54,7 +54,7 @@ class OpenProtDataset(torch.utils.data.IterableDataset):
                     )
 
         # tokenize the data
-        data_tok = {'pad_mask': pad_mask}
+        data_tok = {"pad_mask": pad_mask}
         for track in self.tracks:
             track.tokenize(data, data_tok)
         return data_tok

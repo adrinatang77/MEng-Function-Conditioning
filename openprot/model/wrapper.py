@@ -72,7 +72,7 @@ class OpenProtWrapper(Wrapper):
             inp = inp + x
 
         ## run it thorugh the model
-        out = self.model(inp, batch['pad_mask'])
+        out = self.model(inp, batch["pad_mask"])
 
         ## place the readouts in a dict
         readout = {}
