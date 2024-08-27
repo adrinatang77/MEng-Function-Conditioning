@@ -2,23 +2,23 @@ ckpt: null # eventually this will control resuming runs
 validate: false # if true, only validate the model, don't train
 logger:
     # set to true to log to neptune.ai
-    neptune: false 
+    neptune: true 
     # please change "test" to something unique to your task
     project: openprot/test 
     # will log to workdir and neptune.ai with this name
-    name: default 
+    name: mlm_test 
     # if not null, will duplicate stdout and stderr to workdir/{name}/{logfile}
-    logfile: null 
+    logfile: std.out 
     # if null, will log every epoch, otherwise every this number of steps
-    train_log_freq: 1
+    train_log_freq: 100
     val_log_freq: null 
 trainer:
     accelerator: auto
-    devices: 1
-    max_epochs: 5
+    devices: 8
+    max_epochs: 1
     enable_progress_bar: false
     limit_train_batches: 1.0
-    limit_val_batches: 1.0
+    limit_val_batches: 0.0
     num_sanity_val_steps: 0
     gradient_clip_val: 1.0
     accumulate_grad_batches: 1
@@ -43,30 +43,36 @@ datasets:
     openprot.data.uniref.UnirefDataset:
         path: /data/cb/scratch/datasets/uniref50.fasta
         index: /data/cb/scratch/share/openprot/uniref50.index
+        seed: 137
 
 tracks:
     # register tracks here
-    # supervise: some tracks you never want to generate
-    openprot.tracks.structure.StructureTrack: 
-        # custom args for every track
-        embedder: 
-            type: sinusoidal
-            num_freqs: 50
-            max_period: 100
-        decoder:
-            type: sinusoidal
-            max_period: 100
+    # openprot.tracks.structure.StructureTrack: 
+    #     # custom args for every track
+    #     embedder: 
+    #         type: sinusoidal
+    #         num_freqs: 50
+    #         max_period: 100
+    #     decoder:
+    #         type: sinusoidal
+    #         max_period: 100
     openprot.tracks.sequence.SequenceTrack:
         corrupt: mask
         mask_rate: 0.15
 
 model: # custom args
     in_norm: false
-    dim: 1024
-    blocks: 24
-    heads: 16
+    dim: 512
+    blocks: 12
+    heads: 8
     ff_expand: 4
 
 optimizer:
     type: Adam
-    lr: 1e-4
+    lr: 3e-5
+    scheduler: 
+        total_steps: 100000
+        warmup_steps: 1000
+        start_decay: 10000
+        end_factor: 0.01
+        

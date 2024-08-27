@@ -44,7 +44,9 @@ class StructureTrack(Track):
         data_tok["rots"] = frames._rots._rot_mats
         data_tok["frame_mask"] = frame_mask
         data_tok["ca_mask"] = data["atom37_mask"][..., rc.atom_order["CA"]]
-        aatype = np.array([rc.restype_order_with_x[c] for c in data["seqres"]])
+        aatype = np.array(
+            [rc.restype_order.get(c, rc.unk_restype_index) for c in data["seqres"]]
+        )
         torsions, torsion_mask = atom37_to_torsions(data["atom37"], aatype)
         data_tok["torsions"] = torsions
         data_tok["torsion_mask"] = torsion_mask

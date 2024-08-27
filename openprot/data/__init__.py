@@ -20,6 +20,7 @@ class OpenProtDataset(torch.utils.data.IterableDataset):
         for name in cfg.datasets:  # autoload the datasets
             module, name_ = name.rsplit(".", 1)
             ds = getattr(importlib.import_module(module), name_)(cfg.datasets[name])
+            ds.shuffle()
             self.datasets.append(ds)
 
         self.tracks = []  # autoload the tracks
@@ -67,9 +68,16 @@ class OpenProtDataset(torch.utils.data.IterableDataset):
 
     def __iter__(self):
         worker_info = torch.utils.data.get_worker_info()
-        i = 0
+        if not worker_info:
+            world_size = self.world_size
+            id = self.rank
+
+        else:
+            world_size = self.world_size * worker_info.num_workers
+            id = self.rank * worker_info.num_workers + self.id
+        i = id
         while True:  # very temporary
-            data = self.datasets[0][i]
+            data = self.datasets[0].get_shuffled(i)
             if not self.cfg.data.overfit:
-                i += 1
+                i += world_size
             yield self.process(data)

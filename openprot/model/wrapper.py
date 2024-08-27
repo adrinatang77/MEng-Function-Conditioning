@@ -42,6 +42,30 @@ class Wrapper(pl.LightningModule):
             filter(lambda p: p.requires_grad, self.model.parameters()),
             lr=self.cfg.optimizer.lr,
         )
+
+        warmup = torch.optim.lr_scheduler.LinearLR(
+            optimizer,
+            start_factor=1e-12,
+            end_factor=1.0,
+            total_iters=self.cfg.optimizer.scheduler.warmup_steps,
+        )
+        decay = torch.optim.lr_scheduler.LinearLR(
+            optimizer,
+            start_factor=1.0,
+            end_factor=self.cfg.optimizer.scheduler.end_factor,
+            total_iters=int(0.9 * self.cfg.optimizer.scheduler.total_steps),
+        )
+        scheduler = torch.optim.lr_scheduler.SequentialLR(
+            optimizer,
+            schedulers=[warmup, decay],
+            milestones=[self.cfg.optimizer.scheduler.start_decay],
+        )
+
+        return {
+            "optimizer": optimizer,
+            "lr_scheduler": {"scheduler": scheduler, "interval": "step"},
+        }
+
         return optimizer
 
 
@@ -73,6 +97,7 @@ class OpenProtWrapper(Wrapper):
 
         ## run it thorugh the model
         out = self.model(inp, batch["pad_mask"])
+        self._logger.log("act_norm", torch.square(out).mean(-1), batch["pad_mask"])
 
         ## place the readouts in a dict
         readout = {}
@@ -85,5 +110,8 @@ class OpenProtWrapper(Wrapper):
             loss_ = track.compute_loss(readout, target)
             loss = loss + loss_
         self._logger.log("loss", loss)
+
+        if loss.mean() != loss.mean():
+            breakpoint()
 
         return loss.mean()
