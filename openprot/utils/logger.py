@@ -89,7 +89,7 @@ class Logger:
     def log(self, key, data, mask=None):
         if isinstance(data, torch.Tensor):
             if mask is not None:
-                data = (data * mask).sum() / mask.sum()
+                data = (data * mask).sum() / mask.expand(data.shape).sum()
             data = data.mean().item()
         self._log[self.prefix + "/" + key].append(data)
 

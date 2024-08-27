@@ -53,14 +53,13 @@ class OpenProtDataset(torch.utils.data.IterableDataset):
                     new_data[key] = np.concatenate(
                         [data[key], np.zeros((pad, *shape[1:]), dtype=dtype)]
                     )
-        
 
         return new_data
 
     def process(self, data):
         # tokenize the data
         data = self.crop_or_pad(data)
-        
+
         data_tok = {"pad_mask": data["pad_mask"]}
         for track in self.tracks:
             track.tokenize(data, data_tok)

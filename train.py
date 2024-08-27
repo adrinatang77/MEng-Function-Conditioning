@@ -40,7 +40,9 @@ trainer = pl.Trainer(
 
 dataset = OpenProtDataset(cfg, trainer.global_rank, trainer.world_size)
 
-loader = torch.utils.data.DataLoader(dataset, batch_size=cfg.data.batch, num_workers=cfg.data.num_workers)
+loader = torch.utils.data.DataLoader(
+    dataset, batch_size=cfg.data.batch, num_workers=cfg.data.num_workers
+)
 
 if cfg.validate:
     trainer.validate(model, loader, ckpt_path=cfg.ckpt)

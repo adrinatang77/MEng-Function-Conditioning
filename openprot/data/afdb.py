@@ -11,14 +11,14 @@ class AFDBDataset(torch.utils.data.Dataset):
         super().__init__()
         self.cfg = cfg
         self.db = foldcomp.open(cfg.path)
-        
+
     def __len__(self):
         return len(self.db)
 
     def __getitem__(self, idx):
         name, pdb = self.db[idx]
         prot = protein.from_pdb_string(pdb)
-        seqres = ''.join([rc.restypes_with_x[c] for c in prot.aatype])
+        seqres = "".join([rc.restypes_with_x[c] for c in prot.aatype])
         return {
             "seqres": seqres,
             "atom37": prot.atom_positions.astype(np.float32),

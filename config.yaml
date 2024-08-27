@@ -38,11 +38,15 @@ datasets:
     # openprot.data.pdb.PDBDataset: 
     #     # custom args for every dataset
     #     path: /data/cb/scratch/datasets/pdb_npz
-    openprot.data.afdb.AFDBDataset:
-        path: /data/cb/scratch/datasets/afdb_swissprot_v4/afdb_swissprot_v4
+    # openprot.data.afdb.AFDBDataset:
+    #     path: /data/cb/scratch/datasets/afdb_swissprot_v4/afdb_swissprot_v4
+    openprot.data.uniref.UnirefDataset:
+        path: /data/cb/scratch/datasets/uniref50.fasta
+        index: /data/cb/scratch/share/openprot/uniref50.index
 
 tracks:
     # register tracks here
+    # supervise: some tracks you never want to generate
     openprot.tracks.structure.StructureTrack: 
         # custom args for every track
         embedder: 
@@ -53,7 +57,8 @@ tracks:
             type: sinusoidal
             max_period: 100
     openprot.tracks.sequence.SequenceTrack:
-        param: 0
+        corrupt: mask
+        mask_rate: 0.15
 
 model: # custom args
     in_norm: false

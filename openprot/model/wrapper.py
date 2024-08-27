@@ -61,7 +61,7 @@ class OpenProtWrapper(Wrapper):
     def general_step(self, batch):
         ## corrupt all the tracks
         noisy_batch, target = {}, {}
-        target = {}
+        target = {"pad_mask": batch["pad_mask"]}
         for track in self.tracks:
             track.corrupt(batch, noisy_batch, target)
 
@@ -85,4 +85,5 @@ class OpenProtWrapper(Wrapper):
             loss_ = track.compute_loss(readout, target)
             loss = loss + loss_
         self._logger.log("loss", loss)
+
         return loss.mean()
