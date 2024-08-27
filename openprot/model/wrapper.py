@@ -53,7 +53,7 @@ class OpenProtWrapper(Wrapper):
         for name in cfg.tracks:
             module, name_ = name.rsplit(".", 1)
             track = getattr(importlib.import_module(module), name_)(
-                cfg.tracks[name], self.logger
+                cfg.tracks[name], self._logger
             )
             track.add_modules(self.model)
             self.tracks.append(track)
@@ -61,7 +61,7 @@ class OpenProtWrapper(Wrapper):
     def general_step(self, batch):
         ## corrupt all the tracks
         noisy_batch, target = {}, {}
-        target = {}
+        target = {"pad_mask": batch["pad_mask"]}
         for track in self.tracks:
             track.corrupt(batch, noisy_batch, target)
 
@@ -72,7 +72,7 @@ class OpenProtWrapper(Wrapper):
             inp = inp + x
 
         ## run it thorugh the model
-        out = self.model(inp)
+        out = self.model(inp, batch["pad_mask"])
 
         ## place the readouts in a dict
         readout = {}
@@ -85,4 +85,5 @@ class OpenProtWrapper(Wrapper):
             loss_ = track.compute_loss(readout, target)
             loss = loss + loss_
         self._logger.log("loss", loss)
-        return loss
+
+        return loss.mean()

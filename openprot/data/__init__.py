@@ -28,32 +28,39 @@ class OpenProtDataset(torch.utils.data.IterableDataset):
             track = getattr(importlib.import_module(module), name_)(cfg.tracks[name])
             self.tracks.append(track)
 
-    def process(self, data):
-
+    def crop_or_pad(self, data):
         # crop or pad the protein here
+        new_data = {}
         L = len(data["seqres"])
         pad_mask = np.zeros(self.cfg.data.crop, dtype=np.float32)
         pad_mask[: min(self.cfg.data.crop, L)] = 1.0
+        new_data["pad_mask"] = pad_mask
 
-        if L > self.cfg.data.crop:  # needs crop
+        if L >= self.cfg.data.crop:  # needs crop
             start = np.random.randint(0, L - self.cfg.data.crop + 1)
             end = start + self.cfg.data.crop
             for key in data:
-                data[key] = data[key][start:end]
+                new_data[key] = data[key][start:end]
         elif L < self.cfg.data.crop:  # needs pad
             pad = self.cfg.data.crop - L
             for key in data:
                 # unfortunately this is a string, unlike everything else
                 if key == "seqres":
-                    data[key] += "X" * pad
+                    new_data[key] = data[key] + "X" * pad
                 else:
                     shape = data[key].shape
                     dtype = data[key].dtype
-                    data[key] = np.concatenate(
+                    new_data[key] = np.concatenate(
                         [data[key], np.zeros((pad, *shape[1:]), dtype=dtype)]
                     )
 
-        data_tok = {}
+        return new_data
+
+    def process(self, data):
+        # tokenize the data
+        data = self.crop_or_pad(data)
+
+        data_tok = {"pad_mask": data["pad_mask"]}
         for track in self.tracks:
             track.tokenize(data, data_tok)
         return data_tok
@@ -63,5 +70,6 @@ class OpenProtDataset(torch.utils.data.IterableDataset):
         i = 0
         while True:  # very temporary
             data = self.datasets[0][i]
-            i += 1
+            if not self.cfg.data.overfit:
+                i += 1
             yield self.process(data)
