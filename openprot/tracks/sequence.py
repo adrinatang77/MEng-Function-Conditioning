@@ -57,6 +57,7 @@ class SequenceTrack(Track):
 
         mask = target["seq_loss_mask"]
         self.logger.log("aatype_loss", loss, mask=mask)
-        self.logger.log("aatype_perplexity", torch.exp(loss), mask=mask)
+        self.logger.log("aatype_perplexity", loss, mask=mask, post=np.exp)
+        self.logger.log("aatype_count", mask.sum().item())
         loss = (loss * mask).sum(-1) / (mask.sum(-1) + eps)
         return loss.mean()
