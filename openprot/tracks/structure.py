@@ -61,37 +61,29 @@ class StructureTrack(Track):
 
     def corrupt(self, batch, noisy_batch, target):
 
-        com = (batch["trans"] * batch["ca_mask"][..., None]).sum(-2) / batch[
-            "ca_mask"
-        ].sum(-1)[..., None]
-        trans = torch.where(
-            batch["ca_mask"][..., None].bool(), batch["trans"] - com[..., None, :], 0.0
-        )
+        trans = batch["trans"]
+        ca_mask = batch["ca_mask"][..., None]  # ca present
 
-        # for now delete everything with +x
-        noisy_batch["trans_noise"] = trans[..., 0] > 0
-        noisy_batch["trans"] = torch.where(
-            noisy_batch["trans_noise"][..., None], 0.0, trans
-        )
+        # center the structures
+        com = (trans * ca_mask).sum(-2) / ca_mask.sum(-2)
+        trans = torch.where(ca_mask.bool(), trans - com[..., None, :], 0.0)
 
+        # for now mask out everything with +x
+        mask = (trans[..., 0] > 0) & batch["_struct_noise"].bool()[:, None]
+        mask = mask & batch["pad_mask"].bool()
+        # masked out, needs supervision
+
+        noisy_batch["trans"] = torch.where(mask[..., None], 0.0, trans)
         target["trans"] = trans
-        noisy_batch["ca_mask"] = target["ca_mask"] = batch["ca_mask"]
-
-        # noisy_batch["trans"] = batch["trans"]
-        # target["trans"] = batch["trans"]
-        # target["rots"] = batch["rots"]
-        # target["frame_mask"] = batch["frame_mask"]
-        # target["ca_mask"] = batch["ca_mask"]
+        noisy_batch["trans_embed_mask"] = mask | ~ca_mask.bool().squeeze(-1)
+        target["trans_loss_mask"] = mask
 
     def embed(self, model, batch):
         pos_embed = model.trans_embed(batch["trans"])
         x = torch.where(
-            batch["trans_noise"][..., None], model.trans_mask[None, None], pos_embed
-        )
-        x = torch.where(
-            batch["ca_mask"][..., None].bool(),
-            x,
+            batch["trans_embed_mask"][..., None],
             model.trans_mask[None, None],
+            pos_embed,
         )
         return x
 
@@ -100,15 +92,16 @@ class StructureTrack(Track):
         # readout["rots"] = model.rots_out(out)
 
     def compute_loss(self, readout, target):
+
         if self.cfg.decoder.type == "linear":
+            NotImplemented
             rmsd_loss = self.compute_rmsd_loss(
                 readout["trans"], target["trans"], target["ca_mask"]
             )
             return rmsd_loss.mean()
 
         elif self.cfg.decoder.type == "sinusoidal":
-            sinusoidal_loss = self.compute_sinusoidal_loss(readout, target)
-            return sinusoidal_loss.mean()
+            return self.compute_sinusoidal_loss(readout, target)
 
         else:
             raise Exception(
@@ -118,19 +111,17 @@ class StructureTrack(Track):
         # fape_loss = self.compute_fape_loss(readout, target)
 
     def compute_sinusoidal_loss(self, readout, target, eps=1e-6):
+
         logits = readout["trans"]
+        mask = target["trans_loss_mask"]
         ang = torch.atan2(logits[..., 1::2], logits[..., ::2])
         gt_ang = 2 * np.pi * target["trans"] / self.cfg.decoder.max_period
         ang_error = ((gt_ang - ang) + np.pi) % (2 * np.pi) - np.pi
+        msd_error = ang_error * self.cfg.decoder.max_period / (2 * np.pi)
         self.logger.log(
-            "trans_rmsd",
-            torch.sqrt(
-                (torch.square(ang_error).sum(-1) * target["ca_mask"]).sum(-1)
-                / target["ca_mask"].sum(-1)
-            )
-            * self.cfg.decoder.max_period
-            / (2 * np.pi),
+            "trans_rmsd", torch.square(msd_error).sum(-1), mask, post=np.sqrt
         )
+
         norm = torch.sqrt(logits[..., 1::2] ** 2 + logits[..., ::2] ** 2 + 1e-5)
         logp = (
             torch.cos(gt_ang) * logits[..., ::2] + torch.sin(gt_ang) * logits[..., 1::2]
@@ -146,13 +137,11 @@ class StructureTrack(Track):
         # )
         # logz_ = torus_logZ(prec)
         # nll_ = logz_ - logp_
+        self.logger.log("trans_logit_norm", norm, mask=mask[..., None])
+        self.logger.log("trans_loss", nll, mask=mask[..., None])
+        loss = (nll.sum(-1) * mask).sum(-1) / (eps + mask.sum())
 
-        self.logger.log("trans_logit_norm", norm, mask=target["ca_mask"][..., None])
-        loss = (nll.sum(-1) * target["ca_mask"]).sum(-1) / (
-            eps + target["ca_mask"].sum()
-        )
-        self.logger.log("trans_loss", loss)
-        return loss
+        return loss.mean()
 
     def compute_fape_loss(self, readout, target):
         shape = readout["rots"].shape[:-1] + (3, 3)

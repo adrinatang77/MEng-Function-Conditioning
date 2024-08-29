@@ -25,6 +25,7 @@ class SequenceTrack(Track):
             tokens = batch["aatype"]
 
             mask = torch.rand(tokens.shape, device=tokens.device) < self.cfg.mask_rate
+            mask = mask & batch["_seq_noise"].bool()[:, None] & batch["pad_mask"].bool()
             rand = torch.rand(tokens.shape, device=tokens.device)
             randaa = torch.randint(0, 21, tokens.shape, device=tokens.device)
 
@@ -33,7 +34,7 @@ class SequenceTrack(Track):
             inp = torch.where((rand > 0.9) & mask, randaa, inp)
 
             noisy_batch["aatype"] = inp
-            target["aatype_mask"] = mask
+            target["seq_loss_mask"] = mask
 
         else:
             raise Exception(
@@ -54,10 +55,8 @@ class SequenceTrack(Track):
             readout["aatype"].transpose(1, 2), target["aatype"], reduction="none"
         )
 
-        loss_mask = target["pad_mask"] * target["aatype_mask"].float()
-
-        loss = (loss * loss_mask).sum(-1) / (loss_mask.sum(-1) + eps)
-
-        self.logger.log("aatype_loss", loss)
-        self.logger.log("aatype_perplexity", torch.exp(loss))
+        mask = target["seq_loss_mask"]
+        self.logger.log("aatype_loss", loss, mask=mask)
+        self.logger.log("aatype_perplexity", torch.exp(loss), mask=mask)
+        loss = (loss * mask).sum(-1) / (mask.sum(-1) + eps)
         return loss.mean()

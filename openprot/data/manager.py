@@ -5,11 +5,9 @@ import importlib
 import sys
 
 from .. import tracks
+from ..utils.misc_utils import autoimport
 
-def autoimport(name):
-    module, name_ = name.rsplit(".", 1)
-    return getattr(importlib.import_module(module), name_)
-    
+
 class OpenProtDatasetManager(torch.utils.data.IterableDataset):
     def __init__(self, cfg, rank, world_size):
         super().__init__()
@@ -20,21 +18,21 @@ class OpenProtDatasetManager(torch.utils.data.IterableDataset):
         self.datasets = {}
         for name in cfg.datasets:  # autoload the datasets
             ds = autoimport(name)(cfg.datasets[name])
-            self.datasets[name.split('.')[-1]] = ds
+            self.datasets[name.split(".")[-1]] = ds
 
         self.tasks = {}
-        for name in cfg.tasks: # autoload the train tasks
+        for name in cfg.tasks:  # autoload the train tasks
             task = autoimport(name)(cfg.tasks[name], self.datasets)
             task.shuffle_datasets()
-            self.tasks[name.split('.')[-1]] = task
+            self.tasks[name.split(".")[-1]] = task
 
         self.task_probs = np.array([cfg.tasks[name].fraction for name in cfg.tasks])
         assert self.task_probs.sum() == 1
-        
+
         self.tracks = {}  # autoload the tracks
         for name in cfg.tracks:
             track = autoimport(name)(cfg.tracks[name])
-            self.tracks[name.split('.')[-1]] = track
+            self.tracks[name.split(".")[-1]] = track
 
     def crop_or_pad(self, data):
         # crop or pad the protein here
@@ -48,13 +46,18 @@ class OpenProtDatasetManager(torch.utils.data.IterableDataset):
             start = np.random.randint(0, L - self.cfg.data.crop + 1)
             end = start + self.cfg.data.crop
             for key in data:
-                new_data[key] = data[key][start:end]
+                if key[0] == "_":
+                    new_data[key] = data[key]
+                else:
+                    new_data[key] = data[key][start:end]
         elif L < self.cfg.data.crop:  # needs pad
             pad = self.cfg.data.crop - L
             for key in data:
                 # unfortunately this is a string, unlike everything else
                 if key == "seqres":
                     new_data[key] = data[key] + "X" * pad
+                elif key[0] == "_":
+                    new_data[key] = data[key]
                 else:
                     shape = data[key].shape
                     dtype = data[key].dtype
@@ -68,9 +71,15 @@ class OpenProtDatasetManager(torch.utils.data.IterableDataset):
         # tokenize the data
         data = self.crop_or_pad(data)
 
+        # copy pad mask and special attrs
         data_tok = {"pad_mask": data["pad_mask"]}
+        for key in data:
+            if key[0] == "_":
+                data_tok[key] = data[key]
+
         for track in self.tracks:
             self.tracks[track].tokenize(data, data_tok)
+
         return data_tok
 
     def __iter__(self):
@@ -88,7 +97,7 @@ class OpenProtDatasetManager(torch.utils.data.IterableDataset):
         i = 0
         while True:
             task = rng.choice(self.cfg.tasks, p=self.task_probs)
-            task = self.tasks[task.split('.')[-1]]
+            task = self.tasks[task.split(".")[-1]]
             if i % world_size == rank:
                 yield self.process(task.yield_data())
             task.advance()

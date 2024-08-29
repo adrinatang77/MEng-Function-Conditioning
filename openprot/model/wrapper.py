@@ -81,12 +81,11 @@ class OpenProtWrapper(Wrapper):
 
     def get_lr(self):
         for param_group in self.optimizers().param_groups:
-            return param_group['lr']
-        
+            return param_group["lr"]
+
     def general_step(self, batch):
         ## corrupt all the tracks
         noisy_batch, target = {}, {}
-        target = {"pad_mask": batch["pad_mask"]}
         for track in self.tracks:
             track.corrupt(batch, noisy_batch, target)
 
@@ -107,12 +106,13 @@ class OpenProtWrapper(Wrapper):
         ## compute the loss
         loss = 0
         for track in self.tracks:
-            loss_ = track.compute_loss(readout, target) # scalar
+            # pass in the batch because of the metadata
+            loss_ = track.compute_loss(readout, target)
             loss = loss + track.cfg.loss_weight * loss_
 
         ## log some metrics
         self._logger.log("loss", loss)
         self._logger.log("lr", self.get_lr())
         self._logger.log("act_norm", torch.square(out).mean(-1), batch["pad_mask"])
-        
+
         return loss

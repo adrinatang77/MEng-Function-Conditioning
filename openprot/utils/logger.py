@@ -86,11 +86,13 @@ class Logger:
         if interval is not None and self.iter_step[prefix] % interval == 0:
             self.print_log(trainer, prefix)
 
-    def log(self, key, data, mask=None):
+    def log(self, key, data, mask=None, post=None):
         if isinstance(data, torch.Tensor):
-            if mask is not None: # we want this to be NaN if the mask is all zeros!
+            if mask is not None:  # we want this to be NaN if the mask is all zeros!
                 data = (data * mask).sum() / mask.expand(data.shape).sum()
             data = data.mean().item()
+            if post is not None:
+                data = post(data)
         self._log[self.prefix + "/" + key].append(data)
 
     def epoch_end(self, trainer, prefix):

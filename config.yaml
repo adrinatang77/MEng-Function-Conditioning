@@ -29,7 +29,7 @@ trainer:
 
 # custom args to OpenProtDataset and elsewhere
 data: 
-    num_workers: 2
+    num_workers: 0
     batch: 32
     crop: 512
     seed: 137

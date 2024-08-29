@@ -2,6 +2,7 @@ import importlib
 import contextlib
 import numpy as np
 
+
 @contextlib.contextmanager
 def temp_seed(seed):
     state = np.random.get_state()
@@ -10,6 +11,7 @@ def temp_seed(seed):
         yield
     finally:
         np.random.set_state(state)
+
 
 def autoimport(name):
     module, name_ = name.rsplit(".", 1)
