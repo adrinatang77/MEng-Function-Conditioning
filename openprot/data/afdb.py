@@ -5,7 +5,6 @@ import foldcomp
 from ..utils import protein
 from ..utils import residue_constants as rc
 
-
 class AFDBDataset(torch.utils.data.Dataset):
     def __init__(self, cfg):
         super().__init__()

@@ -4,30 +4,37 @@ import pytorch_lightning as pl
 import importlib
 import sys
 
-
 from .. import tracks
-from .dummy import DummyDataset
 
-
-class OpenProtDataset(torch.utils.data.IterableDataset):
+def autoimport(name):
+    module, name_ = name.rsplit(".", 1)
+    return getattr(importlib.import_module(module), name_)
+    
+class OpenProtDatasetManager(torch.utils.data.IterableDataset):
     def __init__(self, cfg, rank, world_size):
         super().__init__()
         self.cfg = cfg
         self.rank = rank
         self.world_size = world_size
 
-        self.datasets = []
+        self.datasets = {}
         for name in cfg.datasets:  # autoload the datasets
-            module, name_ = name.rsplit(".", 1)
-            ds = getattr(importlib.import_module(module), name_)(cfg.datasets[name])
-            ds.shuffle()
-            self.datasets.append(ds)
+            ds = autoimport(name)(cfg.datasets[name])
+            self.datasets[name.split('.')[-1]] = ds
 
-        self.tracks = []  # autoload the tracks
+        self.tasks = {}
+        for name in cfg.tasks: # autoload the train tasks
+            task = autoimport(name)(cfg.tasks[name], self.datasets)
+            task.shuffle_datasets()
+            self.tasks[name.split('.')[-1]] = task
+
+        self.task_probs = np.array([cfg.tasks[name].fraction for name in cfg.tasks])
+        assert self.task_probs.sum() == 1
+        
+        self.tracks = {}  # autoload the tracks
         for name in cfg.tracks:
-            module, name_ = name.rsplit(".", 1)
-            track = getattr(importlib.import_module(module), name_)(cfg.tracks[name])
-            self.tracks.append(track)
+            track = autoimport(name)(cfg.tracks[name])
+            self.tracks[name.split('.')[-1]] = track
 
     def crop_or_pad(self, data):
         # crop or pad the protein here
@@ -63,21 +70,26 @@ class OpenProtDataset(torch.utils.data.IterableDataset):
 
         data_tok = {"pad_mask": data["pad_mask"]}
         for track in self.tracks:
-            track.tokenize(data, data_tok)
+            self.tracks[track].tokenize(data, data_tok)
         return data_tok
 
     def __iter__(self):
         worker_info = torch.utils.data.get_worker_info()
         if not worker_info:
             world_size = self.world_size
-            id = self.rank
+            rank = self.rank
 
         else:
             world_size = self.world_size * worker_info.num_workers
-            id = self.rank * worker_info.num_workers + self.id
-        i = id
-        while True:  # very temporary
-            data = self.datasets[0].get_shuffled(i)
-            if not self.cfg.data.overfit:
-                i += world_size
-            yield self.process(data)
+            rank = self.rank * worker_info.num_workers + worker_info.id
+
+        rng = np.random.default_rng(seed=self.cfg.data.seed)
+
+        i = 0
+        while True:
+            task = rng.choice(self.cfg.tasks, p=self.task_probs)
+            task = self.tasks[task.split('.')[-1]]
+            if i % world_size == rank:
+                yield self.process(task.yield_data())
+            task.advance()
+            i += 1

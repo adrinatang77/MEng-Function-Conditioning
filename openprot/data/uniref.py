@@ -4,18 +4,6 @@ import pandas as pd
 import foldcomp
 from ..utils import protein
 from ..utils import residue_constants as rc
-import contextlib
-
-
-@contextlib.contextmanager
-def temp_seed(seed):
-    state = np.random.get_state()
-    np.random.seed(seed)
-    try:
-        yield
-    finally:
-        np.random.set_state(state)
-
 
 class UnirefDataset(torch.utils.data.Dataset):
     def __init__(self, cfg):
@@ -40,11 +28,3 @@ class UnirefDataset(torch.utils.data.Dataset):
             "atom37": np.zeros((len(seqres), 37, 3), np.float32),
             "atom37_mask": np.zeros((len(seqres), 37), np.float32),
         }
-
-    def shuffle(self):
-        self.shuffled_idx = np.arange(len(self))
-        with temp_seed(self.cfg.seed):
-            np.random.shuffle(self.shuffled_idx)
-
-    def get_shuffled(self, idx):
-        return self[self.shuffled_idx[idx]]

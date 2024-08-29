@@ -60,4 +60,4 @@ class SequenceTrack(Track):
 
         self.logger.log("aatype_loss", loss)
         self.logger.log("aatype_perplexity", torch.exp(loss))
-        return loss
+        return loss.mean()

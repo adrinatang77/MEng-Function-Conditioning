@@ -2,7 +2,7 @@ import pytorch_lightning as pl
 from ..utils.logger import Logger
 import torch
 from .model import OpenProtModel
-import importlib
+from ..utils.misc_utils import autoimport
 
 
 class Wrapper(pl.LightningModule):
@@ -75,13 +75,14 @@ class OpenProtWrapper(Wrapper):
         self.model = OpenProtModel(cfg.model)
         self.tracks = []
         for name in cfg.tracks:
-            module, name_ = name.rsplit(".", 1)
-            track = getattr(importlib.import_module(module), name_)(
-                cfg.tracks[name], self._logger
-            )
+            track = autoimport(name)(cfg.tracks[name], self._logger)
             track.add_modules(self.model)
             self.tracks.append(track)
 
+    def get_lr(self):
+        for param_group in self.optimizers().param_groups:
+            return param_group['lr']
+        
     def general_step(self, batch):
         ## corrupt all the tracks
         noisy_batch, target = {}, {}
@@ -97,7 +98,6 @@ class OpenProtWrapper(Wrapper):
 
         ## run it thorugh the model
         out = self.model(inp, batch["pad_mask"])
-        self._logger.log("act_norm", torch.square(out).mean(-1), batch["pad_mask"])
 
         ## place the readouts in a dict
         readout = {}
@@ -107,11 +107,12 @@ class OpenProtWrapper(Wrapper):
         ## compute the loss
         loss = 0
         for track in self.tracks:
-            loss_ = track.compute_loss(readout, target)
-            loss = loss + loss_
+            loss_ = track.compute_loss(readout, target) # scalar
+            loss = loss + track.cfg.loss_weight * loss_
+
+        ## log some metrics
         self._logger.log("loss", loss)
-
-        if loss.mean() != loss.mean():
-            breakpoint()
-
-        return loss.mean()
+        self._logger.log("lr", self.get_lr())
+        self._logger.log("act_norm", torch.square(out).mean(-1), batch["pad_mask"])
+        
+        return loss

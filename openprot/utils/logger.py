@@ -88,7 +88,7 @@ class Logger:
 
     def log(self, key, data, mask=None):
         if isinstance(data, torch.Tensor):
-            if mask is not None:
+            if mask is not None: # we want this to be NaN if the mask is all zeros!
                 data = (data * mask).sum() / mask.expand(data.shape).sum()
             data = data.mean().item()
         self._log[self.prefix + "/" + key].append(data)

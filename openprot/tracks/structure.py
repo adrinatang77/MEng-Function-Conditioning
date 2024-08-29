@@ -104,11 +104,11 @@ class StructureTrack(Track):
             rmsd_loss = self.compute_rmsd_loss(
                 readout["trans"], target["trans"], target["ca_mask"]
             )
-            return rmsd_loss
+            return rmsd_loss.mean()
 
         elif self.cfg.decoder.type == "sinusoidal":
             sinusoidal_loss = self.compute_sinusoidal_loss(readout, target)
-            return sinusoidal_loss
+            return sinusoidal_loss.mean()
 
         else:
             raise Exception(
