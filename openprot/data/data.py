@@ -1,6 +1,6 @@
 import torch
 import numpy as np
-
+from abc import abstractmethod
 
 class OpenProtDataset(torch.utils.data.Dataset):
     def __init__(self, cfg, feats):
@@ -8,6 +8,18 @@ class OpenProtDataset(torch.utils.data.Dataset):
         self.cfg = cfg
         self.feats = feats
         self.setup()
+
+    @abstractmethod
+    def setup(self):
+        NotImplemented
+    
+    @abstractmethod
+    def __len__(self):
+        NotImplemented
+
+    @abstractmethod
+    def __getitem__(self, idx):
+        NotImplemented
 
     def make_data(self, **kwargs):
         return OpenProtData(feats=self.feats, **kwargs)

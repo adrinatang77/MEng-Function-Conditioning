@@ -1,22 +1,30 @@
-class Track:
+from abc import abstractmethod
+
+class OpenProtTrack:
     def __init__(self, cfg, logger=None):
         self.cfg = cfg
         self.logger = logger
 
-    def tokenize(self, batch):
+    @abstractmethod
+    def tokenize(self, data):
         NotImplemented
 
+    @abstractmethod
     def add_modules(self, model):
         NotImplemented
 
-    def corrupt(self, batch):
+    @abstractmethod
+    def corrupt(self, batch, noisy_batch, target):
         NotImplemented
 
-    def embed(self, batch):
+    @abstractmethod
+    def embed(self, model, batch):
         NotImplemented
 
-    def predict(self, batch):
+    @abstractmethod
+    def predict(self, model, out, readout):
         NotImplemented
 
-    def compute_loss(self, cfg, logger):
+    @abstractmethod
+    def compute_loss(self, readout, target, pad_mask):
         NotImplemented

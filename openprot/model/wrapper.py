@@ -3,7 +3,7 @@ from ..utils.logger import Logger
 import torch
 from .model import OpenProtModel
 from ..utils.misc_utils import autoimport
-
+from abc import abstractmethod
 
 class Wrapper(pl.LightningModule):
     def __init__(self, cfg):
@@ -24,8 +24,9 @@ class Wrapper(pl.LightningModule):
         self.validation_step_extra(batch, batch_idx)
         self._logger.step(self.trainer, "val")
 
+    @abstractmethod
     def general_step(self, batch):
-        pass
+        NotImplemented
 
     def validation_step_extra(self, batch, batch_idx):
         pass

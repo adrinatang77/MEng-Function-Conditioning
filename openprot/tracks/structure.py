@@ -1,6 +1,6 @@
 import torch
 import torch.nn as nn
-from .track import Track
+from .track import OpenProtTrack
 from ..utils.geometry import (
     atom37_to_frames,
     atom37_to_torsions,
@@ -35,7 +35,7 @@ def torus_logZ(x):  # x = 1 / sigma^2
     )
 
 
-class StructureTrack(Track):
+class StructureTrack(OpenProtTrack):
 
     def tokenize(self, data):
 

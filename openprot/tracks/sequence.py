@@ -1,14 +1,14 @@
 import torch
 import torch.nn as nn
 import numpy as np
-
-from .track import Track
+from typing import override
+from .track import OpenProtTrack
 from ..utils import residue_constants as rc
 
 MASK_IDX = 21
 
 
-class SequenceTrack(Track):
+class SequenceTrack(OpenProtTrack):
 
     def tokenize(self, data):
         data["aatype"] = np.array(

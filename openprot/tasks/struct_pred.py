@@ -1,9 +1,9 @@
-from .task import Task
+from .task import OpenProtTask
 import numpy as np
 from ..utils import residue_constants as rc
 
 
-class StructurePrediction(Task):
+class StructurePrediction(OpenProtTask):
     def prep_data(self, data, eps=1e-6):
 
         data["struct_mask"] = data["atom37_mask"][..., rc.atom_order["CA"]]
