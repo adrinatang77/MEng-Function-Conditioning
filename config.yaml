@@ -2,19 +2,19 @@ ckpt: null # eventually this will control resuming runs
 validate: false # if true, only validate the model, don't train
 logger:
     # set to true to log to neptune.ai
-    neptune: false
+    neptune: true
     # please change "test" to something unique to your task
     project: openprot/test 
     # will log to workdir and neptune.ai with this name
-    name: struct_test 
+    name: struct_test_scale1
     # if not null, will duplicate stdout and stderr to workdir/{name}/{logfile}
     logfile: null # std.out 
     # if null, will log every epoch, otherwise every this number of steps
-    train_log_freq: 10
+    train_log_freq: 100
     val_log_freq: null 
 trainer:
     accelerator: auto
-    devices: 1
+    devices: 8
     max_epochs: 1
     max_steps: 100000
     enable_progress_bar: false
@@ -90,7 +90,7 @@ tracks:
         decoder:
             type: sinusoidal
             max_period: 100
-            scale: 10.0
+            scale: 1.0
         loss_weight: 1.0
     openprot.tracks.sequence.SequenceTrack:
         corrupt: mask
@@ -111,5 +111,5 @@ optimizer:
         total_steps: 100000
         warmup_steps: 1000
         start_decay: 10000
-        end_factor: 0.01
+        end_factor: 1.00
         

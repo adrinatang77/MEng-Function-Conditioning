@@ -143,10 +143,8 @@ class StructureTrack(Track):
         self.logger.log("struct/loss", nll.sum(-1), mask=mask)
         self.logger.log("struct/toks_sup", mask.sum())
         
-        loss = (nll.sum(-1) * mask).sum(-1) / (eps + mask.sum(-1))
+        return (nll.sum(-1) * mask).mean()
         
-        return loss.mean()
-
     def compute_fape_loss(self, readout, target):
         shape = readout["rots"].shape[:-1] + (3, 3)
         pred_rots = readout["rots"].reshape(*shape)

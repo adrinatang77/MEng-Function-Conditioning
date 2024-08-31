@@ -60,6 +60,5 @@ class SequenceTrack(Track):
         self.logger.log("seq/loss", loss, mask=mask)
         self.logger.log("seq/perplexity", loss, mask=mask, post=np.exp)
         self.logger.log("seq/toks_sup", mask.sum().item())
-        loss = (loss * mask).sum(-1) / (mask.sum(-1) + eps)
+        return (loss * mask).mean()
         
-        return loss.mean()
