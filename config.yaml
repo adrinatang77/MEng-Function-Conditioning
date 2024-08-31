@@ -10,7 +10,7 @@ logger:
     # if not null, will duplicate stdout and stderr to workdir/{name}/{logfile}
     logfile: null # std.out 
     # if null, will log every epoch, otherwise every this number of steps
-    train_log_freq: 100
+    train_log_freq: 10
     val_log_freq: null 
 trainer:
     accelerator: auto
@@ -29,7 +29,7 @@ trainer:
 
 # custom args to OpenProtDataset and elsewhere
 data: 
-    num_workers: 0
+    num_workers: 4
     batch: 32
     crop: 512
     seed: 137
@@ -90,6 +90,7 @@ tracks:
         decoder:
             type: sinusoidal
             max_period: 100
+            scale: 10.0
         loss_weight: 1.0
     openprot.tracks.sequence.SequenceTrack:
         corrupt: mask

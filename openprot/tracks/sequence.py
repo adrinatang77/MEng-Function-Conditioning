@@ -42,6 +42,7 @@ class SequenceTrack(Track):
             )
 
         target["aatype"] = batch["aatype"]
+        self.logger.log("seq/toks", batch["seq_mask"].sum())
 
     def embed(self, model, batch):
         x = model.seq_embed(batch["aatype"])
@@ -56,8 +57,9 @@ class SequenceTrack(Track):
         )
 
         mask = target["seq_supervise"]
-        self.logger.log("aatype_loss", loss, mask=mask)
-        self.logger.log("aatype_perplexity", loss, mask=mask, post=np.exp)
-        self.logger.log("aatype_count", mask.sum().item())
+        self.logger.log("seq/loss", loss, mask=mask)
+        self.logger.log("seq/perplexity", loss, mask=mask, post=np.exp)
+        self.logger.log("seq/toks_sup", mask.sum().item())
         loss = (loss * mask).sum(-1) / (mask.sum(-1) + eps)
+        
         return loss.mean()

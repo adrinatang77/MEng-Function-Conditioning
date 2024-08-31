@@ -73,6 +73,8 @@ class StructureTrack(Track):
         
         target["struct_supervise"] = batch["struct_mask"] * (batch["struct_noise"] > 0)
 
+        self.logger.log("struct/toks", batch["struct_mask"].sum())
+
     def embed(self, model, batch):
         pos_embed = model.trans_embed(batch["frame_trans"])
         pos_embed = torch.where(
@@ -119,7 +121,7 @@ class StructureTrack(Track):
         ang_error = ((gt_ang - ang) + np.pi) % (2 * np.pi) - np.pi
         msd_error = ang_error * self.cfg.decoder.max_period / (2 * np.pi)
         self.logger.log(
-            "trans_rmsd", torch.square(msd_error).sum(-1), mask, post=np.sqrt
+            "struct/rmsd", torch.square(msd_error).sum(-1), mask, post=np.sqrt
         )
 
         norm = torch.sqrt(logits[..., 1::2] ** 2 + logits[..., ::2] ** 2 + 1e-5)
@@ -137,12 +139,12 @@ class StructureTrack(Track):
         # )
         # logz_ = torus_logZ(prec)
         # nll_ = logz_ - logp_
-        self.logger.log("trans_logit_norm", norm, mask=mask[..., None])
-        self.logger.log("trans_loss", nll, mask=mask[..., None])
-        self.logger.log("trans_count", mask.sum().item())
-        loss = (nll.sum(-1) * mask).sum(-1) / (eps + mask.sum())
+        self.logger.log("struct/logit_norm", norm, mask=mask[..., None])
+        self.logger.log("struct/loss", nll.sum(-1), mask=mask)
+        self.logger.log("struct/toks_sup", mask.sum())
         
-
+        loss = (nll.sum(-1) * mask).sum(-1) / (eps + mask.sum(-1))
+        
         return loss.mean()
 
     def compute_fape_loss(self, readout, target):

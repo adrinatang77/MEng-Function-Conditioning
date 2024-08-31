@@ -84,6 +84,9 @@ class OpenProtWrapper(Wrapper):
             return param_group["lr"]
 
     def general_step(self, batch):
+
+        self._logger.log("toks", batch["pad_mask"].sum())
+        
         ## corrupt all the tracks
         noisy_batch, target = {}, {}
         for track in self.tracks:
