@@ -11,6 +11,7 @@ class Task:
         )
         assert self.dataset_probs.sum() == 1
         self.rng = np.random.default_rng(seed=cfg.seed)
+        self.shuffle_datasets()
 
     def shuffle_datasets(self):
         self.shuffled_idx = {}
@@ -37,4 +38,4 @@ class Task:
         idx = self.counter[name]
 
         # print(f"i={i} rank={rank} ds={name} idx={idx} actual={order[idx]}")
-        return self.prep_data(ds[order[idx]])
+        return self.prep_data(ds[order[idx % len(order)]])

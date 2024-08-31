@@ -2,19 +2,19 @@ ckpt: null # eventually this will control resuming runs
 validate: false # if true, only validate the model, don't train
 logger:
     # set to true to log to neptune.ai
-    neptune: true 
+    neptune: false
     # please change "test" to something unique to your task
     project: openprot/test 
     # will log to workdir and neptune.ai with this name
-    name: mlm_test 
+    name: struct_test 
     # if not null, will duplicate stdout and stderr to workdir/{name}/{logfile}
-    logfile: std.out 
+    logfile: null # std.out 
     # if null, will log every epoch, otherwise every this number of steps
     train_log_freq: 100
     val_log_freq: null 
 trainer:
     accelerator: auto
-    devices: 8
+    devices: 1
     max_epochs: 1
     max_steps: 100000
     enable_progress_bar: false
@@ -34,6 +34,17 @@ data:
     crop: 512
     seed: 137
 
+# default features before tokenization
+# each dataset sets MASK
+# each task sets NOISE
+features:
+    atom37: [37, 3]
+    atom37_mask: [37]
+    seq_mask: []
+    seq_noise: []
+    struct_mask: []
+    struct_noise: []
+
 datasets:
     openprot.data.pdb.PDBDataset: 
         path: /data/cb/scratch/datasets/pdb_npz
@@ -45,7 +56,8 @@ datasets:
             
 tasks:
     openprot.tasks.seq_gen.SequenceGeneration:
-        fraction: 1.0
+        fraction: 0.0
+        mask_rate: 0.15
         seed: 137
         datasets:
             UnirefDataset: 
@@ -53,7 +65,7 @@ tasks:
                 start: 0
                 seed: 137
     openprot.tasks.struct_pred.StructurePrediction:
-        fraction: 0.0
+        fraction: 1.0
         seed: 137
         datasets:
             AFDBDataset:

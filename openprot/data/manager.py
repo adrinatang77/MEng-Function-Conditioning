@@ -17,13 +17,12 @@ class OpenProtDatasetManager(torch.utils.data.IterableDataset):
 
         self.datasets = {}
         for name in cfg.datasets:  # autoload the datasets
-            ds = autoimport(name)(cfg.datasets[name])
+            ds = autoimport(name)(cfg.datasets[name], self.cfg.features)
             self.datasets[name.split(".")[-1]] = ds
 
         self.tasks = {}
         for name in cfg.tasks:  # autoload the train tasks
             task = autoimport(name)(cfg.tasks[name], self.datasets)
-            task.shuffle_datasets()
             self.tasks[name.split(".")[-1]] = task
 
         self.task_probs = np.array([cfg.tasks[name].fraction for name in cfg.tasks])
@@ -34,53 +33,14 @@ class OpenProtDatasetManager(torch.utils.data.IterableDataset):
             track = autoimport(name)(cfg.tracks[name])
             self.tracks[name.split(".")[-1]] = track
 
-    def crop_or_pad(self, data):
-        # crop or pad the protein here
-        new_data = {}
-        L = len(data["seqres"])
-        pad_mask = np.zeros(self.cfg.data.crop, dtype=np.float32)
-        pad_mask[: min(self.cfg.data.crop, L)] = 1.0
-        new_data["pad_mask"] = pad_mask
-
-        if L >= self.cfg.data.crop:  # needs crop
-            start = np.random.randint(0, L - self.cfg.data.crop + 1)
-            end = start + self.cfg.data.crop
-            for key in data:
-                if key[0] == "_":
-                    new_data[key] = data[key]
-                else:
-                    new_data[key] = data[key][start:end]
-        elif L < self.cfg.data.crop:  # needs pad
-            pad = self.cfg.data.crop - L
-            for key in data:
-                # unfortunately this is a string, unlike everything else
-                if key == "seqres":
-                    new_data[key] = data[key] + "X" * pad
-                elif key[0] == "_":
-                    new_data[key] = data[key]
-                else:
-                    shape = data[key].shape
-                    dtype = data[key].dtype
-                    new_data[key] = np.concatenate(
-                        [data[key], np.zeros((pad, *shape[1:]), dtype=dtype)]
-                    )
-
-        return new_data
-
     def process(self, data):
         # tokenize the data
-        data = self.crop_or_pad(data)
-
-        # copy pad mask and special attrs
-        data_tok = {"pad_mask": data["pad_mask"]}
-        for key in data:
-            if key[0] == "_":
-                data_tok[key] = data[key]
+        data.crop_or_pad(self.cfg.data.crop)
 
         for track in self.tracks:
-            self.tracks[track].tokenize(data, data_tok)
-
-        return data_tok
+            self.tracks[track].tokenize(data)
+        
+        return data
 
     def __iter__(self):
         worker_info = torch.utils.data.get_worker_info()

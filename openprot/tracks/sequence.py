@@ -10,8 +10,8 @@ MASK_IDX = 21
 
 class SequenceTrack(Track):
 
-    def tokenize(self, data, data_tok):
-        data_tok["aatype"] = np.array(
+    def tokenize(self, data):
+        data["aatype"] = np.array(
             [rc.restype_order.get(c, rc.unk_restype_index) for c in data["seqres"]]
         )
 
@@ -24,8 +24,8 @@ class SequenceTrack(Track):
         if self.cfg.corrupt == "mask":
             tokens = batch["aatype"]
 
-            mask = torch.rand(tokens.shape, device=tokens.device) < self.cfg.mask_rate
-            mask = mask & batch["_seq_noise"].bool()[:, None] & batch["pad_mask"].bool()
+            mask = batch["seq_noise"].bool()
+            
             rand = torch.rand(tokens.shape, device=tokens.device)
             randaa = torch.randint(0, 21, tokens.shape, device=tokens.device)
 
@@ -34,7 +34,7 @@ class SequenceTrack(Track):
             inp = torch.where((rand > 0.9) & mask, randaa, inp)
 
             noisy_batch["aatype"] = inp
-            target["seq_loss_mask"] = mask
+            target["seq_supervise"] = (batch["seq_noise"] > 0) * batch["seq_mask"]
 
         else:
             raise Exception(
@@ -55,7 +55,7 @@ class SequenceTrack(Track):
             readout["aatype"].transpose(1, 2), target["aatype"], reduction="none"
         )
 
-        mask = target["seq_loss_mask"]
+        mask = target["seq_supervise"]
         self.logger.log("aatype_loss", loss, mask=mask)
         self.logger.log("aatype_perplexity", loss, mask=mask, post=np.exp)
         self.logger.log("aatype_count", mask.sum().item())

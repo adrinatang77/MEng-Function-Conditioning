@@ -4,14 +4,12 @@ import pandas as pd
 import foldcomp
 from ..utils import protein
 from ..utils import residue_constants as rc
+from .data import OpenProtDataset
 
-
-class UnirefDataset(torch.utils.data.Dataset):
-    def __init__(self, cfg):
-        super().__init__()
-        self.cfg = cfg
-        self.db = open(cfg.path)
-        self.index = np.load(cfg.index)
+class UnirefDataset(OpenProtDataset):
+    def setup(self):
+        self.db = open(self.cfg.path)
+        self.index = np.load(self.cfg.index)
 
     def __len__(self):
         return len(self.index) - 1  # unfortunately we have to skip the last one
@@ -24,8 +22,7 @@ class UnirefDataset(torch.utils.data.Dataset):
         lines = item.split("\n")
         header, lines = lines[0], lines[1:]
         seqres = "".join(lines)
-        return {
-            "seqres": seqres,
-            "atom37": np.zeros((len(seqres), 37, 3), np.float32),
-            "atom37_mask": np.zeros((len(seqres), 37), np.float32),
-        }
+        return self.make_data(
+            seqres=seqres,
+            seq_mask=np.ones(len(seqres))
+        )

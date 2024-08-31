@@ -4,8 +4,8 @@ import numpy as np
 
 class SequenceGeneration(Task):
     def prep_data(self, data):
-        data["_seq_noise"] = 1
-        data["_seq_supervise"] = 1
-        data["_struct_noise"] = 0
-        data["_struct_supervise"] = 0
+
+        data['seq_noise'] = (np.random.rand(len(data)) < self.cfg.mask_rate).astype(np.float32)
+        data['seq_noise'] *= data['seq_mask']
+        
         return data
