@@ -21,7 +21,7 @@ class OpenProtData(dict):
             else:
                 self[feat] = np.zeros((len(self["seqres"]), *shape), dtype=np.float32)
 
-    def crop_or_pad(self, crop_len):
+    def crop(self, crop_len):
         L = len(self["seqres"])
         
         if L >= crop_len:  # needs crop
@@ -29,8 +29,11 @@ class OpenProtData(dict):
             end = start + crop_len
             for key in self:
                 self[key] = self[key][start:end]
-        elif L < crop_len:  # needs pad
-            pad = crop_len - L
+
+    def pad(self, pad_len):
+        L = len(self["seqres"])
+        if L < pad_len:  # needs pad
+            pad = pad_len - L
             for key in self:
                 # unfortunately this is a string, unlike everything else
                 if key == "seqres":
@@ -42,7 +45,6 @@ class OpenProtData(dict):
                         [self[key], np.zeros((pad, *shape[1:]), dtype=dtype)]
                     )
         
-        pad_mask = np.zeros(crop_len, dtype=np.float32)
-        pad_mask[: min(crop_len, L)] = 1.0
+        pad_mask = np.zeros(pad_len, dtype=np.float32)
+        pad_mask[: min(pad_len, L)] = 1.0
         self["pad_mask"] = pad_mask
-        

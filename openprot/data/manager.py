@@ -34,8 +34,8 @@ class OpenProtDatasetManager(torch.utils.data.IterableDataset):
             self.tracks[name.split(".")[-1]] = track
 
     def process(self, data):
-        # tokenize the data
-        data.crop_or_pad(self.cfg.data.crop)
+        
+        data.pad(self.cfg.data.crop)
 
         for track in self.tracks:
             self.tracks[track].tokenize(data)
@@ -59,6 +59,6 @@ class OpenProtDatasetManager(torch.utils.data.IterableDataset):
             task = rng.choice(self.cfg.tasks, p=self.task_probs)
             task = self.tasks[task.split(".")[-1]]
             if i % world_size == rank:
-                yield self.process(task.yield_data())
+                yield self.process(task.yield_data(crop=self.cfg.data.crop))
             task.advance()
             i += 1

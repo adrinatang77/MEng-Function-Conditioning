@@ -30,7 +30,7 @@ class Task:
         self.counter[self.curr_ds] += 1
         self.curr_ds = self.rng.choice(self.cfg.datasets, p=self.dataset_probs)
 
-    def yield_data(self):
+    def yield_data(self, crop=None):
 
         name = self.curr_ds
         ds = self.datasets[name]
@@ -38,4 +38,8 @@ class Task:
         idx = self.counter[name]
 
         # print(f"i={i} rank={rank} ds={name} idx={idx} actual={order[idx]}")
-        return self.prep_data(ds[order[idx % len(order)]])
+        data = ds[order[idx % len(order)]]
+        if crop is not None:
+            data.crop(crop)
+            
+        return self.prep_data(data)
