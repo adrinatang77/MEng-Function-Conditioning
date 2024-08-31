@@ -62,15 +62,13 @@ class StructureTrack(Track):
     def corrupt(self, batch, noisy_batch, target):
 
         noisy_batch["frame_trans"] = torch.where(
-            batch["struct_noise"][...,None] > 0,
-            0.0,
-            batch["frame_trans"]
+            batch["struct_noise"][..., None] > 0, 0.0, batch["frame_trans"]
         )
         target["frame_trans"] = batch["frame_trans"]
 
         noisy_batch["struct_mask"] = batch["struct_mask"]
         noisy_batch["struct_noise"] = batch["struct_noise"]
-        
+
         target["struct_supervise"] = batch["struct_mask"] * (batch["struct_noise"] > 0)
 
         self.logger.log("struct/toks", batch["struct_mask"].sum())
@@ -80,12 +78,12 @@ class StructureTrack(Track):
         pos_embed = torch.where(
             batch["struct_mask"][..., None].bool(),
             pos_embed,
-            model.trans_null[None,None],
+            model.trans_null[None, None],
         )
         pos_embed = torch.where(
             batch["struct_noise"][..., None] == 1.0,
-            model.trans_mask[None,None],
-            pos_embed
+            model.trans_mask[None, None],
+            pos_embed,
         )
         return pos_embed
 
@@ -142,9 +140,9 @@ class StructureTrack(Track):
         self.logger.log("struct/logit_norm", norm, mask=mask[..., None])
         self.logger.log("struct/loss", nll.sum(-1), mask=mask)
         self.logger.log("struct/toks_sup", mask.sum())
-        
+
         return (nll.sum(-1) * mask).sum() / pad_mask.sum()
-        
+
     def compute_fape_loss(self, readout, target):
         shape = readout["rots"].shape[:-1] + (3, 3)
         pred_rots = readout["rots"].reshape(*shape)

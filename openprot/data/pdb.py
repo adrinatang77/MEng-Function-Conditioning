@@ -3,8 +3,9 @@ import numpy as np
 import pandas as pd
 from .data import OpenProtDataset
 
+
 class PDBDataset(OpenProtDataset):
-    
+
     def setup(self):
         self.df = pd.read_csv(f"{self.cfg.path}/pdb_chains.csv", index_col="name")
 

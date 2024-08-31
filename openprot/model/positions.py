@@ -15,7 +15,7 @@ class PositionDecoder(nn.Module):
         super().__init__()
         self.cfg = cfg
         self.dim = dim
-        
+
         if cfg.type == "linear":
             self.decoder = nn.Linear(dim, 3)
         elif cfg.type == "sinusoidal":

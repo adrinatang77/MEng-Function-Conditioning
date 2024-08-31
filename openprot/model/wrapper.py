@@ -86,7 +86,7 @@ class OpenProtWrapper(Wrapper):
     def general_step(self, batch):
 
         self._logger.log("toks", batch["pad_mask"].sum())
-        
+
         ## corrupt all the tracks
         noisy_batch, target = {}, {}
         for track in self.tracks:
@@ -110,7 +110,7 @@ class OpenProtWrapper(Wrapper):
         loss = 0
         for track in self.tracks:
             # pass in the batch because of the metadata
-            loss_ = track.compute_loss(readout, target, batch['pad_mask'])
+            loss_ = track.compute_loss(readout, target, batch["pad_mask"])
             loss = loss + track.cfg.loss_weight * loss_
 
         ## log some metrics

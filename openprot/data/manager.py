@@ -34,12 +34,12 @@ class OpenProtDatasetManager(torch.utils.data.IterableDataset):
             self.tracks[name.split(".")[-1]] = track
 
     def process(self, data):
-        
+
         data.pad(self.cfg.data.crop)
 
         for track in self.tracks:
             self.tracks[track].tokenize(data)
-        
+
         return data
 
     def __iter__(self):

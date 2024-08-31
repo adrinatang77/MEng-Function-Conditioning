@@ -25,7 +25,7 @@ class SequenceTrack(Track):
             tokens = batch["aatype"]
 
             mask = batch["seq_noise"].bool()
-            
+
             rand = torch.rand(tokens.shape, device=tokens.device)
             randaa = torch.randint(0, 21, tokens.shape, device=tokens.device)
 
@@ -61,4 +61,3 @@ class SequenceTrack(Track):
         self.logger.log("seq/perplexity", loss, mask=mask, post=np.exp)
         self.logger.log("seq/toks_sup", mask.sum().item())
         return (loss * mask).sum() / pad_mask.sum()
-        

@@ -41,5 +41,5 @@ class Task:
         data = ds[order[idx % len(order)]]
         if crop is not None:
             data.crop(crop)
-            
+
         return self.prep_data(data)

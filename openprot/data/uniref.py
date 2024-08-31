@@ -6,6 +6,7 @@ from ..utils import protein
 from ..utils import residue_constants as rc
 from .data import OpenProtDataset
 
+
 class UnirefDataset(OpenProtDataset):
     def setup(self):
         self.db = open(self.cfg.path)
@@ -22,7 +23,4 @@ class UnirefDataset(OpenProtDataset):
         lines = item.split("\n")
         header, lines = lines[0], lines[1:]
         seqres = "".join(lines)
-        return self.make_data(
-            seqres=seqres,
-            seq_mask=np.ones(len(seqres))
-        )
+        return self.make_data(seqres=seqres, seq_mask=np.ones(len(seqres)))
