@@ -51,7 +51,7 @@ class SequenceTrack(Track):
     def predict(self, model, out, readout):
         readout["aatype"] = model.seq_out(out)
 
-    def compute_loss(self, readout, target, eps=1e-6):
+    def compute_loss(self, readout, target, pad_mask, eps=1e-6):
         loss = torch.nn.functional.cross_entropy(
             readout["aatype"].transpose(1, 2), target["aatype"], reduction="none"
         )
@@ -60,5 +60,5 @@ class SequenceTrack(Track):
         self.logger.log("seq/loss", loss, mask=mask)
         self.logger.log("seq/perplexity", loss, mask=mask, post=np.exp)
         self.logger.log("seq/toks_sup", mask.sum().item())
-        return (loss * mask).mean()
+        return (loss * mask).sum() / pad_mask.sum()
         

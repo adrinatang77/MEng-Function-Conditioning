@@ -110,7 +110,7 @@ class OpenProtWrapper(Wrapper):
         loss = 0
         for track in self.tracks:
             # pass in the batch because of the metadata
-            loss_ = track.compute_loss(readout, target)
+            loss_ = track.compute_loss(readout, target, batch['pad_mask'])
             loss = loss + track.cfg.loss_weight * loss_
 
         ## log some metrics

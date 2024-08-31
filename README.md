@@ -31,21 +31,52 @@ Because wandb is extremely laggy, we will use [neptune.ai](https://neptune.ai/).
 
 Numerous other settings are controlled in `config.yaml` which have been commented there.
 
-## Key Abstractions
+## Workflow Abstraction
 
-We are training a multimodal model with many datasets, many pretraining tasks, and many modalities/tasks. We want the ability to easily swap in and out any of these, make adjustments, and resume and reproduce runs. We want to do all this with minimal friction and technical debt. Thus, the abstractions can get complicated, and are worth going over in some detail here:
-
-**At a high level**, we have a three key abstraction layers:
+We have four abstraction layers:
 * The **dataset** layer corresponds to individual data sources, i.e., AFDB, PDB, etc
 * The **task** layer corresponds to specific training objectives, i.e., inverse folding, structure prediction
 * The **track** layer corresponds to each data modality, and is responsible for noising, embedding (into the model), predicting (from the model), and supervising data modalities.
+* The **model** is the model itself.
 
-Because each task can source from many datasets, and determines which tracks are noised/supervised, it is helpful to think of **tasks** as the central abstraction.
 
-Each training batch will sample a mix of tasks and therefore datasets, and will be supervised on a mix of tracks. We need to serve these batches in a way that accounts for multiple ranks and multiple dataloaders per rank, but is reproducible and stateful (so that we can resume runs where we started, even if the configuration changes).
+To understand the repo, let's walk through the workflow abstraction by following the lifecycle of a training example:
 
-**Datasets** are objects that map from an integer index to a training example via `__getitem__`. This map should be DETERMINISTIC and should NOT be shuffled. (They do not have to be 100% deterministic---each entry may correspond to a sequence cluster for example---but should be semantically the same for each integer index).
+* All training examples originate from some `OpenProtDataset` which map from an integer index to a training example via `__getitem__`. This map should be deterministic and is not shuffled. The dataset defines its own `setup` based on its fields specified in `config.yaml`.
+* The training examples are of class `OpenProtData`, whose constructor requires `seqres` (since all examples have it) but will fill in default values for all other unspecified features. The features will be zero-initialized with per-token shapes as specified in `config.yaml`. `OpenProtDataset` objects should override the approriate defaults when returning the data.
 
-**Tasks** are ITERABLE objects that yield a stream of training examples, sampled from their assigned datasets and labeled with information that will dictate the downstream noising and supervision masks. To do this in parallel, instantiations of task objects must know their global rank, which is obtained by passing in `rank` and `world_size` at construction and fetching the dataloader `worker_info` inside of `__iter__`. To do this statefully, tasks will maintain a shuffled **iteration order** for each dataset controlled by a deterministic `seed` and for which the iteration starts at the specific `start` for each dataset and advances according to the total world size. The dataset to take from upon each `yield` is sampled randomly.
+> &#x26A0; Be sure to define/use features in a way where default 0 makes sense.
 
-> To be continued...
+> &#x26A0; All features must be float32 arrays (except for `seqres`) and per-token, but we may revisit this.
+
+* Canonically, every track will have a `_mask` and `_noise` feature which indicate if the track is present and the noise level. `OpenProtDataset` objects should set the `_mask`.
+
+> &#x26A0; All of our masks are 1 if the data is PRESENT because we use masks extensively to reduce loss tensors!
+
+* `Task` objects are responsible for keeping a mix of datasets and sampling from them with probabilities specified in `config.yaml`. Upon fetching the data, they crop the data before executing task-specific preprocessing in `prep_data`. The preprocessing should populate the appropriate `_noise` features so that we determine what we are going to mask, noise, and supervise.
+
+> &#x26A0; We crop here because the preprocessing may be crop-dependent. In the future, there may be more general data transforms as part of the task preprocessing.
+
+* The `OpenProtDataManager` samples from a mix of tasks with probabilities specified in `config.yaml`. This class further processes the data by padding it to a fixed length which introduces a special `pad_mask` feature.
+
+* The `OpenProtDataManager` also maintains the list of `Track`s and asks each to `tokenize` the data, which introduces additional numpy arrays to the data.
+
+* PyTorch Lightning now automatically batches our data and moves it the GPU; everything that is not an `np.ndarray` or `torch.Tensor` is lost. The `OpenProtWrapper` maintains a list of `Track`s and the model itself and manages the rest of the training workflow.
+
+> &#x26A0; We may consider moving the tokenization step here.
+
+* The batch is noised by calling `corrupt` on each track. In doing so, the track places tensors that will be embedded into the model in `noisy_batch`, and tensors needed to compute the loss in `target`. This must include a `_supervise` mask.
+
+* The tracks `embed` the data from `noisy_batch` into an embedding tensor. Tracks should define a `null` and `mask` token for residues that are not present or at maximum noise, respectively. Each track must define `add_modules` to add the necessary embedding (and prediction) layers to the model.
+
+> &#x26A0; Note that every track sees every data point at each step, regardless of whether the track is present. This is why the `_mask` is crucial!
+
+* The batch passes through the model, masked by `pad_mask`.
+
+* The tracks make a prediction and place them in the `readout`.
+
+* The tasks then run `compute_loss` using the `readout` and `target`, which are weighted to obtain the final loss. The loss should be computed per-token, and logged with the `loss_mask`, so that we monitor a per-supervised-token `track/loss`. We also log `track/toks` and `track/sup_toks` as the sum of the `_mask` and `_supervise` masks. 
+
+> &#x26A0; The return value of each track's `compute_loss` must be a **scalar mean** over all **non-pad tokens in the batch**. This is so that the loss is weighted by the fraction of tokens that are supervised in that track (to avoid spiky token weights if some tracks are rarely supervised). Thus, the weight in `config.yaml` should be regarded as a per-supervised-token weight.
+
+> &#x26A0; We may add more systematic logging to have per-dataset, per-task metrics.
