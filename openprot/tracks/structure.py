@@ -91,7 +91,7 @@ class StructureTrack(Track):
         readout["trans"] = model.trans_out(out)
         # readout["rots"] = model.rots_out(out)
 
-    def compute_loss(self, readout, target):
+    def compute_loss(self, readout, target, pad_mask):
 
         if self.cfg.decoder.type == "linear":
             NotImplemented
@@ -101,7 +101,7 @@ class StructureTrack(Track):
             return rmsd_loss.mean()
 
         elif self.cfg.decoder.type == "sinusoidal":
-            return self.compute_sinusoidal_loss(readout, target)
+            return self.compute_sinusoidal_loss(readout, target, pad_mask)
 
         else:
             raise Exception(
@@ -110,7 +110,7 @@ class StructureTrack(Track):
 
         # fape_loss = self.compute_fape_loss(readout, target)
 
-    def compute_sinusoidal_loss(self, readout, target, eps=1e-6):
+    def compute_sinusoidal_loss(self, readout, target, pad_mask, eps=1e-6):
 
         logits = readout["trans"]
         mask = target["struct_supervise"]
