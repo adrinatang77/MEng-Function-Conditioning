@@ -26,9 +26,9 @@ class PositionDecoder(nn.Module):
 
     def forward(self, x):
         if self.cfg.type == "linear":
-            return self.decoder(x)
+            return self.decoder(x) * self.cfg.scale
         elif self.cfg.type == "sinusoidal":
-            return self.decoder(x)
+            return self.decoder(x) * self.cfg.scale
         else:
             raise Exception(f"PositionDecoder type {self.cfg.type} not recognized")
 

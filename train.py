@@ -20,7 +20,7 @@ import os
 import pytorch_lightning as pl
 from pytorch_lightning.callbacks import ModelCheckpoint, ModelSummary
 
-from openprot.data import OpenProtDataset
+from openprot.data.manager import OpenProtDatasetManager
 from openprot.model.wrapper import OpenProtWrapper
 
 
@@ -38,7 +38,7 @@ trainer = pl.Trainer(
     ],
 )
 
-dataset = OpenProtDataset(cfg, trainer.global_rank, trainer.world_size)
+dataset = OpenProtDatasetManager(cfg, trainer.global_rank, trainer.world_size)
 
 loader = torch.utils.data.DataLoader(
     dataset, batch_size=cfg.data.batch, num_workers=cfg.data.num_workers

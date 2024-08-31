@@ -1,13 +1,13 @@
 import torch
 import numpy as np
 import pandas as pd
+from .data import OpenProtDataset
 
 
-class PDBDataset(torch.utils.data.Dataset):
-    def __init__(self, cfg):
-        super().__init__()
-        self.cfg = cfg
-        self.df = pd.read_csv(f"{cfg.path}/pdb_chains.csv", index_col="name")
+class PDBDataset(OpenProtDataset):
+
+    def setup(self):
+        self.df = pd.read_csv(f"{self.cfg.path}/pdb_chains.csv", index_col="name")
 
     def __len__(self):
         return len(self.df)
@@ -17,8 +17,10 @@ class PDBDataset(torch.utils.data.Dataset):
         prot = dict(
             np.load(f"{self.cfg.path}/{name[1:3]}/{name}.npz", allow_pickle=True)
         )
-        return {
-            "seqres": self.df.seqres[name],
-            "atom37": prot["all_atom_positions"],
-            "atom37_mask": prot["all_atom_mask"],
-        }
+        seqres = self.df.seqres[name]
+        return self.make_data(
+            seqres=seqres,
+            seq_mask=np.ones(len(seqres)),
+            atom37=prot["all_atom_positions"],
+            atom37_mask=prot["all_atom_mask"],
+        )

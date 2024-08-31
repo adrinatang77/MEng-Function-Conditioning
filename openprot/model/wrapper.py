@@ -2,7 +2,7 @@ import pytorch_lightning as pl
 from ..utils.logger import Logger
 import torch
 from .model import OpenProtModel
-import importlib
+from ..utils.misc_utils import autoimport
 
 
 class Wrapper(pl.LightningModule):
@@ -42,6 +42,30 @@ class Wrapper(pl.LightningModule):
             filter(lambda p: p.requires_grad, self.model.parameters()),
             lr=self.cfg.optimizer.lr,
         )
+
+        warmup = torch.optim.lr_scheduler.LinearLR(
+            optimizer,
+            start_factor=1e-12,
+            end_factor=1.0,
+            total_iters=self.cfg.optimizer.scheduler.warmup_steps,
+        )
+        decay = torch.optim.lr_scheduler.LinearLR(
+            optimizer,
+            start_factor=1.0,
+            end_factor=self.cfg.optimizer.scheduler.end_factor,
+            total_iters=int(0.9 * self.cfg.optimizer.scheduler.total_steps),
+        )
+        scheduler = torch.optim.lr_scheduler.SequentialLR(
+            optimizer,
+            schedulers=[warmup, decay],
+            milestones=[self.cfg.optimizer.scheduler.start_decay],
+        )
+
+        return {
+            "optimizer": optimizer,
+            "lr_scheduler": {"scheduler": scheduler, "interval": "step"},
+        }
+
         return optimizer
 
 
@@ -51,17 +75,20 @@ class OpenProtWrapper(Wrapper):
         self.model = OpenProtModel(cfg.model)
         self.tracks = []
         for name in cfg.tracks:
-            module, name_ = name.rsplit(".", 1)
-            track = getattr(importlib.import_module(module), name_)(
-                cfg.tracks[name], self._logger
-            )
+            track = autoimport(name)(cfg.tracks[name], self._logger)
             track.add_modules(self.model)
             self.tracks.append(track)
 
+    def get_lr(self):
+        for param_group in self.optimizers().param_groups:
+            return param_group["lr"]
+
     def general_step(self, batch):
+
+        self._logger.log("toks", batch["pad_mask"].sum())
+
         ## corrupt all the tracks
         noisy_batch, target = {}, {}
-        target = {"pad_mask": batch["pad_mask"]}
         for track in self.tracks:
             track.corrupt(batch, noisy_batch, target)
 
@@ -82,8 +109,13 @@ class OpenProtWrapper(Wrapper):
         ## compute the loss
         loss = 0
         for track in self.tracks:
-            loss_ = track.compute_loss(readout, target)
-            loss = loss + loss_
-        self._logger.log("loss", loss)
+            # pass in the batch because of the metadata
+            loss_ = track.compute_loss(readout, target, batch["pad_mask"])
+            loss = loss + track.cfg.loss_weight * loss_
 
-        return loss.mean()
+        ## log some metrics
+        self._logger.log("loss", loss)
+        self._logger.log("lr", self.get_lr())
+        self._logger.log("act_norm", torch.square(out).mean(-1), batch["pad_mask"])
+
+        return loss

@@ -4,13 +4,13 @@ import pandas as pd
 import foldcomp
 from ..utils import protein
 from ..utils import residue_constants as rc
+from .data import OpenProtDataset
 
 
-class AFDBDataset(torch.utils.data.Dataset):
-    def __init__(self, cfg):
-        super().__init__()
-        self.cfg = cfg
-        self.db = foldcomp.open(cfg.path)
+class AFDBDataset(OpenProtDataset):
+
+    def setup(self):
+        self.db = foldcomp.open(self.cfg.path)
 
     def __len__(self):
         return len(self.db)
@@ -19,8 +19,9 @@ class AFDBDataset(torch.utils.data.Dataset):
         name, pdb = self.db[idx]
         prot = protein.from_pdb_string(pdb)
         seqres = "".join([rc.restypes_with_x[c] for c in prot.aatype])
-        return {
-            "seqres": seqres,
-            "atom37": prot.atom_positions.astype(np.float32),
-            "atom37_mask": prot.atom_mask.astype(np.float32),
-        }
+        return self.make_data(
+            seqres=seqres,
+            seq_mask=np.ones(len(seqres)),
+            atom37=prot.atom_positions.astype(np.float32),
+            atom37_mask=prot.atom_mask.astype(np.float32),
+        )
