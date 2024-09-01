@@ -1,5 +1,6 @@
 from abc import abstractmethod
 
+
 class OpenProtTrack:
     def __init__(self, cfg, logger=None):
         self.cfg = cfg

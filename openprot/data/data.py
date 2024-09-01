@@ -2,6 +2,7 @@ import torch
 import numpy as np
 from abc import abstractmethod
 
+
 class OpenProtDataset(torch.utils.data.Dataset):
     def __init__(self, cfg, feats=None, logger=None):
         super().__init__()
@@ -12,7 +13,7 @@ class OpenProtDataset(torch.utils.data.Dataset):
     @abstractmethod
     def setup(self):
         NotImplemented
-    
+
     @abstractmethod
     def __len__(self):
         NotImplemented
@@ -38,8 +39,8 @@ class OpenProtData(dict):
                 self[feat] = np.zeros((len(self["seqres"]), *shape), dtype=np.float32)
 
     def keys_to_crop(self):
-        return [key for key in self if key != 'name']
-        
+        return [key for key in self if key != "name"]
+
     def crop(self, crop_len):
         L = len(self["seqres"])
 
@@ -48,8 +49,8 @@ class OpenProtData(dict):
             end = start + crop_len
             for key in self.keys_to_crop():
                 self[key] = self[key][start:end]
-        return self 
-        
+        return self
+
     def pad(self, pad_len):
         L = len(self["seqres"])
         if pad_len and L < pad_len:  # needs pad
@@ -64,7 +65,7 @@ class OpenProtData(dict):
                     self[key] = np.concatenate(
                         [self[key], np.zeros((pad, *shape[1:]), dtype=dtype)]
                     )
-        
+
         pad_len = pad_len or L
         pad_mask = np.zeros(pad_len, dtype=np.float32)
         pad_mask[: min(pad_len, L)] = 1.0

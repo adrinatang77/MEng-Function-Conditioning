@@ -6,6 +6,7 @@ from ..utils import protein
 from ..utils import residue_constants as rc
 from .data import OpenProtDataset
 
+
 class AFDBDataset(OpenProtDataset):
 
     def setup(self):

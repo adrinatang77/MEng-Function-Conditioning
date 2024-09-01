@@ -44,7 +44,9 @@ train_loader = torch.utils.data.DataLoader(
 )
 
 evals = OpenProtEvalManager(cfg, trainer.global_rank, trainer.world_size)
-eval_loader = torch.utils.data.DataLoader(evals, batch_size=1, num_workers=0, shuffle=False)
+eval_loader = torch.utils.data.DataLoader(
+    evals, batch_size=1, num_workers=0, shuffle=False
+)
 model = OpenProtWrapper(cfg)
 
 if cfg.validate:

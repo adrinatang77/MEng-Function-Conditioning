@@ -381,7 +381,7 @@ def to_pdb(prot: Protein) -> str:
         for atom_name, pos, mask, b_factor in zip(
             atom_types, atom_positions[i], atom_mask[i], b_factors[i]
         ):
-            
+
             if mask < 0.5:
                 continue
 
@@ -416,7 +416,7 @@ def to_pdb(prot: Protein) -> str:
             if i != n - 1 and chain_index[i + 1] != prev_chain_index:
                 should_terminate = True
                 prev_chain_index = chain_index[i + 1]
-        
+
         if should_terminate:
             # Close the chain.
             chain_end = "TER"

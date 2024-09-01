@@ -4,8 +4,9 @@ import numpy as np
 import pkgutil
 import inspect
 
+
 def import_subclasses(package, path, cls):
-    """ Import all submodules of a module, recursively
+    """Import all submodules of a module, recursively
 
     :param package_name: Package name
     :type package_name: str
@@ -13,8 +14,8 @@ def import_subclasses(package, path, cls):
     """
     result = {}
     for _, name, _ in pkgutil.walk_packages(path):
-        
-        module = importlib.import_module(package + '.' + name)
+
+        module = importlib.import_module(package + "." + name)
         for key, var in module.__dict__.items():
             if inspect.isclass(var) and issubclass(var, cls):
                 result[key] = var

@@ -2,6 +2,7 @@ import numpy as np
 from ..utils.misc_utils import temp_seed
 from abc import abstractmethod
 
+
 class OpenProtTask:
     def __init__(self, cfg, datasets):
         self.cfg = cfg
@@ -29,7 +30,7 @@ class OpenProtTask:
     @abstractmethod
     def prep_data(self, data):
         NotImplemented
-    
+
     def advance(self):
         self.counter[self.curr_ds] += 1
         self.curr_ds = self.rng.choice(self.cfg.datasets, p=self.dataset_probs)
@@ -47,4 +48,3 @@ class OpenProtTask:
             data.crop(crop)
 
         return self.prep_data(data)
-        

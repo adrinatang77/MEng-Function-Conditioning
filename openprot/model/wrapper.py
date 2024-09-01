@@ -6,6 +6,7 @@ from abc import abstractmethod
 from ..utils.misc_utils import autoimport
 import os
 
+
 class Wrapper(pl.LightningModule):
     def __init__(self, cfg):
         super().__init__()
@@ -77,13 +78,17 @@ class OpenProtWrapper(Wrapper):
         self.model = OpenProtModel(cfg.model)
         self.tracks = {}
         for name in cfg.tracks:
-            track = autoimport(f"openprot.tracks.{name}")(cfg.tracks[name], self._logger)
+            track = autoimport(f"openprot.tracks.{name}")(
+                cfg.tracks[name], self._logger
+            )
             track.add_modules(self.model)
             self.tracks[name] = track
-            
+
         self.evals = {}
         for name in cfg.evals:
-            eval_ = autoimport(f"openprot.evals.{name}")(cfg.evals[name], logger=self._logger)
+            eval_ = autoimport(f"openprot.evals.{name}")(
+                cfg.evals[name], logger=self._logger
+            )
             self.evals[name] = eval_
 
     def get_lr(self):
@@ -107,7 +112,6 @@ class OpenProtWrapper(Wrapper):
 
         return out, readout
 
-    
     def general_step(self, batch):
 
         self._logger.log("toks", batch["pad_mask"].sum())
@@ -119,7 +123,7 @@ class OpenProtWrapper(Wrapper):
 
         noisy_batch["pad_mask"] = batch["pad_mask"]
         out, readout = self.forward(noisy_batch)
-        
+
         ## compute the loss
         loss = 0
         for track in self.tracks.values():
@@ -135,6 +139,8 @@ class OpenProtWrapper(Wrapper):
         return loss
 
     def validation_step_extra(self, batch, batch_idx):
-        name = batch['eval'][0]
-        savedir = f'{os.environ["MODEL_DIR"]}/eval_step{self.trainer.global_step}/{name}'
+        name = batch["eval"][0]
+        savedir = (
+            f'{os.environ["MODEL_DIR"]}/eval_step{self.trainer.global_step}/{name}'
+        )
         self.evals[name].run_batch(self, batch, savedir=savedir, logger=self._logger)
