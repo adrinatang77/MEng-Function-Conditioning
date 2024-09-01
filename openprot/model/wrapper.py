@@ -5,12 +5,13 @@ from .model import OpenProtModel
 from abc import abstractmethod
 from ..utils.misc_utils import autoimport
 import os
+from ..tracks.manager import OpenProtTrackManager
 
 
 class Wrapper(pl.LightningModule):
     def __init__(self, cfg):
         super().__init__()
-        self.save_hyperparameters()
+        self.save_hyperparameters("cfg")
         self.cfg = cfg
         self._logger = Logger(cfg.logger)
 
@@ -73,23 +74,14 @@ class Wrapper(pl.LightningModule):
 
 
 class OpenProtWrapper(Wrapper):
-    def __init__(self, cfg):
+    def __init__(self, cfg, tracks: OpenProtTrackManager, evals: dict):
         super().__init__(cfg)
         self.model = OpenProtModel(cfg.model)
-        self.tracks = {}
-        for name in cfg.tracks:
-            track = autoimport(f"openprot.tracks.{name}")(
-                cfg.tracks[name], self._logger
-            )
-            track.add_modules(self.model)
-            self.tracks[name] = track
+        self.tracks = tracks
 
-        self.evals = {}
-        for name in cfg.evals:
-            eval_ = autoimport(f"openprot.evals.{name}")(
-                cfg.evals[name], logger=self._logger
-            )
-            self.evals[name] = eval_
+        tracks.add_modules(self.model)
+
+        self.evals = evals
 
     def get_lr(self):
         for param_group in self.optimizers().param_groups:
@@ -97,18 +89,13 @@ class OpenProtWrapper(Wrapper):
 
     def forward(self, noisy_batch):
         ## embed the tracks into an input and conditioning vector
-        inp = 0
-        for track in self.tracks.values():
-            x = track.embed(self.model, noisy_batch)
-            inp = inp + x
+        inp = self.tracks.embed(self.model, noisy_batch)
 
         ## run it thorugh the model
         out = self.model(inp, noisy_batch["pad_mask"])
 
         ## place the readouts in a dict
-        readout = {}
-        for track in self.tracks.values():
-            track.predict(self.model, out, readout)
+        readout = self.tracks.readout(self.model, out)
 
         return out, readout
 
@@ -117,19 +104,12 @@ class OpenProtWrapper(Wrapper):
         self._logger.log("toks", batch["pad_mask"].sum())
 
         ## corrupt all the tracks
-        noisy_batch, target = {}, {}
-        for track in self.tracks.values():
-            track.corrupt(batch, noisy_batch, target)
+        noisy_batch, target = self.tracks.corrupt(batch, logger=self._logger)
 
-        noisy_batch["pad_mask"] = batch["pad_mask"]
         out, readout = self.forward(noisy_batch)
 
         ## compute the loss
-        loss = 0
-        for track in self.tracks.values():
-            # pass in the batch because of the metadata
-            loss_ = track.compute_loss(readout, target, batch["pad_mask"])
-            loss = loss + track.cfg.loss_weight * loss_
+        loss = self.tracks.compute_loss(readout, target, logger=self._logger)
 
         ## log some metrics
         self._logger.log("loss", loss)

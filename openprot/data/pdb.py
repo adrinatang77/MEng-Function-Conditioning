@@ -12,7 +12,7 @@ class PDBDataset(OpenProtDataset):
     def __len__(self):
         return len(self.df)
 
-    def __getitem__(self, idx):
+    def __getitem__(self, idx: int):
         name = self.df.index[idx]
         prot = dict(
             np.load(f"{self.cfg.path}/{name[1:3]}/{name}.npz", allow_pickle=True)

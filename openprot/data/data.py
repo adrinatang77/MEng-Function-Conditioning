@@ -19,7 +19,7 @@ class OpenProtDataset(torch.utils.data.Dataset):
         NotImplemented
 
     @abstractmethod
-    def __getitem__(self, idx):
+    def __getitem__(self, idx: int):
         NotImplemented
 
     def make_data(self, **kwargs):
@@ -41,7 +41,7 @@ class OpenProtData(dict):
     def keys_to_crop(self):
         return [key for key in self if key != "name"]
 
-    def crop(self, crop_len):
+    def crop(self, crop_len: int):
         L = len(self["seqres"])
 
         if L >= crop_len:  # needs crop
@@ -51,7 +51,7 @@ class OpenProtData(dict):
                 self[key] = self[key][start:end]
         return self
 
-    def pad(self, pad_len):
+    def pad(self, pad_len: int):
         L = len(self["seqres"])
         if pad_len and L < pad_len:  # needs pad
             pad = pad_len - L

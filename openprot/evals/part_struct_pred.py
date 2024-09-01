@@ -31,7 +31,7 @@ class PartialStructurePrediction(OpenProtEval):
         ).crop(512)
         return StructurePrediction.prep_data(None, data)
 
-    def run_batch(self, model, batch, savedir=".", device=None, logger=None):
+    def run_batch(self, model, batch: dict, savedir=".", device=None, logger=None):
         os.makedirs(savedir, exist_ok=True)
 
         noisy_batch = {"pad_mask": batch["pad_mask"]}

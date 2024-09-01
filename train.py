@@ -23,6 +23,7 @@ from pytorch_lightning.callbacks import ModelCheckpoint, ModelSummary
 from openprot.data.manager import OpenProtDatasetManager
 from openprot.model.wrapper import OpenProtWrapper
 from openprot.evals.manager import OpenProtEvalManager
+from openprot.tracks.manager import OpenProtTrackManager
 
 trainer = pl.Trainer(
     **cfg.trainer,
@@ -37,17 +38,19 @@ trainer = pl.Trainer(
 )
 ########## EVERYTHING BELOW NOW IN PARALLEL ######
 
-dataset = OpenProtDatasetManager(cfg, trainer.global_rank, trainer.world_size)
+tracks = OpenProtTrackManager(cfg.tracks)
+
+dataset = OpenProtDatasetManager(cfg, tracks, trainer.global_rank, trainer.world_size)
 
 train_loader = torch.utils.data.DataLoader(
     dataset, batch_size=cfg.data.batch, num_workers=cfg.data.num_workers
 )
 
-evals = OpenProtEvalManager(cfg, trainer.global_rank, trainer.world_size)
+evals = OpenProtEvalManager(cfg, tracks, trainer.global_rank, trainer.world_size)
 eval_loader = torch.utils.data.DataLoader(
     evals, batch_size=1, num_workers=0, shuffle=False
 )
-model = OpenProtWrapper(cfg)
+model = OpenProtWrapper(cfg, tracks, evals.evals)
 
 if cfg.validate:
     trainer.validate(model, eval_loader, ckpt_path=cfg.ckpt)

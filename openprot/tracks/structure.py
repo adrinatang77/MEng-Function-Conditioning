@@ -59,7 +59,7 @@ class StructureTrack(OpenProtTrack):
         # model.trans_out = nn.Linear(model.cfg.dim, 3)
         # model.rots_out = nn.Linear(model.cfg.dim, 9)
 
-    def corrupt(self, batch, noisy_batch, target):
+    def corrupt(self, batch, noisy_batch, target, logger=None):
 
         noisy_batch["frame_trans"] = torch.where(
             batch["struct_noise"][..., None] > 0, 0.0, batch["frame_trans"]
@@ -71,7 +71,8 @@ class StructureTrack(OpenProtTrack):
 
         target["struct_supervise"] = batch["struct_mask"] * (batch["struct_noise"] > 0)
 
-        self.logger.log("struct/toks", batch["struct_mask"].sum())
+        if logger:
+            logger.log("struct/toks", batch["struct_mask"].sum())
 
     def embed(self, model, batch):
         pos_embed = model.trans_embed(batch["frame_trans"])
@@ -91,7 +92,7 @@ class StructureTrack(OpenProtTrack):
         readout["trans"] = model.trans_out(out)
         # readout["rots"] = model.rots_out(out)
 
-    def compute_loss(self, readout, target, pad_mask):
+    def compute_loss(self, readout, target, logger=None):
 
         if self.cfg.decoder.type == "linear":
             NotImplemented
@@ -101,7 +102,7 @@ class StructureTrack(OpenProtTrack):
             return rmsd_loss.mean()
 
         elif self.cfg.decoder.type == "sinusoidal":
-            return self.compute_sinusoidal_loss(readout, target, pad_mask)
+            return self.compute_sinusoidal_loss(readout, target, logger=logger)
 
         else:
             raise Exception(
@@ -110,7 +111,7 @@ class StructureTrack(OpenProtTrack):
 
         # fape_loss = self.compute_fape_loss(readout, target)
 
-    def compute_sinusoidal_loss(self, readout, target, pad_mask, eps=1e-6):
+    def compute_sinusoidal_loss(self, readout, target, logger=None, eps=1e-6):
 
         logits = readout["trans"]
         mask = target["struct_supervise"]
@@ -118,9 +119,11 @@ class StructureTrack(OpenProtTrack):
         gt_ang = 2 * np.pi * target["frame_trans"] / self.cfg.decoder.max_period
         ang_error = ((gt_ang - ang) + np.pi) % (2 * np.pi) - np.pi
         msd_error = ang_error * self.cfg.decoder.max_period / (2 * np.pi)
-        self.logger.log(
-            "struct/rmsd", torch.square(msd_error).sum(-1), mask, post=np.sqrt
-        )
+
+        if logger:
+            logger.log(
+                "struct/rmsd", torch.square(msd_error).sum(-1), mask, post=np.sqrt
+            )
 
         norm = torch.sqrt(logits[..., 1::2] ** 2 + logits[..., ::2] ** 2 + 1e-5)
         logp = (
@@ -129,19 +132,12 @@ class StructureTrack(OpenProtTrack):
         logz = np.log(2 * np.pi) + log_I0(norm)
         nll = logz - logp
 
-        # prec = norm**2
-        # logp_ = torch.where(
-        #     prec < 100,
-        #     prec * (torch.cos(ang_error) - 1),
-        #     - ang_error**2 * prec / 2
-        # )
-        # logz_ = torus_logZ(prec)
-        # nll_ = logz_ - logp_
-        self.logger.log("struct/logit_norm", norm, mask=mask[..., None])
-        self.logger.log("struct/loss", nll.sum(-1), mask=mask)
-        self.logger.log("struct/toks_sup", mask.sum())
+        if logger:
+            logger.log("struct/logit_norm", norm, mask=mask[..., None])
+            logger.log("struct/loss", nll.sum(-1), mask=mask)
+            logger.log("struct/toks_sup", mask.sum())
 
-        return (nll.sum(-1) * mask).sum() / pad_mask.sum()
+        return (nll.sum(-1) * mask).sum() / target["pad_mask"].sum()
 
     def compute_fape_loss(self, readout, target):
         shape = readout["rots"].shape[:-1] + (3, 3)

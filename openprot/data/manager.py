@@ -5,11 +5,13 @@ import importlib
 import sys
 
 from .. import tracks
+from ..tracks.manager import OpenProtTrackManager
 from ..utils.misc_utils import autoimport
+from .data import OpenProtData
 
 
 class OpenProtDatasetManager(torch.utils.data.IterableDataset):
-    def __init__(self, cfg, rank, world_size):
+    def __init__(self, cfg, tracks: OpenProtTrackManager, rank=0, world_size=1):
         super().__init__()
         self.cfg = cfg
         self.rank = rank
@@ -28,17 +30,13 @@ class OpenProtDatasetManager(torch.utils.data.IterableDataset):
         self.task_probs = np.array([cfg.tasks[name].fraction for name in cfg.tasks])
         assert self.task_probs.sum() == 1
 
-        self.tracks = {}  # autoload the tracks
-        for name in cfg.tracks:
-            track = autoimport(f"openprot.tracks.{name}")(cfg.tracks[name])
-            self.tracks[name] = track
+        self.tracks = tracks
 
-    def process(self, data):
+    def process(self, data: OpenProtData):
 
         data.pad(self.cfg.data.crop)
 
-        for track in self.tracks:
-            self.tracks[track].tokenize(data)
+        self.tracks.tokenize(data)
 
         return data
 
