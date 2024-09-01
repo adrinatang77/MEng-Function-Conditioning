@@ -44,7 +44,11 @@ class PartialStructurePrediction(OpenProtEval):
 
         coords = track.get_coords(readout)
 
+        coords = torch.where(batch['struct_noise'][...,None] == 1, coords, batch['frame_trans'])
+        
         msd_error = torch.square(batch['frame_trans'] - coords).sum(-1)
+
+        ## there is an error here! 
 
         if logger:
             logger.log("struct/rmsd", msd_error, post=np.sqrt)

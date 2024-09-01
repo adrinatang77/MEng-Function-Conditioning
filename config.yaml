@@ -6,7 +6,7 @@ logger:
     # please change "test" to something unique to your task
     project: openprot/test 
     # will log to workdir and neptune.ai with this name
-    name: struct_sinusoidal
+    name: struct_linear
     # if not null, will duplicate stdout and stderr to workdir/{name}/{logfile}
     logfile: std.out 
     # if null, will log every epoch, otherwise every this number of steps
@@ -93,7 +93,7 @@ tracks:
             num_freqs: 50
             max_period: 100
         decoder:
-            type: sinusoidal
+            type: linear
             max_period: 100
             scale: 1.0
         loss_weight: 1.0
