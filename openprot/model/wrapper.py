@@ -2,8 +2,9 @@ import pytorch_lightning as pl
 from ..utils.logger import Logger
 import torch
 from .model import OpenProtModel
-from ..utils.misc_utils import autoimport
 from abc import abstractmethod
+from ..utils.misc_utils import autoimport
+import os
 
 class Wrapper(pl.LightningModule):
     def __init__(self, cfg):
@@ -20,7 +21,7 @@ class Wrapper(pl.LightningModule):
 
     def validation_step(self, batch, batch_idx):
         self._logger.prefix = "val"
-        self.general_step(batch)
+        # self.general_step(batch)
         self.validation_step_extra(batch, batch_idx)
         self._logger.step(self.trainer, "val")
 
@@ -74,42 +75,54 @@ class OpenProtWrapper(Wrapper):
     def __init__(self, cfg):
         super().__init__(cfg)
         self.model = OpenProtModel(cfg.model)
-        self.tracks = []
+        self.tracks = {}
         for name in cfg.tracks:
-            track = autoimport(name)(cfg.tracks[name], self._logger)
+            track = autoimport(f"openprot.tracks.{name}")(cfg.tracks[name], self._logger)
             track.add_modules(self.model)
-            self.tracks.append(track)
+            self.tracks[name] = track
+            
+        self.evals = {}
+        for name in cfg.evals:
+            eval_ = autoimport(f"openprot.evals.{name}")(cfg.evals[name], logger=self._logger)
+            self.evals[name] = eval_
 
     def get_lr(self):
         for param_group in self.optimizers().param_groups:
             return param_group["lr"]
 
+    def forward(self, noisy_batch):
+        ## embed the tracks into an input and conditioning vector
+        inp = 0
+        for track in self.tracks.values():
+            x = track.embed(self.model, noisy_batch)
+            inp = inp + x
+
+        ## run it thorugh the model
+        out = self.model(inp, noisy_batch["pad_mask"])
+
+        ## place the readouts in a dict
+        readout = {}
+        for track in self.tracks.values():
+            track.predict(self.model, out, readout)
+
+        return out, readout
+
+    
     def general_step(self, batch):
 
         self._logger.log("toks", batch["pad_mask"].sum())
 
         ## corrupt all the tracks
         noisy_batch, target = {}, {}
-        for track in self.tracks:
+        for track in self.tracks.values():
             track.corrupt(batch, noisy_batch, target)
 
-        ## embed the tracks into an input and conditioning vector
-        inp, cond = 0, 0
-        for track in self.tracks:
-            x = track.embed(self.model, noisy_batch)
-            inp = inp + x
-
-        ## run it thorugh the model
-        out = self.model(inp, batch["pad_mask"])
-
-        ## place the readouts in a dict
-        readout = {}
-        for track in self.tracks:
-            track.predict(self.model, out, readout)
-
+        noisy_batch["pad_mask"] = batch["pad_mask"]
+        out, readout = self.forward(noisy_batch)
+        
         ## compute the loss
         loss = 0
-        for track in self.tracks:
+        for track in self.tracks.values():
             # pass in the batch because of the metadata
             loss_ = track.compute_loss(readout, target, batch["pad_mask"])
             loss = loss + track.cfg.loss_weight * loss_
@@ -120,3 +133,8 @@ class OpenProtWrapper(Wrapper):
         self._logger.log("act_norm", torch.square(out).mean(-1), batch["pad_mask"])
 
         return loss
+
+    def validation_step_extra(self, batch, batch_idx):
+        name = batch['eval'][0]
+        savedir = f'{os.environ["MODEL_DIR"]}/eval_step{self.trainer.global_step}/{name}'
+        self.evals[name].run_batch(self, batch, savedir=savedir, logger=self._logger)

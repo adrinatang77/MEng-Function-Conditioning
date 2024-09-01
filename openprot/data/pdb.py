@@ -19,6 +19,7 @@ class PDBDataset(OpenProtDataset):
         )
         seqres = self.df.seqres[name]
         return self.make_data(
+            name=name,
             seqres=seqres,
             seq_mask=np.ones(len(seqres)),
             atom37=prot["all_atom_positions"],

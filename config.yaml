@@ -19,7 +19,7 @@ trainer:
     max_steps: 100000
     enable_progress_bar: false
     limit_train_batches: 1.0
-    limit_val_batches: 0.0
+    limit_val_batches: 1.0
     num_sanity_val_steps: 0
     gradient_clip_val: 1.0
     accumulate_grad_batches: 1
@@ -29,7 +29,7 @@ trainer:
 
 # custom args to OpenProtDataset and elsewhere
 data: 
-    num_workers: 4
+    num_workers: 0
     batch: 32
     crop: 512
     seed: 137
@@ -46,16 +46,16 @@ features:
     struct_noise: []
 
 datasets:
-    openprot.data.PDBDataset: 
+    PDBDataset: 
         path: /data/cb/scratch/datasets/pdb_npz
-    openprot.data.AFDBDataset:
+    AFDBDataset:
         path: /data/cb/scratch/datasets/afdb_swissprot_v4/afdb_swissprot_v4
-    openprot.data.UnirefDataset:
+    UnirefDataset:
         path: /data/cb/scratch/datasets/uniref50.fasta
         index: /data/cb/scratch/share/openprot/uniref50.index
             
 tasks:
-    openprot.tasks.SequenceGeneration:
+    SequenceGeneration:
         fraction: 0.0
         mask_rate: 0.15
         seed: 137
@@ -64,7 +64,7 @@ tasks:
                 fraction: 1.0
                 start: 0
                 seed: 137
-    openprot.tasks.StructurePrediction:
+    StructurePrediction:
         fraction: 1.0
         seed: 137
         datasets:
@@ -77,14 +77,15 @@ tasks:
                 start: 0
                 seed: 142
             
-eval:
-    openprot.eval.PartialStructurePrediction:
+evals:
+    PartialStructurePrediction: 
+        path: /data/cb/scratch/datasets/afdb_swissprot_v4/afdb_swissprot_v4
         
     
 
 tracks:
     # register tracks here
-    openprot.tracks.StructureTrack: 
+    StructureTrack: 
         # custom args for every track
         embedder: 
             type: sinusoidal
@@ -95,7 +96,7 @@ tracks:
             max_period: 100
             scale: 1.0
         loss_weight: 1.0
-    openprot.tracks.SequenceTrack:
+    SequenceTrack:
         corrupt: mask
         mask_rate: 0.15
         loss_weight: 1.0

@@ -17,21 +17,21 @@ class OpenProtDatasetManager(torch.utils.data.IterableDataset):
 
         self.datasets = {}
         for name in cfg.datasets:  # autoload the datasets
-            ds = autoimport(name)(cfg.datasets[name], self.cfg.features)
-            self.datasets[name.split(".")[-1]] = ds
+            ds = autoimport(f"openprot.data.{name}")(cfg.datasets[name], cfg.features)
+            self.datasets[name] = ds
 
         self.tasks = {}
         for name in cfg.tasks:  # autoload the train tasks
-            task = autoimport(name)(cfg.tasks[name], self.datasets)
-            self.tasks[name.split(".")[-1]] = task
+            task = autoimport(f"openprot.tasks.{name}")(cfg.tasks[name], self.datasets)
+            self.tasks[name] = task
 
         self.task_probs = np.array([cfg.tasks[name].fraction for name in cfg.tasks])
         assert self.task_probs.sum() == 1
 
         self.tracks = {}  # autoload the tracks
         for name in cfg.tracks:
-            track = autoimport(name)(cfg.tracks[name])
-            self.tracks[name.split(".")[-1]] = track
+            track = autoimport(f"openprot.tracks.{name}")(cfg.tracks[name])
+            self.tracks[name] = track
 
     def process(self, data):
 

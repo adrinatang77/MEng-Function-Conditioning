@@ -14,7 +14,7 @@ from functools import partial
 import numpy as np
 
 
-def log_I0(x):
+def log_I0(x): # this is unsatisfactory
     k_star = torch.round(x / 2)
     logx = torch.log(x)
     log_A_k_star = 2 * (k_star * (logx - np.log(2)) - torch.lgamma(k_star + 1))

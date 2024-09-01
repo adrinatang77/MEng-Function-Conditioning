@@ -19,6 +19,7 @@ class AFDBDataset(OpenProtDataset):
         prot = protein.from_pdb_string(pdb)
         seqres = "".join([rc.restypes_with_x[c] for c in prot.aatype])
         return self.make_data(
+            name=name[:-4],
             seqres=seqres,
             seq_mask=np.ones(len(seqres)),
             atom37=prot.atom_positions.astype(np.float32),
