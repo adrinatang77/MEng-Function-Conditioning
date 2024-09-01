@@ -92,14 +92,20 @@ class StructureTrack(OpenProtTrack):
         readout["trans"] = model.trans_out(out)
         # readout["rots"] = model.rots_out(out)
 
+    def get_coords(self, readout):
+        if self.cfg.decoder.type == 'linear':
+            return readout['trans']
+        elif self.cfg.decoder.type == 'sinusoidal':
+            logits = readout["trans"]
+            ang = torch.atan2(logits[..., 1::2], logits[..., ::2])
+            return ang * self.cfg.decoder.max_period / (2 * np.pi)
+
+
     def compute_loss(self, readout, target, logger=None):
 
         if self.cfg.decoder.type == "linear":
-            NotImplemented
-            rmsd_loss = self.compute_rmsd_loss(
-                readout["trans"], target["trans"], target["ca_mask"]
-            )
-            return rmsd_loss.mean()
+            
+            return self.compute_rmsd_loss(readout, target, logger=logger)
 
         elif self.cfg.decoder.type == "sinusoidal":
             return self.compute_sinusoidal_loss(readout, target, logger=logger)
@@ -168,7 +174,16 @@ class StructureTrack(OpenProtTrack):
         )
         return fape_loss
 
-    def compute_rmsd_loss(self, pred, target, mask, eps=1e-5):
-        err = torch.square(pred - target).sum(-1)
-        err = (err * mask).sum(-1) / mask.sum(-1)
-        return torch.sqrt(err + eps)
+    def compute_rmsd_loss(self, readout, target, logger=None, eps=1e-5):
+        pred = readout['trans']
+        gt = target['frame_trans']
+        mask = target['struct_supervise']
+        
+        err = torch.square(pred - gt).sum(-1)
+        if logger:
+            logger.log("struct/rmsd", err, mask, post=np.sqrt)
+            logger.log("struct/loss", err, mask=mask)
+            logger.log("struct/toks_sup", mask.sum())
+
+        return (err * mask).sum() / target["pad_mask"].sum()
+        

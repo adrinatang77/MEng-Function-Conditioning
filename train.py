@@ -32,6 +32,8 @@ trainer = pl.Trainer(
         ModelCheckpoint(
             dirpath=model_dir,
             save_top_k=-1,
+            every_n_train_steps=cfg.logger.ckpt_freq,
+            filename='{step}'
         ),
         ModelSummary(max_depth=2),
     ],

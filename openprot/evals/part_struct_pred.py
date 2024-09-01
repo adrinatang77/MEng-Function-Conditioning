@@ -42,16 +42,14 @@ class PartialStructurePrediction(OpenProtEval):
 
         track = model.tracks["StructureTrack"]
 
-        logits = readout["trans"]
-        ang = torch.atan2(logits[..., 1::2], logits[..., ::2])
-        gt_ang = 2 * np.pi * batch["frame_trans"] / track.cfg.decoder.max_period
-        ang_error = ((gt_ang - ang) + np.pi) % (2 * np.pi) - np.pi
-        msd_error = ang_error * track.cfg.decoder.max_period / (2 * np.pi)
+        coords = track.get_coords(readout)
+
+        msd_error = torch.square(batch['frame_trans'] - coords).sum(-1)
 
         if logger:
-            logger.log("struct/rmsd", torch.square(msd_error).sum(-1), post=np.sqrt)
+            logger.log("struct/rmsd", msd_error, post=np.sqrt)
 
-        L = logits.shape[-2]
+        L = coords.shape[1]
         atom37 = np.zeros((L, 37, 3))
         prot = protein.Protein(
             atom_positions=np.zeros((L, 37, 3)),
@@ -71,9 +69,7 @@ class PartialStructurePrediction(OpenProtEval):
 
         fixed_str = protein.to_pdb(prot)
 
-        prot.atom_positions[..., 1, :] = (
-            ang.cpu() * track.cfg.decoder.max_period / (2 * np.pi)
-        )
+        prot.atom_positions[..., 1, :] = coords.cpu().numpy()
         prot.atom_mask[..., 1] = (batch["struct_noise"] == 1.0).cpu().float()
 
         pred_str = protein.to_pdb(prot)
