@@ -305,6 +305,51 @@ def compute_fape(
     return normed_error
 
 
+def compute_pade(pred_pos, gt_pos, gt_mask, eps=1e-6, cutoff=15):
+    def get_dmat(pos):
+        dmat = torch.square(pos[..., None, :] - pos[..., None, :, :]).sum(-1)
+        return torch.sqrt(eps + dmat)
+
+    pred_dmat = get_dmat(pred_pos)
+    gt_dmat = get_dmat(gt_pos)
+
+    dmat_mask = (gt_dmat < cutoff).float() * gt_mask[:, None] * gt_mask[:, :, None]
+    dmat_mask = dmat_mask * (1.0 - torch.eye(gt_mask.shape[-1], device=gt_mask.device))
+
+    score = torch.abs(pred_dmat - gt_dmat)
+    return (dmat_mask * score).sum(-1) / (eps + dmat_mask.sum(-1))  # B, L
+
+
+def compute_lddt(pred_pos, gt_pos, gt_mask, cutoff=15.0, eps=1e-10, symmetric=False):
+
+    pred_dmat = torch.sqrt(
+        eps
+        + torch.sum((pred_pos[..., None, :] - pred_pos[..., None, :, :]) ** 2, axis=-1)
+    )
+    gt_dmat = torch.sqrt(
+        eps + torch.sum((gt_pos[..., None, :] - gt_pos[..., None, :, :]) ** 2, axis=-1)
+    )
+    if symmetric:
+        dists_to_score = (pred_dmat < cutoff) | (gt_dmat < cutoff)
+    else:
+        dists_to_score = gt_dmat < cutoff
+    dists_to_score = (
+        dists_to_score
+        * gt_mask.unsqueeze(-2)
+        * gt_mask.unsqueeze(-1)
+        * (1.0 - torch.eye(gt_mask.shape[-1], device=gt_mask.device))
+    )
+    dist_l1 = torch.abs(pred_dmat - gt_dmat)
+    score = (
+        (dist_l1[..., None] < torch.tensor([0.5, 1.0, 2.0, 4.0], device=gt_mask.device))
+        .float()
+        .mean(-1)
+    )
+    score = (dists_to_score * score).sum((-1, -2)) / dists_to_score.sum((-1, -2))
+
+    return score
+
+
 def gram_schmidt(origin, x_axis, xy_plane, eps=1e-8):
     x_axis = torch.unbind(x_axis, dim=-1)
     origin = torch.unbind(origin, dim=-1)

@@ -33,7 +33,7 @@ trainer = pl.Trainer(
             dirpath=model_dir,
             save_top_k=-1,
             every_n_train_steps=cfg.logger.ckpt_freq,
-            filename='{step}'
+            filename="{step}",
         ),
         ModelSummary(max_depth=2),
     ],

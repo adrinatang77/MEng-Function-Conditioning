@@ -1,6 +1,7 @@
 from .eval import OpenProtEval
 import foldcomp
 from ..utils import protein
+from ..utils.geometry import compute_lddt
 from ..utils import residue_constants as rc
 import numpy as np
 from ..tasks import StructurePrediction
@@ -44,14 +45,17 @@ class PartialStructurePrediction(OpenProtEval):
 
         coords = track.get_coords(readout)
 
-        coords = torch.where(batch['struct_noise'][...,None] == 1, coords, batch['frame_trans'])
-        
-        msd_error = torch.square(batch['frame_trans'] - coords).sum(-1)
+        coords = torch.where(
+            batch["struct_noise"][..., None] == 1, coords, batch["frame_trans"]
+        )
 
-        ## there is an error here! 
+        msd_error = torch.square(batch["frame_trans"] - coords).sum(-1)
+
+        lddt = compute_lddt(coords, batch["frame_trans"], batch["struct_mask"])
 
         if logger:
             logger.log("struct/rmsd", msd_error, post=np.sqrt)
+            logger.log("struct/lddt", lddt)
 
         L = coords.shape[1]
         atom37 = np.zeros((L, 37, 3))
@@ -64,24 +68,23 @@ class PartialStructurePrediction(OpenProtEval):
             chain_index=np.zeros(L, dtype=int),
         )
 
-        prot.atom_mask[..., 1] = 1
+        prot.atom_mask[..., 1] = 1  # this is because AFDB is complete
         prot.atom_positions[..., 1, :] = batch["frame_trans"].cpu().numpy()
 
         ref_str = protein.to_pdb(prot)
 
-        prot.atom_mask[..., 1] = (batch["struct_noise"] == 0.0).cpu().float()
-
-        fixed_str = protein.to_pdb(prot)
+        # prot.atom_mask[..., 1] = (batch["struct_noise"] == 0.0).cpu().float()
+        # fixed_str = protein.to_pdb(prot)
 
         prot.atom_positions[..., 1, :] = coords.cpu().numpy()
-        prot.atom_mask[..., 1] = (batch["struct_noise"] == 1.0).cpu().float()
+        # prot.atom_mask[..., 1] = (batch["struct_noise"] == 1.0).cpu().float()
 
         pred_str = protein.to_pdb(prot)
 
         ref_str = "\n".join(ref_str.split("\n")[1:-3])
-        fixed_str = "\n".join(fixed_str.split("\n")[1:-3])
+        # fixed_str = "\n".join(fixed_str.split("\n")[1:-3])
         pred_str = "\n".join(pred_str.split("\n")[1:-3])
 
         name = batch["name"][0]
         with open(f"{savedir}/{name}.pdb", "w") as f:
-            f.write("\nENDMDL\nMODEL\n".join([ref_str, fixed_str, pred_str]))
+            f.write("\nENDMDL\nMODEL\n".join([ref_str, pred_str]))
