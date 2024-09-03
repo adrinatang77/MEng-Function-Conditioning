@@ -15,7 +15,7 @@ class UnirefDataset(OpenProtDataset):
     def __len__(self):
         return len(self.index) - 1  # unfortunately we have to skip the last one
 
-    def __getitem__(self, idx):
+    def __getitem__(self, idx: int):
         start = self.index[idx]
         end = self.index[idx + 1]
         self.db.seek(start)
@@ -23,4 +23,6 @@ class UnirefDataset(OpenProtDataset):
         lines = item.split("\n")
         header, lines = lines[0], lines[1:]
         seqres = "".join(lines)
-        return self.make_data(seqres=seqres, seq_mask=np.ones(len(seqres)))
+        return self.make_data(
+            name=header.split()[0], seqres=seqres, seq_mask=np.ones(len(seqres))
+        )

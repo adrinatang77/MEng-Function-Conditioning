@@ -1,22 +1,32 @@
-class Track:
-    def __init__(self, cfg, logger=None):
+from abc import abstractmethod
+import torch
+from ..model.model import OpenProtModel
+
+
+class OpenProtTrack:
+    def __init__(self, cfg):
         self.cfg = cfg
-        self.logger = logger
 
-    def tokenize(self, batch):
+    @abstractmethod
+    def tokenize(self, data: dict):
         NotImplemented
 
-    def add_modules(self, model):
+    @abstractmethod
+    def add_modules(self, model: OpenProtModel):
         NotImplemented
 
-    def corrupt(self, batch):
+    @abstractmethod
+    def corrupt(self, batch: dict, noisy_batch: dict, target: dict, logger=None):
         NotImplemented
 
-    def embed(self, batch):
+    @abstractmethod
+    def embed(self, model: OpenProtModel, batch: dict):
         NotImplemented
 
-    def predict(self, batch):
+    @abstractmethod
+    def predict(self, model: OpenProtModel, out: torch.Tensor, readout: dict):
         NotImplemented
 
-    def compute_loss(self, cfg, logger):
+    @abstractmethod
+    def compute_loss(self, readout: dict, target: dict, logger=None):
         NotImplemented

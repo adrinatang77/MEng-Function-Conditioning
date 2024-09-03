@@ -1,11 +1,12 @@
 import torch
 import torch.nn as nn
-from .track import Track
+from .track import OpenProtTrack
 from ..utils.geometry import (
     atom37_to_frames,
     atom37_to_torsions,
     compute_fape,
     gram_schmidt,
+    compute_pade,
 )
 from ..utils.rigid_utils import Rigid, Rotation
 from ..utils import residue_constants as rc
@@ -14,7 +15,7 @@ from functools import partial
 import numpy as np
 
 
-def log_I0(x):
+def log_I0(x):  # this is unsatisfactory
     k_star = torch.round(x / 2)
     logx = torch.log(x)
     log_A_k_star = 2 * (k_star * (logx - np.log(2)) - torch.lgamma(k_star + 1))
@@ -35,7 +36,7 @@ def torus_logZ(x):  # x = 1 / sigma^2
     )
 
 
-class StructureTrack(Track):
+class StructureTrack(OpenProtTrack):
 
     def tokenize(self, data):
 
@@ -59,7 +60,7 @@ class StructureTrack(Track):
         # model.trans_out = nn.Linear(model.cfg.dim, 3)
         # model.rots_out = nn.Linear(model.cfg.dim, 9)
 
-    def corrupt(self, batch, noisy_batch, target):
+    def corrupt(self, batch, noisy_batch, target, logger=None):
 
         noisy_batch["frame_trans"] = torch.where(
             batch["struct_noise"][..., None] > 0, 0.0, batch["frame_trans"]
@@ -71,7 +72,8 @@ class StructureTrack(Track):
 
         target["struct_supervise"] = batch["struct_mask"] * (batch["struct_noise"] > 0)
 
-        self.logger.log("struct/toks", batch["struct_mask"].sum())
+        if logger:
+            logger.log("struct/toks", batch["struct_mask"].sum())
 
     def embed(self, model, batch):
         pos_embed = model.trans_embed(batch["frame_trans"])
@@ -91,57 +93,79 @@ class StructureTrack(Track):
         readout["trans"] = model.trans_out(out)
         # readout["rots"] = model.rots_out(out)
 
-    def compute_loss(self, readout, target, pad_mask):
-
+    def get_coords(self, readout):
         if self.cfg.decoder.type == "linear":
-            NotImplemented
-            rmsd_loss = self.compute_rmsd_loss(
-                readout["trans"], target["trans"], target["ca_mask"]
-            )
-            return rmsd_loss.mean()
-
+            return readout["trans"]
         elif self.cfg.decoder.type == "sinusoidal":
-            return self.compute_sinusoidal_loss(readout, target, pad_mask)
-
+            logits = readout["trans"]
+            ang = torch.atan2(logits[..., 1::2], logits[..., ::2])
+            return ang * self.cfg.decoder.max_period / (2 * np.pi)
         else:
             raise Exception(
                 f"PositionDecoder type {self.cfg.decoder.type} not recognized"
             )
 
-        # fape_loss = self.compute_fape_loss(readout, target)
+    def compute_loss(self, readout, target, logger=None):
 
-    def compute_sinusoidal_loss(self, readout, target, pad_mask, eps=1e-6):
+        loss = 0
+
+        if "rmsd" in self.cfg.losses:
+            loss = loss + self.compute_rmsd_loss(readout, target, logger=logger)
+
+        if "sinusoidal" in self.cfg.losses and self.cfg.decoder.type == "sinusoidal":
+            loss = loss + self.compute_sinusoidal_loss(readout, target, logger=logger)
+
+        if "pade" in self.cfg.losses:
+            loss = loss + self.compute_pade_loss(readout, target, logger=logger)
+
+        if "fape" in self.cfg.losses:
+            loss = loss + self.compute_fape_loss(readout, target, logger=logger)
+
+        mask = target["struct_supervise"]
+
+        if logger:
+            logger.log("struct/toks_sup", mask.sum())
+            logger.log("struct/loss", loss, mask=mask)
+
+        loss = (loss * mask).sum() / target["pad_mask"].sum()
+
+        return loss
+
+    def compute_pade_loss(self, readout, target, logger=None):
+        pred = self.get_coords(readout)
+        gt = target["frame_trans"]
+        mask = target["struct_supervise"]  # this does not do exactly what we want
+
+        pade = compute_pade(pred, gt, mask)
+        if logger:
+            logger.log("struct/pade_loss", pade, mask=mask)
+        return pade
+
+    def compute_sinusoidal_loss(self, readout, target, logger=None, eps=1e-6):
 
         logits = readout["trans"]
-        mask = target["struct_supervise"]
-        ang = torch.atan2(logits[..., 1::2], logits[..., ::2])
-        gt_ang = 2 * np.pi * target["frame_trans"] / self.cfg.decoder.max_period
-        ang_error = ((gt_ang - ang) + np.pi) % (2 * np.pi) - np.pi
-        msd_error = ang_error * self.cfg.decoder.max_period / (2 * np.pi)
-        self.logger.log(
-            "struct/rmsd", torch.square(msd_error).sum(-1), mask, post=np.sqrt
-        )
+        logits = logits.reshape(*logits.shape[:2], 3, 2)
 
-        norm = torch.sqrt(logits[..., 1::2] ** 2 + logits[..., ::2] ** 2 + 1e-5)
-        logp = (
-            torch.cos(gt_ang) * logits[..., ::2] + torch.sin(gt_ang) * logits[..., 1::2]
-        )
+        sqnorm = torch.square(logits).sum(-1)
+        norm = torch.sqrt(eps + sqnorm)
+
+        if self.cfg.logit_max_norm:
+            denom = torch.sqrt(1 + (sqnorm / self.cfg.logit_max_norm) ** 2)
+            logits = logits / denom[..., None]
+
+        mask = target["struct_supervise"]
+        ang = torch.atan2(logits[..., 1], logits[..., 0])
+        gt_ang = 2 * np.pi * target["frame_trans"] / self.cfg.decoder.max_period
+
+        logp = torch.cos(gt_ang) * logits[..., 0] + torch.sin(gt_ang) * logits[..., 1]
         logz = np.log(2 * np.pi) + log_I0(norm)
         nll = logz - logp
 
-        # prec = norm**2
-        # logp_ = torch.where(
-        #     prec < 100,
-        #     prec * (torch.cos(ang_error) - 1),
-        #     - ang_error**2 * prec / 2
-        # )
-        # logz_ = torus_logZ(prec)
-        # nll_ = logz_ - logp_
-        self.logger.log("struct/logit_norm", norm, mask=mask[..., None])
-        self.logger.log("struct/loss", nll.sum(-1), mask=mask)
-        self.logger.log("struct/toks_sup", mask.sum())
+        if logger:
+            logger.log("struct/logit_norm", norm, mask=mask[..., None])
+            logger.log("struct/sinusoidal_loss", nll.sum(-1), mask=mask)
 
-        return (nll.sum(-1) * mask).sum() / pad_mask.sum()
+        return nll.sum(-1)  # * mask).sum() / target["pad_mask"].sum()
 
     def compute_fape_loss(self, readout, target):
         shape = readout["rots"].shape[:-1] + (3, 3)
@@ -172,7 +196,14 @@ class StructureTrack(Track):
         )
         return fape_loss
 
-    def compute_rmsd_loss(self, pred, target, mask, eps=1e-5):
-        err = torch.square(pred - target).sum(-1)
-        err = (err * mask).sum(-1) / mask.sum(-1)
-        return torch.sqrt(err + eps)
+    def compute_rmsd_loss(self, readout, target, logger=None, eps=1e-5):
+        pred = self.get_coords(readout)
+        gt = target["frame_trans"]
+        mask = target["struct_supervise"]
+
+        err = torch.square(pred - gt).sum(-1)
+        if logger:
+            logger.log("struct/rmsd", err, mask, post=np.sqrt)
+            logger.log("struct/rmsd_loss", err, mask=mask)
+
+        return err  # (err * mask).sum() / target["pad_mask"].sum()

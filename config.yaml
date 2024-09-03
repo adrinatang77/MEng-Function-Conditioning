@@ -2,34 +2,35 @@ ckpt: null # eventually this will control resuming runs
 validate: false # if true, only validate the model, don't train
 logger:
     # set to true to log to neptune.ai
-    neptune: true
+    neptune: false
     # please change "test" to something unique to your task
     project: openprot/test 
     # will log to workdir and neptune.ai with this name
-    name: struct_test
+    name: default
     # if not null, will duplicate stdout and stderr to workdir/{name}/{logfile}
-    logfile: std.out 
+    logfile: null # std.out 
     # if null, will log every epoch, otherwise every this number of steps
     train_log_freq: 100
     val_log_freq: null 
+    ckpt_freq: 100000
 trainer:
     accelerator: auto
-    devices: 8
+    devices: 1
     max_epochs: 1
-    max_steps: 100000
+    max_steps: 1000000
     enable_progress_bar: false
     limit_train_batches: 1.0
-    limit_val_batches: 0.0
+    limit_val_batches: 1.0
     num_sanity_val_steps: 0
     gradient_clip_val: 1.0
     accumulate_grad_batches: 1
-    val_check_interval: null
+    val_check_interval: 1000
     check_val_every_n_epoch: 1
     logger: false
 
 # custom args to OpenProtDataset and elsewhere
 data: 
-    num_workers: 4
+    num_workers: 8
     batch: 32
     crop: 512
     seed: 137
@@ -46,16 +47,16 @@ features:
     struct_noise: []
 
 datasets:
-    openprot.data.pdb.PDBDataset: 
+    PDBDataset: 
         path: /data/cb/scratch/datasets/pdb_npz
-    openprot.data.afdb.AFDBDataset:
+    AFDBDataset:
         path: /data/cb/scratch/datasets/afdb_swissprot_v4/afdb_swissprot_v4
-    openprot.data.uniref.UnirefDataset:
+    UnirefDataset:
         path: /data/cb/scratch/datasets/uniref50.fasta
         index: /data/cb/scratch/share/openprot/uniref50.index
             
 tasks:
-    openprot.tasks.seq_gen.SequenceGeneration:
+    SequenceGeneration:
         fraction: 0.0
         mask_rate: 0.15
         seed: 137
@@ -64,7 +65,7 @@ tasks:
                 fraction: 1.0
                 start: 0
                 seed: 137
-    openprot.tasks.struct_pred.StructurePrediction:
+    StructurePrediction:
         fraction: 1.0
         seed: 137
         datasets:
@@ -77,22 +78,28 @@ tasks:
                 start: 0
                 seed: 142
             
-
+evals:
+    PartialStructurePrediction: 
+        path: /data/cb/scratch/datasets/afdb_swissprot_v4/afdb_swissprot_v4
+        
+    
 
 tracks:
     # register tracks here
-    openprot.tracks.structure.StructureTrack: 
+    StructureTrack: 
         # custom args for every track
         embedder: 
             type: sinusoidal
             num_freqs: 50
-            max_period: 100
+            max_period: 400
         decoder:
             type: sinusoidal
-            max_period: 100
+            max_period: 400
             scale: 1.0
         loss_weight: 1.0
-    openprot.tracks.sequence.SequenceTrack:
+        logit_max_norm: 100
+        losses: [rmsd, sinusoidal, pade]
+    SequenceTrack:
         corrupt: mask
         mask_rate: 0.15
         loss_weight: 1.0
@@ -108,7 +115,7 @@ optimizer:
     type: Adam
     lr: 3e-5
     scheduler: 
-        total_steps: 100000
+        total_steps: 1000000
         warmup_steps: 1000
         start_decay: 10000
         end_factor: 1.00

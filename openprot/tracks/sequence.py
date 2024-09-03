@@ -1,14 +1,14 @@
 import torch
 import torch.nn as nn
 import numpy as np
-
-from .track import Track
+from typing import override
+from .track import OpenProtTrack
 from ..utils import residue_constants as rc
 
 MASK_IDX = 21
 
 
-class SequenceTrack(Track):
+class SequenceTrack(OpenProtTrack):
 
     def tokenize(self, data):
         data["aatype"] = np.array(
@@ -20,7 +20,7 @@ class SequenceTrack(Track):
         model.seq_out = nn.Linear(model.cfg.dim, 21)
         # model.seq_mask = nn.Parameter(torch.zeros(model.cfg.dim))
 
-    def corrupt(self, batch, noisy_batch, target):
+    def corrupt(self, batch, noisy_batch, target, logger=None):
         if self.cfg.corrupt == "mask":
             tokens = batch["aatype"]
 
@@ -42,7 +42,9 @@ class SequenceTrack(Track):
             )
 
         target["aatype"] = batch["aatype"]
-        self.logger.log("seq/toks", batch["seq_mask"].sum())
+
+        if logger:
+            logger.log("seq/toks", batch["seq_mask"].sum())
 
     def embed(self, model, batch):
         x = model.seq_embed(batch["aatype"])
@@ -51,13 +53,14 @@ class SequenceTrack(Track):
     def predict(self, model, out, readout):
         readout["aatype"] = model.seq_out(out)
 
-    def compute_loss(self, readout, target, pad_mask, eps=1e-6):
+    def compute_loss(self, readout, target, logger=None, eps=1e-6):
         loss = torch.nn.functional.cross_entropy(
             readout["aatype"].transpose(1, 2), target["aatype"], reduction="none"
         )
 
         mask = target["seq_supervise"]
-        self.logger.log("seq/loss", loss, mask=mask)
-        self.logger.log("seq/perplexity", loss, mask=mask, post=np.exp)
-        self.logger.log("seq/toks_sup", mask.sum().item())
-        return (loss * mask).sum() / pad_mask.sum()
+        if logger:
+            logger.log("seq/loss", loss, mask=mask)
+            logger.log("seq/perplexity", loss, mask=mask, post=np.exp)
+            logger.log("seq/toks_sup", mask.sum().item())
+        return (loss * mask).sum() / target["pad_mask"].sum()

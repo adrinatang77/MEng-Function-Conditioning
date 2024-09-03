@@ -1,8 +1,8 @@
-from .task import Task
+from .task import OpenProtTask
 import numpy as np
 
 
-class SequenceGeneration(Task):
+class SequenceGeneration(OpenProtTask):
     def prep_data(self, data):
 
         data["seq_noise"] = (

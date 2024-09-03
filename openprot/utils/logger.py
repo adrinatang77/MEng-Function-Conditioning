@@ -103,6 +103,7 @@ class Logger:
             self.print_log(trainer, prefix)
 
     def print_log(self, trainer, prefix="train", save=False, extra_logs=None):
+        assert not save, "print_log(save=True) does not work yet"
         log = self._log
         log = {key: log[key] for key in log if f"{prefix}/" in key}
         log = gather_log(log, trainer.world_size)
