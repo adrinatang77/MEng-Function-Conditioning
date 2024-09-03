@@ -7,6 +7,7 @@ from .track import OpenProtTrack
 from ..utils import residue_constants as rc
 
 MASK_IDX = 21
+NUM_TOKENS = 21
 
 class SequenceTrack(OpenProtTrack):
 
@@ -18,7 +19,7 @@ class SequenceTrack(OpenProtTrack):
     def add_modules(self, model):
         model.seq_embed = nn.Embedding(22, model.cfg.dim)
         model.seq_out = nn.Linear(model.cfg.dim, 21)
-        model.flow = nn.Parameter(torch.randn(21, 21)) # random flow matrix 
+        model.flow = nn.Parameter(torch.randn(21, 21)) # temporary random flow matrix 
         # model.seq_mask = nn.Parameter(torch.zeros(model.cfg.dim))
 
     def apply_flow(self, tokens, flow, timestep, total_steps):
@@ -147,3 +148,27 @@ class SequenceTrack(OpenProtTrack):
             logger.log("seq/perplexity", loss, mask=mask, post=np.exp)
             logger.log("seq/toks_sup", mask.sum().item())
         return (loss * mask).sum() / target["pad_mask"].sum()
+
+def dt_p_xt_g_xt(x1, t):
+    # x1:(batch_size, dimension)
+    # t: float
+    # returns (batch_size, dimension, state space) for varying x_t value
+
+    # uniform
+    x1_onehot = F.one_hot(x1, num_classes=NUM_TOKENS) 
+    return x1_onehot - (1/NUM_TOKENS)
+
+def p_xt_g_x1(x1, t):
+    # x1: (batch_size, dimension)
+    # t: float
+    # returns (batch_size, dimension, state space) for varying x_t value
+
+    # uniform
+    x1_onehot = F.one_hot(x1, num_classes=NUM_TOKENS) 
+    return t * x1_onehot + (1-t) * (1/NUM_TOKENS)
+
+def sample_prior(num_samples, dim):
+    # uniform
+    return torch.randint(0, NUM_TOKENS, (num_samples, dim))
+
+
