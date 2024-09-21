@@ -1,39 +1,8 @@
+import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from . import rope
-
-
-class MultiHeadAttention(nn.Module):
-    def __init__(self, dim, heads, freqs_cis=None):
-        super().__init__()
-        self.dim = dim
-        self.heads = heads
-        assert self.dim % heads == 0
-
-        self.w_q = nn.Linear(dim, dim, bias=False)
-        self.w_k = nn.Linear(dim, dim, bias=False)
-        self.w_v = nn.Linear(dim, dim, bias=False)
-        self.w_o = nn.Linear(dim, dim, bias=False)
-
-        if freqs_cis is not None:
-            self.register_buffer("freqs_cis", freqs_cis)
-
-    def forward(self, x, mask=None):
-        B, L, D = x.shape
-
-        query = self.w_q(x).view(B, L, self.heads, -1).transpose(1, 2)
-        key = self.w_k(x).view(B, L, self.heads, -1).transpose(1, 2)
-        value = self.w_v(x).view(B, L, self.heads, -1).transpose(1, 2)
-
-        freqs_cis = rope.compute_freqs_cis(D // self.heads, L, device=x.device)
-        query, key = rope.apply_rotary_emb(query, key, freqs_cis)
-
-        if mask is not None:
-            mask = mask.view(B, 1, 1, -1)
-
-        attn = F.scaled_dot_product_attention(query, key, value, attn_mask=mask)
-        attn = attn.transpose(1, 2).view(B, L, D)
-        return self.w_o(attn)
+from .gmha import GeometricMultiHeadAttention
+from ..utils.rotation_conversions import axis_angle_to_matrix
 
 
 class FeedForward(nn.Module):
@@ -51,17 +20,26 @@ class FeedForward(nn.Module):
 
 
 class OpenProtTransformerBlock(nn.Module):
-    def __init__(self, dim, heads, ff_expand):
+    def __init__(self, dim, heads, ff_expand, geometric_attn=False, frame_update=False):
         super().__init__()
-        self.mha = MultiHeadAttention(dim, heads)
+        self.mha = GeometricMultiHeadAttention(dim, heads, geometric=geometric_attn)
         self.mha_norm = nn.LayerNorm(dim)
         self.ff = FeedForward(dim, ff_expand * dim)
         self.ff_norm = nn.LayerNorm(dim)
 
-    def forward(self, x, mask=None):
-        x = x + self.mha(self.mha_norm(x), mask)
+        if frame_update:
+            self.ff_update = nn.Linear(dim, 6)
+        else:
+            self.ff_update = None
+
+    def forward(self, x, mask=None, rots=None, trans=None):
+        x = x + self.mha(self.mha_norm(x), mask, rots=rots, trans=trans)
         x = x + self.ff(self.ff_norm(x))
-        return x
+        if self.ff_update is not None:
+            vec, rotvec = self.ff_update(x).split(3, dim=-1)
+            trans = trans + torch.einsum("blij,blj->bli", rots, vec)
+            rots = rots @ axis_angle_to_matrix(rotvec).mT
+        return x, rots, trans
 
 
 class OpenProtModel(nn.Module):
@@ -72,18 +50,29 @@ class OpenProtModel(nn.Module):
             self.in_norm = nn.LayerNorm(cfg.dim)
 
         self.blocks = nn.ModuleList()
-        for _ in range(cfg.blocks):
+        for i in range(cfg.blocks):
             self.blocks.append(
                 OpenProtTransformerBlock(
                     dim=cfg.dim,
                     heads=cfg.heads,
                     ff_expand=cfg.ff_expand,
+                    geometric_attn=i in cfg.geometric_attn,
+                    frame_update=i in cfg.frame_update,
                 )
             )
 
-    def forward(self, x, mask=None):
+    def forward(self, inp):
+
+        x = inp["x"]
+        mask = inp["pad_mask"]
+        rots = inp.get("rots", None)
+        trans = inp.get("trans", None)
         if self.cfg.in_norm:
             x = self.in_norm(x)
         for block in self.blocks:
-            x = block(x, mask)
-        return x
+            x, rots, trans = block(x, mask, rots=rots, trans=trans)
+        return {
+            "x": x,
+            "rots": rots,
+            "trans": trans,
+        }

@@ -46,12 +46,11 @@ class SequenceTrack(OpenProtTrack):
         if logger:
             logger.log("seq/toks", batch["seq_mask"].sum())
 
-    def embed(self, model, batch):
-        x = model.seq_embed(batch["aatype"])
-        return x
+    def embed(self, model, batch, inp):
+        inp["x"] += model.seq_embed(batch["aatype"])
 
     def predict(self, model, out, readout):
-        readout["aatype"] = model.seq_out(out)
+        readout["aatype"] = model.seq_out(out["x"])
 
     def compute_loss(self, readout, target, logger=None, eps=1e-6):
         loss = torch.nn.functional.cross_entropy(

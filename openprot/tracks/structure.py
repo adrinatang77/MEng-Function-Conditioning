@@ -8,6 +8,7 @@ from ..utils.geometry import (
     gram_schmidt,
     compute_pade,
 )
+from ..utils.rotation_conversions import axis_angle_to_matrix
 from ..utils.rigid_utils import Rigid, Rotation
 from ..utils import residue_constants as rc
 from ..model.positions import PositionEmbedder, PositionDecoder
@@ -52,74 +53,92 @@ class StructureTrack(OpenProtTrack):
         data["torsion_mask"] = torsion_mask
 
     def add_modules(self, model):
+        if self.cfg.embedder.type == "frames":
+            return  # temporary
         model.trans_mask = nn.Parameter(torch.zeros(model.cfg.dim))
         model.trans_null = nn.Parameter(torch.zeros(model.cfg.dim))
         model.trans_embed = PositionEmbedder(self.cfg.embedder, model.cfg.dim)
         model.trans_out = PositionDecoder(self.cfg.decoder, model.cfg.dim)
         # model.rots_embed = nn.Linear(9, model.cfg.dim)
         # model.trans_out = nn.Linear(model.cfg.dim, 3)
-        # model.rots_out = nn.Linear(model.cfg.dim, 9)
+        model.rots_out = nn.Linear(model.cfg.dim, 3)
 
     def corrupt(self, batch, noisy_batch, target, logger=None):
 
-        noisy_batch["frame_trans"] = torch.where(
-            batch["struct_noise"][..., None] > 0, 0.0, batch["frame_trans"]
-        )
-        target["frame_trans"] = batch["frame_trans"]
-
+        ## right now our corruption is just masking EVERYTHING
         noisy_batch["struct_mask"] = batch["struct_mask"]
         noisy_batch["struct_noise"] = batch["struct_noise"]
 
-        target["struct_supervise"] = batch["struct_mask"] * (batch["struct_noise"] > 0)
+        dev = batch["frame_trans"].device
+        B, L, _ = batch["frame_trans"].shape
+
+        target["frame_trans"] = batch["frame_trans"]
+        target["frame_rots"] = batch["frame_rots"]
+        target["struct_supervise"] = batch["frame_mask"]
+
+        noisy_batch["frame_trans"] = torch.zeros_like(batch["frame_trans"])
+        noisy_batch["frame_rots"] = torch.eye(3, device=dev).expand(B, L, 3, 3)
+
+        # batch["struct_mask"] * (batch["struct_noise"] > 0)
 
         if logger:
             logger.log("struct/toks", batch["struct_mask"].sum())
 
-    def embed(self, model, batch):
-        pos_embed = model.trans_embed(batch["frame_trans"])
-        pos_embed = torch.where(
-            batch["struct_mask"][..., None].bool(),
-            pos_embed,
-            model.trans_null[None, None],
-        )
-        pos_embed = torch.where(
-            batch["struct_noise"][..., None] == 1.0,
-            model.trans_mask[None, None],
-            pos_embed,
-        )
-        return pos_embed
+    def embed(self, model, batch, inp):
+
+        if self.cfg.embedder.type == "frames":
+            inp["rots"] = batch["frame_rots"]
+            inp["trans"] = batch["frame_trans"]
+        else:
+            pos_embed = model.trans_embed(batch["frame_trans"])
+            # NULL embed the non-exisistent = unsupervised tokens
+            pos_embed = torch.where(
+                batch["struct_mask"][..., None].bool(),
+                pos_embed,
+                model.trans_null[None, None],
+            )
+            # MASK embed the fully noised tokens
+            pos_embed = torch.where(
+                batch["struct_noise"][..., None] == 1.0,
+                model.trans_mask[None, None],
+                pos_embed,
+            )
+            inp["x"] += pos_embed
 
     def predict(self, model, out, readout):
-        readout["trans"] = model.trans_out(out)
-        # readout["rots"] = model.rots_out(out)
+        if self.cfg.decoder.type == "frames":
+            readout["trans"] = out["trans"]
+            readout["rots"] = out["rots"]
 
-    def get_coords(self, readout):
-        if self.cfg.decoder.type == "linear":
-            return readout["trans"]
-        elif self.cfg.decoder.type == "sinusoidal":
-            logits = readout["trans"]
-            ang = torch.atan2(logits[..., 1::2], logits[..., ::2])
-            return ang * self.cfg.decoder.max_period / (2 * np.pi)
-        else:
-            raise Exception(
-                f"PositionDecoder type {self.cfg.decoder.type} not recognized"
-            )
+        elif self.cfg.decoder.type == "linear":
+            readout["trans"] = model.trans_out(out["x"])
+            rotvec = model.rots_out(out["x"])
+            readout["rots"] = axis_angle_to_matrix(rotvec)
 
     def compute_loss(self, readout, target, logger=None):
 
         loss = 0
 
         if "rmsd" in self.cfg.losses:
-            loss = loss + self.compute_rmsd_loss(readout, target, logger=logger)
+            loss = loss + self.cfg.losses["rmsd"] * self.compute_rmsd_loss(
+                readout, target, logger=logger
+            )
 
         if "sinusoidal" in self.cfg.losses and self.cfg.decoder.type == "sinusoidal":
-            loss = loss + self.compute_sinusoidal_loss(readout, target, logger=logger)
+            raise Exception("sinusoidal structural loss no longer supported")
+            loss = loss + self.cfg.losses["sinusoidal"] * self.compute_sinusoidal_loss(
+                readout, target, logger=logger
+            )
 
         if "pade" in self.cfg.losses:
-            loss = loss + self.compute_pade_loss(readout, target, logger=logger)
+            loss = loss + self.cfg.losses["pade"] * self.compute_pade_loss(
+                readout, target, logger=logger
+            )
 
         if "fape" in self.cfg.losses:
-            loss = loss + self.compute_fape_loss(readout, target, logger=logger)
+            loss = loss + self.cfg.losses["fape"] * self.compute_fape_loss(
+                readout, target, logger=logger
+            )
 
         mask = target["struct_supervise"]
 
@@ -132,7 +151,7 @@ class StructureTrack(OpenProtTrack):
         return loss
 
     def compute_pade_loss(self, readout, target, logger=None):
-        pred = self.get_coords(readout)
+        pred = readout["trans"]
         gt = target["frame_trans"]
         mask = target["struct_supervise"]  # this does not do exactly what we want
 
@@ -167,26 +186,25 @@ class StructureTrack(OpenProtTrack):
 
         return nll.sum(-1)  # * mask).sum() / target["pad_mask"].sum()
 
-    def compute_fape_loss(self, readout, target):
-        shape = readout["rots"].shape[:-1] + (3, 3)
-        pred_rots = readout["rots"].reshape(*shape)
-        pred_rots = gram_schmidt(
-            torch.zeros_like(pred_rots[..., 0]), pred_rots[..., 0], pred_rots[..., 1]
+    def compute_fape_loss(self, readout, target, logger=None):
+
+        pred_frames = Rigid(
+            trans=readout["trans"], rots=Rotation(rot_mats=readout["rots"])
+        )
+        target_frames = Rigid(
+            trans=target["frame_trans"], rots=Rotation(rot_mats=target["frame_rots"])
         )
 
-        pred_frames = Rigid(trans=readout["trans"], rots=Rotation(rot_mats=pred_rots))
-        target_frames = Rigid(
-            trans=target["trans"], rots=Rotation(rot_mats=target["rots"])
-        )
+        mask = target["struct_supervise"]
 
         fape_fn = partial(
             compute_fape,
             pred_frames=pred_frames,
             target_frames=target_frames,
-            frames_mask=target["frame_mask"],
+            frames_mask=mask,
             pred_positions=pred_frames.get_trans(),
             target_positions=target_frames.get_trans(),
-            positions_mask=target["ca_mask"],
+            positions_mask=mask,
             length_scale=10,
         )
         fape_loss = (
@@ -194,10 +212,13 @@ class StructureTrack(OpenProtTrack):
             + 0.45 * fape_fn(thresh=15)
             + 0.45 * fape_fn(l1_clamp_distance=10)
         )
+
+        if logger:
+            logger.log("struct/fape_loss", fape_loss, mask=mask)
         return fape_loss
 
     def compute_rmsd_loss(self, readout, target, logger=None, eps=1e-5):
-        pred = self.get_coords(readout)
+        pred = readout["trans"]
         gt = target["frame_trans"]
         mask = target["struct_supervise"]
 

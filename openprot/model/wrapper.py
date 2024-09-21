@@ -88,11 +88,12 @@ class OpenProtWrapper(Wrapper):
             return param_group["lr"]
 
     def forward(self, noisy_batch):
-        ## embed the tracks into an input and conditioning vector
+
+        ## embed the tracks into an input dict
         inp = self.tracks.embed(self.model, noisy_batch)
 
         ## run it thorugh the model
-        out = self.model(inp, noisy_batch["pad_mask"])
+        out = self.model(inp)
 
         ## place the readouts in a dict
         readout = self.tracks.readout(self.model, out)
@@ -114,7 +115,7 @@ class OpenProtWrapper(Wrapper):
         ## log some metrics
         self._logger.log("loss", loss)
         self._logger.log("lr", self.get_lr())
-        self._logger.log("act_norm", torch.square(out).mean(-1), batch["pad_mask"])
+        # self._logger.log("act_norm", torch.square(out).mean(-1), batch["pad_mask"])
 
         return loss
 

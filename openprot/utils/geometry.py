@@ -289,19 +289,21 @@ def compute_fape(
         thresh_mask = torch.sqrt(torch.sum(local_target_pos**2, dim=-1)) < thresh
         mask = thresh_mask * frames_mask[..., None] * positions_mask[..., None, :]
 
-        normed_error = normed_error * mask
-        normed_error = torch.sum(normed_error, dim=(-1, -2))
-        normed_error = normed_error / (eps + torch.sum(mask, dim=(-1, -2)))
+        # normed_error = normed_error * mask
+        # normed_error = torch.sum(normed_error, dim=(-1, -2))
+        # normed_error = normed_error / (eps + torch.sum(mask, dim=(-1, -2)))
 
     else:
         normed_error = normed_error * frames_mask[..., None]
         normed_error = normed_error * positions_mask[..., None, :]
+        mask = frames_mask[..., None] * positions_mask[..., None, :]
 
-        normed_error = torch.sum(normed_error, dim=-1)
-        normed_error = normed_error / (eps + torch.sum(frames_mask, dim=-1))[..., None]
-        normed_error = torch.sum(normed_error, dim=-1)
-        normed_error = normed_error / (eps + torch.sum(positions_mask, dim=-1))
+        # normed_error = torch.sum(normed_error, dim=-1)
+        # normed_error = normed_error / (eps + torch.sum(frames_mask, dim=-1))[..., None]
+        # normed_error = torch.sum(normed_error, dim=-1)
+        # normed_error = normed_error / (eps + torch.sum(positions_mask, dim=-1))
 
+    normed_error = (normed_error * mask).sum(-1) / (eps + mask.sum(-1))
     return normed_error
 
 

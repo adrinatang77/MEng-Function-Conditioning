@@ -19,10 +19,9 @@ class OpenProtTrackManager(dict):
             track.tokenize(data)
 
     def embed(self, model: OpenProtModel, batch: dict):
-        inp = 0
+        inp = {"x": 0, "pad_mask": batch["pad_mask"]}  # temporary
         for track in self.values():
-            x = track.embed(model, batch)
-            inp = inp + x
+            track.embed(model, batch, inp)
         return inp
 
     def readout(self, model: OpenProtModel, out: torch.Tensor):
