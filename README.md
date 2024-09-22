@@ -43,11 +43,12 @@ Numerous other settings are controlled in `config.yaml` which have been commente
 
 ## Workflow Abstraction
 
-We have four abstraction layers:
+We have five abstraction layers:
 * The **dataset** layer corresponds to individual data sources, i.e., AFDB, PDB, etc
-* The **task** layer corresponds to specific training objectives, i.e., inverse folding, structure prediction
-* The **track** layer corresponds to each data modality, and is responsible for noising, embedding (into the model), predicting (from the model), and supervising data modalities.
+* The **task** layer corresponds to specific training objectives, i.e., inverse folding, structure prediction. Tasks and datasets are collectively grouped under and managed by the [`OpenProtDataManager`](openprot/data/manager.py) class.
+* The **track** layer corresponds to each data modality, and is responsible for noising, embedding (into the model), predicting (from the model), and supervising data modalities. Tracks are grouped under the [`OpenProtTrackManager`](openprot/tracks/manager.py) class.
 * The **model** is the model itself.
+* The **evaluation** layer manages the data and inference procedures for each validation workflow. Evals are grouped under and managed by the [`OpenProtEvalManager`](openprot/evals/manager.py) class.
 
 
 To understand the repo, let's walk through the workflow abstraction by following the lifecycle of a training example:
@@ -61,7 +62,8 @@ To understand the repo, let's walk through the workflow abstraction by following
 * The class knows how to `crop` or `pad` itself whose constructor requires `seqres` (since all examples have it) but will fill in default values for all other unspecified features. The features will be zero-initialized with per-token shapes as specified in `config.yaml`. `OpenProtDataset` objects should override the approriate defaults when returning the data.
 
 
-* All training examples originate from some `OpenProtDataset` which map from an integer index to a training example via `__getitem__`. This map should be deterministic and is not shuffled. The dataset defines its own `setup` based on its fields specified in `config.yaml`. 
+* All training examples originate from some [`OpenProtDataset`](openprot/data/data.py) which map from an integer index to a training example via `__getitem__`. This map should be deterministic and is not shuffled. The dataset defines its own `setup` based on its fields specified in `config.yaml`.
+* The training examples are of class [`OpenProtData`](openprot/data/data.py), whose constructor requires `seqres` (since all examples have it) but will fill in default values for all other unspecified features. The features will be zero-initialized with per-token shapes as specified in `config.yaml`. `OpenProtDataset` objects should override the approriate defaults when returning the data.
 
 > &#x26A0; Be sure to define/use features in a way where default 0 makes sense.
 
@@ -71,15 +73,13 @@ To understand the repo, let's walk through the workflow abstraction by following
 
 > &#x26A0; All of our masks are 1 if the data is PRESENT because we use masks extensively to reduce loss tensors!
 
-* `Task` objects are responsible for keeping a mix of datasets and sampling from them with probabilities specified in `config.yaml`. Upon fetching the data, they crop the data before executing task-specific preprocessing in `prep_data`. The preprocessing should populate the appropriate `_noise` features so that we determine what we are going to mask, noise, and supervise.
+* [`Task`](openprot/tasks/task.py) objects are responsible for keeping a mix of datasets and sampling from them with probabilities specified in `config.yaml`. Upon fetching the data, they crop the data before executing task-specific preprocessing in `prep_data`. The preprocessing should populate the appropriate `_noise` features so that we determine what we are going to mask, noise, and supervise.
 
 > &#x26A0; We crop here because the preprocessing may be crop-dependent. In the future, there may be more general data transforms as part of the task preprocessing.
 
-* The `OpenProtDataManager` samples from a mix of tasks with probabilities specified in `config.yaml`. This class further processes the data by padding it to a fixed length which introduces a special `pad_mask` feature.
+* The [`OpenProtDataManager`](openprot/data/manager.py) samples from a mix of tasks with probabilities specified in `config.yaml`. The data is padded it to a fixed length which introduces a special `pad_mask` feature. The `OpenProtDataManager` then calls on the `OpenProtTrackManager` to `tokenize` the data, which introduces additional numpy arrays to the data.
 
-* The `OpenProtDataManager` also maintains the list of `Track`s and asks each to `tokenize` the data, which introduces additional numpy arrays to the data.
-
-* PyTorch Lightning now automatically batches our data and moves it the GPU; everything that is not an `np.ndarray` or `torch.Tensor` is lost. The `OpenProtWrapper` maintains a list of `Track`s and the model itself and manages the rest of the training workflow.
+* PyTorch Lightning now automatically batches our data and moves it the GPU. The rest of the training step happens in [`OpenProtWrapper`](openprot/model/wrapper.py).
 
 > &#x26A0; We may consider moving the tokenization step here.
 
@@ -89,12 +89,19 @@ To understand the repo, let's walk through the workflow abstraction by following
 
 > &#x26A0; Note that every track sees every data point at each step, regardless of whether the track is present. This is why the `_mask` is crucial!
 
-* The batch passes through the model, masked by `pad_mask`.
-
-* The tracks make a prediction and place them in the `readout`.
+* The batch passes through the model, masked by `pad_mask`. The tracks make a prediction and place them in the `readout`.
 
 * The tasks then run `compute_loss` using the `readout` and `target`, which are weighted to obtain the final loss. The loss should be computed per-token, and logged with the `loss_mask`, so that we monitor a per-supervised-token `track/loss`. We also log `track/toks` and `track/sup_toks` as the sum of the `_mask` and `_supervise` masks. 
 
 > &#x26A0; The return value of each track's `compute_loss` must be a **scalar mean** over all **non-pad tokens in the batch**. This is so that the loss is weighted by the fraction of tokens that are supervised in that track (to avoid spiky token weights if some tracks are rarely supervised). Thus, the weight in `config.yaml` should be regarded as a per-supervised-token weight.
 
 > &#x26A0; We may add more systematic logging to have per-dataset, per-task metrics.
+
+The **validation** life cycle is similar, but a bit simpler:
+
+* Each [`OpenProtEval`](openprot/evals/eval.py) class is a subclass of `OpenProtDataset`, i.e., it is also a map from scalar index to `OpenProtData` object. The [`OpenProtEvalManager`](openprot/eval/manager.py) maintains a list of eval tasks and iterates through them sequentially in a parallizeable fashion (i.e., across ranks). The eval manager will `tokenize` the data object returned from the eval and label it with the source eval, but will not crop, pad, or otherwise preprocess it.
+
+> &#x26A0; We intentionally keep the validation batch size 1 so that batch corresponds to one task.
+
+* The validation example surfaces in the `OpenProtWrapper`'s validation step. There, the batch is handed to the `run_batch` method of the source eval. The source eval executes arbitrary sampling and inference logic, logs arbitrary metrics, and saves arbitrary artifacts.
+
