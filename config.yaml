@@ -35,22 +35,28 @@ data:
     crop: 512
     seed: 137
 
-# default features before tokenization
-# each dataset sets MASK
-# each task sets NOISE
+# These are the raw features which are expected to be supplied by the Datasets
+# before they are TOKENIZED by the Tracks.
+# We specify them and their shapes so that datasets can supply default values if missing
+# for example, a structure dataset will not supply any dynamics information.
+# We also need to set defaults for the "mask" and "noise" because not all Tasks will set them.
+# -1 means this is the LEGNTH dim. By convention pairwise features must start with _.
+# Global features must end with '_', such as "name" or "seqres"
 features:
-    atom37: [37, 3]
-    atom37_mask: [37]
-    seq_mask: []
-    seq_noise: []
-    struct_mask: []
-    struct_noise: []
+    atom37: [-1, 37, 3]
+    atom37_mask: [-1, 37]
+    seq_mask: [-1]
+    seq_noise: [-1]
+    struct_mask: [-1]
+    struct_noise: [-1]
 
 datasets:
     PDBDataset: 
-        path: /data/cb/scratch/datasets/pdb_npz
+        #path: /data/cb/scratch/datasets/pdb_npz
+        path: /work/10165/bjing/vista/data/pdb_npz
     AFDBDataset:
-        path: /data/cb/scratch/datasets/afdb_swissprot_v4/afdb_swissprot_v4
+        #path: /data/cb/scratch/datasets/afdb_swissprot_v4/afdb_swissprot_v4
+        path: /work/10165/bjing/vista/data/afdb_swissprot_v4/afdb_swissprot_v4
     UnirefDataset:
         path: /data/cb/scratch/datasets/uniref50.fasta
         index: /data/cb/scratch/share/openprot/uniref50.index

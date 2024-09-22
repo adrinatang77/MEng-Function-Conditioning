@@ -4,7 +4,7 @@ from abc import abstractmethod
 
 
 class OpenProtDataset(torch.utils.data.Dataset):
-    def __init__(self, cfg, feats=None, logger=None):
+    def __init__(self, cfg, feats=None):
         super().__init__()
         self.cfg = cfg
         self.feats = feats
@@ -22,17 +22,17 @@ class OpenProtDataset(torch.utils.data.Dataset):
     def __getitem__(self, idx: int):
         NotImplemented
 
-    def make_data(self, **kwargs):
-        return OpenProtData(feats=self.feats, **kwargs)
+    def make_data(self, name, seqres, **kwargs):
+        return OpenProtData(feats=self.feats, name=name, seqres=seqres, **kwargs)
 
 
 class OpenProtData(dict):
-    def __init__(self, *, feats, **kwargs):
-        assert "seqres" in kwargs
-        assert "name" in kwargs
-        self["name"] = kwargs["name"]
-        self["seqres"] = kwargs["seqres"]
+    def __init__(self, *, name, seqres, **kwargs):
+        self["name"] = name
+        self["seqres"] = seqres
+        L = len(seqres)
         for feat, shape in feats.items():
+            shape = [n for n in shape if n > 0 else L]
             if feat in kwargs:
                 self[feat] = kwargs[feat]
             else:

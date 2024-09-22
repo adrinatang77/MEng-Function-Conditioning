@@ -4,7 +4,8 @@
 * python==3.12
 * biopython
 * numpy==1.26.4
-* pytorch==2.2.0 (`pip install torch==2.2.0+cu121 -f https://download.pytorch.org/whl/torch_stable.html` on the csail machines)
+* `pip install torch==2.2.0+cu121 -f https://download.pytorch.org/whl/torch_stable.html` on the csail machines
+* `pip install torch==2.4.0 --index-url https://download.pytorch.org/whl/cu124` on vista
 * pytorch-lightning==2.4.0
 * dm-tree
 * omegaconf
@@ -14,6 +15,15 @@
 * foldcomp (must install with `pip install git+https://github.com/steineggerlab/foldcomp@f868b95` repo, see https://github.com/steineggerlab/foldcomp/issues/52)
 
 Install the dependencies with `mamba env create -f environment.yml` and activate the environment with `conda activate openprot`. (Note: this is Sam's workflow, Bowen recommends installing things manually)
+
+### Setting up datasets
+Only need to do this once
+```
+aws s3 sync --no-sign-request s3://pdbsnapshots/20240101/pub/pdb/data/structures/divided/mmCIF pdb_mmcif
+python -m scripts.unpack_mmcif --mmcif_dir ../data/pdb_mmcif --outdir ../data/pdb_npz --outcsv ../data/pdb_chains.csv --num_workers 100
+python -c "import foldcomp; foldcomp.setup('afdb_swissprot_v4')" # foldcomp server might be down though
+curl -O https://ftp.ebi.ac.uk/pub/databases/uniprot/uniref/uniref50/uniref50.fasta.gz # then gunzip it
+```
 
 ## Contributing
 
@@ -42,8 +52,16 @@ We have four abstraction layers:
 
 To understand the repo, let's walk through the workflow abstraction by following the lifecycle of a training example:
 
-* All training examples originate from some `OpenProtDataset` which map from an integer index to a training example via `__getitem__`. This map should be deterministic and is not shuffled. The dataset defines its own `setup` based on its fields specified in `config.yaml`.
-* The training examples are of class `OpenProtData`, whose constructor requires `seqres` (since all examples have it) but will fill in default values for all other unspecified features. The features will be zero-initialized with per-token shapes as specified in `config.yaml`. `OpenProtDataset` objects should override the approriate defaults when returning the data.
+* Throughout the workflow, training examples are of class `OpenProtData`, which subclasses `dict`. These objects should know how to crop, pad, and batch themselves and thus have some important properties worth discussing. Attributes are
+    * Regular attributes, which are (numpy or torch) arrays with (unbatched) shape `(L, ...)`
+    * Pairwise attributes, which have shape `(L, L, ...)`. Their names must always end in `_`.
+    * Global attributes, which have shape `(...)`. Their names must always start with `_`.
+    * Special attributes, which are NOT arrays.
+
+* The class knows how to `crop` or `pad` itself whose constructor requires `seqres` (since all examples have it) but will fill in default values for all other unspecified features. The features will be zero-initialized with per-token shapes as specified in `config.yaml`. `OpenProtDataset` objects should override the approriate defaults when returning the data.
+
+
+* All training examples originate from some `OpenProtDataset` which map from an integer index to a training example via `__getitem__`. This map should be deterministic and is not shuffled. The dataset defines its own `setup` based on its fields specified in `config.yaml`. 
 
 > &#x26A0; Be sure to define/use features in a way where default 0 makes sense.
 
