@@ -53,35 +53,29 @@ We have five abstraction layers:
 
 To understand the repo, let's walk through the workflow abstraction by following the lifecycle of a training example:
 
-* Throughout the workflow, training examples are of class `OpenProtData`, which subclasses `dict`. These objects should know how to crop, pad, and batch themselves and thus have some important properties worth discussing. Attributes are
+* Throughout the workflow, training examples are of class [`OpenProtData`](openprot/data/data.py), which subclasses `dict`. `OpenProtData` objects know how to `crop`, `pad`, `batch`, `unbatch`, and `to(device)` themselves. To do this, we impose some conventions on their attributes.
     * Regular attributes, which are (numpy or torch) arrays with (unbatched) shape `(L, ...)`
-    * Pairwise attributes, which have shape `(L, L, ...)`. Their names must always end in `_`.
-    * Global attributes, which have shape `(...)`. Their names must always start with `_`.
-    * Special attributes, which are NOT arrays.
-
-* The class knows how to `crop` or `pad` itself whose constructor requires `seqres` (since all examples have it) but will fill in default values for all other unspecified features. The features will be zero-initialized with per-token shapes as specified in `config.yaml`. `OpenProtDataset` objects should override the approriate defaults when returning the data.
-
-
+    * Pairwise attributes, which have shape `(L, L, ...)`. Their names must always END in `_`.
+    * The special `seqres` attribute, which is the sole non-array attribute that will be cropped or padded. (This is because `seqres` is the only non-array raw data type.)
+    * Other attributes, which is any attribute that is NOT an array (such as `name`).
+      
 * All training examples originate from some [`OpenProtDataset`](openprot/data/data.py) which map from an integer index to a training example via `__getitem__`. This map should be deterministic and is not shuffled. The dataset defines its own `setup` based on its fields specified in `config.yaml`.
-* The training examples are of class [`OpenProtData`](openprot/data/data.py), whose constructor requires `seqres` (since all examples have it) but will fill in default values for all other unspecified features. The features will be zero-initialized with per-token shapes as specified in `config.yaml`. `OpenProtDataset` objects should override the approriate defaults when returning the data.
+    * To ensure uniformity in the resulting `OpenProtData` objects, datasets should call `self.make_data` instead of instantiating directly. This will fill in default values for any unspecified features with shapes specified in `config.yaml`.
+    * Every track will have a `_mask` and `_noise` feature which indicate if the track is present and the noise level. `OpenProtDataset` objects should set the `_mask` for modalities that are present.
 
 > &#x26A0; Be sure to define/use features in a way where default 0 makes sense.
 
-> &#x26A0; All features must be float32 arrays (except for `seqres`) and per-token, but we may revisit this.
-
-* Canonically, every track will have a `_mask` and `_noise` feature which indicate if the track is present and the noise level. `OpenProtDataset` objects should set the `_mask`.
-
 > &#x26A0; All of our masks are 1 if the data is PRESENT because we use masks extensively to reduce loss tensors!
 
-* [`Task`](openprot/tasks/task.py) objects are responsible for keeping a mix of datasets and sampling from them with probabilities specified in `config.yaml`. Upon fetching the data, they crop the data before executing task-specific preprocessing in `prep_data`. The preprocessing should populate the appropriate `_noise` features so that we determine what we are going to mask, noise, and supervise.
+* [`Task`](openprot/tasks/task.py) objects are responsible for keeping a mix of datasets and sampling from them with probabilities specified in `config.yaml`. Upon fetching the data, they execute task-specific preprocessing in `prep_data(data, crop=None)`. The preprocessing should populate the appropriate `_noise` features so that we determine what we are going to mask, noise, and supervise. The task needs to ensure the maximum length of the returned data at most `crop`, probably by calling `data.crop(crop)`.
 
-> &#x26A0; We crop here because the preprocessing may be crop-dependent. In the future, there may be more general data transforms as part of the task preprocessing.
+> &#x26A0; We ask task classes to crop the data themselves because for complex tasks, naive cropping might not work.
 
-* The [`OpenProtDataManager`](openprot/data/manager.py) samples from a mix of tasks with probabilities specified in `config.yaml`. The data is padded it to a fixed length which introduces a special `pad_mask` feature. The `OpenProtDataManager` then calls on the `OpenProtTrackManager` to `tokenize` the data, which introduces additional numpy arrays to the data.
+> &#x26A0; Any features touched by `OpenProtDataset` or `OpenProtTask` objects before this point must be logged to `config.yaml`; otherwise there will be issues when batching! Also, these features must be NUMPY ARRAYS, not TORCH TENSORS. (`OpenProtData` doesn't yet know how to crop or pad tensors).
+
+* The [`OpenProtDataManager`](openprot/data/manager.py) samples from a mix of tasks with probabilities specified in `config.yaml`.  The `OpenProtDataManager` then calls on the `OpenProtTrackManager` to `tokenize` the data, which introduces additional numpy arrays to the data for each track. The data is finally padded to a fixed length.
 
 * PyTorch Lightning now automatically batches our data and moves it the GPU. The rest of the training step happens in [`OpenProtWrapper`](openprot/model/wrapper.py).
-
-> &#x26A0; We may consider moving the tokenization step here.
 
 * The batch is noised by calling `corrupt` on each track. In doing so, the track places tensors that will be embedded into the model in `noisy_batch`, and tensors needed to compute the loss in `target`. This must include a `_supervise` mask.
 

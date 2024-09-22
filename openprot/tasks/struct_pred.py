@@ -4,8 +4,11 @@ from ..utils import residue_constants as rc
 
 
 class StructurePrediction(OpenProtTask):
-    def prep_data(self, data, eps=1e-6):
+    def prep_data(self, data, crop=None, eps=1e-6):
+        
+        if crop is not None: data.crop(crop)
 
+        # TODO: distinguish between frames and torsions
         data["struct_mask"] = data["atom37_mask"][..., rc.atom_order["CA"]]
 
         pos = data["atom37"][..., rc.atom_order["CA"], :]

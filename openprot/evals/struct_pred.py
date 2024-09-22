@@ -35,7 +35,7 @@ class StructurePredictionEval(OpenProtEval):
     def run_batch(self, model, batch: dict, savedir=".", device=None, logger=None):
         os.makedirs(savedir, exist_ok=True)
 
-        noisy_batch = {"pad_mask": batch["pad_mask"]}
+        noisy_batch = batch.copy('name', 'pad_mask')
         for track in model.tracks.values():
             track.corrupt(batch, noisy_batch, {})
 

@@ -28,7 +28,7 @@ class OpenProtTask:
         self.curr_ds = self.rng.choice(self.cfg.datasets, p=self.dataset_probs)
 
     @abstractmethod
-    def prep_data(self, data):
+    def prep_data(self, data, crop=None):
         NotImplemented
 
     def advance(self):
@@ -44,7 +44,11 @@ class OpenProtTask:
 
         # print(f"i={i} rank={rank} ds={name} idx={idx} actual={order[idx]}")
         data = ds[order[idx % len(order)]]
+        
+        data = self.prep_data(data, crop=crop)
         if crop is not None:
-            data.crop(crop)
-
-        return self.prep_data(data)
+            try:
+                assert len(data['seqres']) <= crop
+            except:
+                raise Exception(f"{self.__class__}.prep_data failed to crop data.")
+        return data

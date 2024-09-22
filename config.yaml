@@ -1,5 +1,5 @@
 ckpt: null # eventually this will control resuming runs
-validate: false # if true, only validate the model, don't train
+validate: true # if true, only validate the model, don't train
 logger:
     # set to true to log to neptune.ai
     neptune: false
@@ -30,7 +30,7 @@ trainer:
 
 # custom args to OpenProtDataset and elsewhere
 data: 
-    num_workers: 8
+    num_workers: 0
     batch: 32
     crop: 512
     seed: 137
@@ -40,8 +40,7 @@ data:
 # We specify them and their shapes so that datasets can supply default values if missing
 # for example, a structure dataset will not supply any dynamics information.
 # We also need to set defaults for the "mask" and "noise" because not all Tasks will set them.
-# -1 means this is the LEGNTH dim. By convention pairwise features must start with _.
-# Global features must end with '_', such as "name" or "seqres"
+# -1 means this is the LEGNTH dim. 
 features:
     atom37: [-1, 37, 3]
     atom37_mask: [-1, 37]
@@ -57,20 +56,20 @@ datasets:
     AFDBDataset:
         #path: /data/cb/scratch/datasets/afdb_swissprot_v4/afdb_swissprot_v4
         path: /work/10165/bjing/vista/data/afdb_swissprot_v4/afdb_swissprot_v4
-    UnirefDataset:
-        path: /data/cb/scratch/datasets/uniref50.fasta
-        index: /data/cb/scratch/share/openprot/uniref50.index
+    # UnirefDataset:
+    #     path: /data/cb/scratch/datasets/uniref50.fasta
+    #     index: /data/cb/scratch/share/openprot/uniref50.index
             
 tasks:
-    SequenceGeneration:
-        fraction: 0.0
-        mask_rate: 0.15
-        seed: 137
-        datasets:
-            UnirefDataset: 
-                fraction: 1.0
-                start: 0
-                seed: 137
+    # SequenceGeneration:
+    #     fraction: 0.0
+    #     mask_rate: 0.15
+    #     seed: 137
+    #     datasets:
+    #         UnirefDataset: 
+    #             fraction: 1.0
+    #             start: 0
+    #             seed: 137
     StructurePrediction:
         fraction: 1.0
         seed: 137
@@ -86,7 +85,8 @@ tasks:
             
 evals:
     StructurePredictionEval: 
-        path: /data/cb/scratch/datasets/afdb_swissprot_v4/afdb_swissprot_v4
+        #path: /data/cb/scratch/datasets/afdb_swissprot_v4/afdb_swissprot_v4
+        path: /work/10165/bjing/vista/data/afdb_swissprot_v4/afdb_swissprot_v4
         
     
 
