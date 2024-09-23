@@ -11,11 +11,11 @@ from ..utils.geometry import (
 from ..utils.rotation_conversions import axis_angle_to_matrix
 from ..utils.rigid_utils import Rigid, Rotation
 from ..utils import residue_constants as rc
-from ..model.positions import PositionEmbedder, PositionDecoder
+from ..model.positions import PositionEmbedder, PositionDecoder, PairwiseProjectionHead
 from functools import partial
 import numpy as np
 
-
+"""
 def log_I0(x):  # this is unsatisfactory
     k_star = torch.round(x / 2)
     logx = torch.log(x)
@@ -35,6 +35,7 @@ def torus_logZ(x):  # x = 1 / sigma^2
         np.log(2 * np.pi) + log_I0(x) - x,
         0.5 * np.log(2 * np.pi) - 0.5 * torch.log(x),
     )
+"""
 
 
 class StructureTrack(OpenProtTrack):
@@ -45,80 +46,116 @@ class StructureTrack(OpenProtTrack):
         data["frame_trans"] = frames._trans
         data["frame_rots"] = frames._rots._rot_mats
         data["frame_mask"] = frame_mask
+        """
         aatype = np.array(
             [rc.restype_order.get(c, rc.unk_restype_index) for c in data["seqres"]]
         )
         torsions, torsion_mask = atom37_to_torsions(data["atom37"], aatype)
         data["torsions"] = torsions
         data["torsion_mask"] = torsion_mask
+        """
 
     def add_modules(self, model):
-        if self.cfg.embedder.type == "frames":
-            return  # temporary
-        model.trans_mask = nn.Parameter(torch.zeros(model.cfg.dim))
-        model.trans_null = nn.Parameter(torch.zeros(model.cfg.dim))
-        model.trans_embed = PositionEmbedder(self.cfg.embedder, model.cfg.dim)
-        model.trans_out = PositionDecoder(self.cfg.decoder, model.cfg.dim)
-        # model.rots_embed = nn.Linear(9, model.cfg.dim)
-        # model.trans_out = nn.Linear(model.cfg.dim, 3)
+        if not self.cfg.frames:
+            model.trans_embed = nn.Linear(3, model.cfg.dim)
+            model.rots_embed = nn.Linear(9, model.cfg.dim)
+        model.frame_mask = nn.Parameter(torch.zeros(model.cfg.dim))
+        model.frame_null = nn.Parameter(torch.zeros(model.cfg.dim))
+
+        model.trans_out = nn.Linear(model.cfg.dim, 3)
         model.rots_out = nn.Linear(model.cfg.dim, 3)
+        model.pairwise_out = PairwiseProjectionHead(model.cfg.dim, 64)
 
     def corrupt(self, batch, noisy_batch, target, logger=None):
 
         ## right now our corruption is just masking EVERYTHING
-        noisy_batch["struct_mask"] = batch["struct_mask"]
-        noisy_batch["struct_noise"] = batch["struct_noise"]
+        for key in [
+            "trans_noise",
+            "rots_noise",
+            "frame_mask",
+        ]:
+            noisy_batch[key] = batch[key]
+
+        for key in [
+            "frame_trans",
+            "frame_rots",
+        ]:
+            target[key] = batch[key]
+
+        target["struct_supervise"] = batch["frame_mask"]
 
         dev = batch["frame_trans"].device
         B, L, _ = batch["frame_trans"].shape
 
-        target["frame_trans"] = batch["frame_trans"]
-        target["frame_rots"] = batch["frame_rots"]
-        target["struct_supervise"] = batch["frame_mask"]
-
+        # add noise # placeholder
         noisy_batch["frame_trans"] = torch.zeros_like(batch["frame_trans"])
+
+        # add noise # placeholder
         noisy_batch["frame_rots"] = torch.eye(3, device=dev).expand(B, L, 3, 3)
 
-        # batch["struct_mask"] * (batch["struct_noise"] > 0)
-
         if logger:
-            logger.log("struct/toks", batch["struct_mask"].sum())
+            logger.log("struct/toks", batch["frame_mask"].sum())
 
     def embed(self, model, batch, inp):
 
-        if self.cfg.embedder.type == "frames":
-            inp["rots"] = batch["frame_rots"]
-            inp["trans"] = batch["frame_trans"]
+        # currently not embedding noise levels
+
+        B, L, _ = batch["frame_trans"].shape
+        dev = batch["frame_trans"].device
+
+        # these masks add up to 1
+        full_noise_mask = (
+            (batch["rots_noise"] == 1.0)
+            & (batch["trans_noise"] == 1.0)
+            & batch["frame_mask"].bool()
+        )
+        null_mask = ~batch["frame_mask"].bool()
+        embed_mask = ~full_noise_mask & ~null_mask
+
+        if self.cfg.frames:
+            empty_rots = torch.eye(3, device=dev).expand(B, L, 3, 3)
+            inp["rots"] = torch.where(embed_mask, batch["frame_rots"], empty_rots)
+            inp["trans"] = torch.where(embed_mask, batch["frame_trans"], 0.0)
         else:
-            pos_embed = model.trans_embed(batch["frame_trans"])
-            # NULL embed the non-exisistent = unsupervised tokens
-            pos_embed = torch.where(
-                batch["struct_mask"][..., None].bool(),
-                pos_embed,
-                model.trans_null[None, None],
+            inp["x"] += torch.where(
+                embed_mask[..., None], model.trans_embed(batch["frame_trans"]), 0.0
             )
-            # MASK embed the fully noised tokens
-            pos_embed = torch.where(
-                batch["struct_noise"][..., None] == 1.0,
-                model.trans_mask[None, None],
-                pos_embed,
+            inp["x"] += torch.where(
+                embed_mask[..., None],
+                model.rots_embed(batch["frame_rots"].view(B, L, 9)),
+                0.0,
             )
-            inp["x"] += pos_embed
+
+        # tell the model which frames were not present
+        inp["x"] += torch.where(
+            null_mask[..., None],
+            model.frame_null[None, None],
+            0.0,
+        )
+        # tell the model which frames were fully noised
+        inp["x"] += torch.where(
+            full_noise_mask[..., None],
+            model.frame_mask[None, None],
+            0.0,
+        )
 
     def predict(self, model, out, readout):
-        if self.cfg.decoder.type == "frames":
+        if self.cfg.frames:
             readout["trans"] = out["trans"]
             readout["rots"] = out["rots"]
 
-        elif self.cfg.decoder.type == "linear":
+        else:
             readout["trans"] = model.trans_out(out["x"])
             rotvec = model.rots_out(out["x"])
             readout["rots"] = axis_angle_to_matrix(rotvec)
+
+        readout["pairwise"] = model.pairwise_out(out["x"])
 
     def compute_loss(self, readout, target, logger=None):
 
         loss = 0
 
+        """
         if "rmsd" in self.cfg.losses:
             loss = loss + self.cfg.losses["rmsd"] * self.compute_rmsd_loss(
                 readout, target, logger=logger
@@ -129,7 +166,7 @@ class StructureTrack(OpenProtTrack):
             loss = loss + self.cfg.losses["sinusoidal"] * self.compute_sinusoidal_loss(
                 readout, target, logger=logger
             )
-
+        """
         if "pade" in self.cfg.losses:
             loss = loss + self.cfg.losses["pade"] * self.compute_pade_loss(
                 readout, target, logger=logger
@@ -137,6 +174,11 @@ class StructureTrack(OpenProtTrack):
 
         if "fape" in self.cfg.losses:
             loss = loss + self.cfg.losses["fape"] * self.compute_fape_loss(
+                readout, target, logger=logger
+            )
+
+        if "distogram" in self.cfg.losses:
+            loss = loss + self.cfg.losses["distogram"] * self.compute_distogram_loss(
                 readout, target, logger=logger
             )
 
@@ -160,6 +202,7 @@ class StructureTrack(OpenProtTrack):
             logger.log("struct/pade_loss", pade, mask=mask)
         return pade
 
+    """
     def compute_sinusoidal_loss(self, readout, target, logger=None, eps=1e-6):
 
         logits = readout["trans"]
@@ -185,6 +228,7 @@ class StructureTrack(OpenProtTrack):
             logger.log("struct/sinusoidal_loss", nll.sum(-1), mask=mask)
 
         return nll.sum(-1)  # * mask).sum() / target["pad_mask"].sum()
+    """
 
     def compute_fape_loss(self, readout, target, logger=None):
 
@@ -217,6 +261,7 @@ class StructureTrack(OpenProtTrack):
             logger.log("struct/fape_loss", fape_loss, mask=mask)
         return fape_loss
 
+    """
     def compute_rmsd_loss(self, readout, target, logger=None, eps=1e-5):
         pred = readout["trans"]
         gt = target["frame_trans"]
@@ -228,3 +273,25 @@ class StructureTrack(OpenProtTrack):
             logger.log("struct/rmsd_loss", err, mask=mask)
 
         return err  # (err * mask).sum() / target["pad_mask"].sum()
+    """
+
+    def compute_distogram_loss(self, readout, target, logger=None, eps=1e-5):
+
+        dev = readout["pairwise"].device
+        bins = torch.linspace(0, 22, 64, device=dev)
+
+        distmat = target["frame_trans"][:, None] - target["frame_trans"][:, :, None]
+        distmat = torch.sqrt(torch.square(distmat).sum(-1))
+        label = (distmat[..., None] > bins).sum(-1)
+        label = torch.clamp(label, max=63)
+
+        loss = torch.nn.functional.cross_entropy(
+            readout["pairwise"].permute(0, 3, 1, 2), label, reduction="none"
+        )
+
+        mask = target["struct_supervise"]
+        mask = mask[:, None] * mask[:, :, None]
+        if logger:
+            logger.log("struct/distogram", loss, mask)
+
+        return (loss * mask).sum(-1) / (eps + mask.sum(-1))

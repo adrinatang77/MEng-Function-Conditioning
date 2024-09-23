@@ -29,6 +29,14 @@ class OpenProtTask:
 
     @abstractmethod
     def prep_data(self, data, crop=None):
+        """
+        (1) Crops data, or otherwise ensures max length = crop
+        (2) Sets _noise features for tracks of interest
+            - does not need to take mask into account, strictly speaking
+            - (i.e., mask doesn't exist yet for structure track)
+        (3) any other relevant preprocessing (must be features in config.yaml)
+            - NUMPY ARRAYS ONLY
+        """
         NotImplemented
 
     def advance(self):

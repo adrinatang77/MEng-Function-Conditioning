@@ -20,6 +20,11 @@ class OpenProtDataset(torch.utils.data.Dataset):
 
     @abstractmethod
     def __getitem__(self, idx: int):
+        """
+        Returns OpenProtData via self.make_data(...) with args
+        (1) name and seqres (required)
+        (2) any features that should be set to non-default values (np arrays only!)
+        """
         NotImplemented
 
     def make_data(self, **kwargs):
