@@ -7,29 +7,32 @@ import numpy as np
 from ..tasks import StructurePrediction
 import torch
 import os
+import pandas as pd
 
 
 class StructurePredictionEval(OpenProtEval):
     def setup(self):
-        self.db = foldcomp.open(self.cfg.path)
+        self.df = pd.read_csv(self.cfg.split, index_col='name')
 
     def run(self, model):
         NotImplemented
 
     def __len__(self):
-        return 100
+        return len(self.df)
 
     def __getitem__(self, idx):
-        name, pdb = self.db[idx]
-        prot = protein.from_pdb_string(pdb)
-        seqres = "".join([rc.restypes_with_x[c] for c in prot.aatype])
+        name = self.df.index[idx]
+        prot = dict(
+            np.load(f"{self.cfg.path}/{name[1:3]}/{name}.npz", allow_pickle=True)
+        )
+        seqres = self.df.seqres[name]
         data = self.make_data(
-            name=name[:-4],
+            name=name,
             seqres=seqres,
             seq_mask=np.ones(len(seqres)),
-            atom37=prot.atom_positions.astype(np.float32),
-            atom37_mask=prot.atom_mask.astype(np.float32),
-        ).crop(512)
+            atom37=prot["all_atom_positions"].astype(np.float32),
+            atom37_mask=prot["all_atom_mask"].astype(np.float32),
+        )
         return StructurePrediction.prep_data(self, data)
 
     def run_batch(self, model, batch: dict, savedir=".", device=None, logger=None):
@@ -42,7 +45,7 @@ class StructurePredictionEval(OpenProtEval):
         _, readout = model.forward(noisy_batch)
 
         lddt = compute_lddt(
-            readout["trans"], batch["frame_trans"], batch["struct_mask"]
+            readout["trans"], batch["frame_trans"], batch["frame_mask"]
         )
 
         if logger:

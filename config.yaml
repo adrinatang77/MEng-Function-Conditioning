@@ -24,13 +24,13 @@ trainer:
     num_sanity_val_steps: 0
     gradient_clip_val: 1.0
     accumulate_grad_batches: 1
-    val_check_interval: 10000
+    val_check_interval: 100
     check_val_every_n_epoch: 1
     logger: false
 
 # custom args to OpenProtDataset and elsewhere
 data: 
-    num_workers: 0
+    num_workers: 8
     batch: 32
     crop: 512
     seed: 137
@@ -55,44 +55,47 @@ features:
 
 datasets:
     PDBDataset: 
-        #path: /data/cb/scratch/datasets/pdb_npz
-        path: /scratch/projects/cgai/openprot/data/pdb_npz
-    AFDBDataset:
-        #path: /data/cb/scratch/datasets/afdb_swissprot_v4/afdb_swissprot_v4
-        path: /scratch/projects/cgai/openprot/data/afdb_swissprot_v4/afdb_swissprot_v4
-    UnirefDataset:
-        #path: /data/cb/scratch/datasets/uniref50.fasta
-        #index: /data/cb/scratch/datasets/uniref50.index
-        path: /scratch/projects/cgai/openprot/data/uniref50.fasta
-        index: /scratch/projects/cgai/openprot/data/uniref50.index
+        path: /data/cb/scratch/datasets/pdb_npz
+        #path: /scratch/projects/cgai/openprot/data/pdb_npz
+        cutoff: 2020-05-01
+        clusters: /data/cb/scratch/datasets/pdb_npz/pdb_clusters
+    # AFDBDataset:
+    #     #path: /data/cb/scratch/datasets/afdb_swissprot_v4/afdb_swissprot_v4
+    #     path: /scratch/projects/cgai/openprot/data/afdb_swissprot_v4/afdb_swissprot_v4
+    # UnirefDataset:
+    #     #path: /data/cb/scratch/datasets/uniref50.fasta
+    #     #index: /data/cb/scratch/datasets/uniref50.index
+    #     path: /scratch/projects/cgai/openprot/data/uniref50.fasta
+    #     index: /scratch/projects/cgai/openprot/data/uniref50.index
             
 tasks:
-    SequenceGeneration:
-        fraction: 0.1
-        mask_rate: 0.15
-        seed: 137
-        datasets:
-            UnirefDataset: 
-                fraction: 1.0
-                start: 0
-                seed: 137
+    # SequenceGeneration:
+    #     fraction: 0.1
+    #     mask_rate: 0.15
+    #     seed: 137
+    #     datasets:
+    #         UnirefDataset: 
+    #             fraction: 1.0
+    #             start: 0
+    #             seed: 137
     StructurePrediction:
-        fraction: 0.9
+        fraction: 1.0
         seed: 137
         datasets:
-            AFDBDataset:
-                fraction: 0.75
-                start: 0
-                seed: 142
+            # AFDBDataset:
+            #     fraction: 0.75
+            #     start: 0
+            #     seed: 142
             PDBDataset:
-                fraction: 0.25
+                fraction: 1.0
                 start: 0
                 seed: 142
             
 evals:
     StructurePredictionEval: 
         #path: /data/cb/scratch/datasets/afdb_swissprot_v4/afdb_swissprot_v4
-        path: /scratch/projects/cgai/openprot/data/afdb_swissprot_v4/afdb_swissprot_v4
+        path: /data/cb/scratch/datasets/pdb_npz
+        split: splits/cameo2022.csv
         
     
 
@@ -116,7 +119,7 @@ tracks:
             # sinusoidal: 1.0
             pade: 0.0
             fape: 1.0
-            distogram: 1.0
+            # distogram: 1.0
     SequenceTrack:
         corrupt: mask
         mask_rate: 0.15

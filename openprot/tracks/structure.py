@@ -64,7 +64,7 @@ class StructureTrack(OpenProtTrack):
 
         model.trans_out = nn.Linear(model.cfg.dim, 3)
         model.rots_out = nn.Linear(model.cfg.dim, 3)
-        model.pairwise_out = PairwiseProjectionHead(model.cfg.dim, 64)
+        # model.pairwise_out = PairwiseProjectionHead(model.cfg.dim, 64)
 
     def corrupt(self, batch, noisy_batch, target, logger=None):
 
@@ -114,8 +114,8 @@ class StructureTrack(OpenProtTrack):
 
         if self.cfg.frames:
             empty_rots = torch.eye(3, device=dev).expand(B, L, 3, 3)
-            inp["rots"] = torch.where(embed_mask, batch["frame_rots"], empty_rots)
-            inp["trans"] = torch.where(embed_mask, batch["frame_trans"], 0.0)
+            inp["trans"] = torch.where(embed_mask[...,None], batch["frame_trans"], 0.0)
+            inp["rots"] = torch.where(embed_mask[...,None,None], batch["frame_rots"], empty_rots)
         else:
             inp["x"] += torch.where(
                 embed_mask[..., None], model.trans_embed(batch["frame_trans"]), 0.0
@@ -149,7 +149,7 @@ class StructureTrack(OpenProtTrack):
             rotvec = model.rots_out(out["x"])
             readout["rots"] = axis_angle_to_matrix(rotvec)
 
-        readout["pairwise"] = model.pairwise_out(out["x"])
+        # readout["pairwise"] = model.pairwise_out(out["x"])
 
     def compute_loss(self, readout, target, logger=None):
 
