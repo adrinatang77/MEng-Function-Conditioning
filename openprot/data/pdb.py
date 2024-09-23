@@ -22,6 +22,6 @@ class PDBDataset(OpenProtDataset):
             name=name,
             seqres=seqres,
             seq_mask=np.ones(len(seqres)),
-            atom37=prot["atom37"],
-            atom37_mask=prot["atom37_mask"],
+            atom37=prot["all_atom_positions"],
+            atom37_mask=prot["all_atom_mask"],
         )

@@ -46,7 +46,10 @@ tracks = OpenProtTrackManager(cfg.tracks)
 dataset = OpenProtDatasetManager(cfg, tracks, trainer.global_rank, trainer.world_size)
 
 train_loader = torch.utils.data.DataLoader(
-    dataset, batch_size=cfg.data.batch, num_workers=cfg.data.num_workers, collate_fn=OpenProtData.batch
+    dataset,
+    batch_size=cfg.data.batch,
+    num_workers=cfg.data.num_workers,
+    collate_fn=OpenProtData.batch,
 )
 
 evals = OpenProtEvalManager(cfg, tracks, trainer.global_rank, trainer.world_size)

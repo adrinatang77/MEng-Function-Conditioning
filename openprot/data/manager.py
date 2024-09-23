@@ -35,7 +35,7 @@ class OpenProtDatasetManager(torch.utils.data.IterableDataset):
     def process(self, data: OpenProtData):
 
         data.pad(self.cfg.data.crop)
-        
+
         self.tracks.tokenize(data)
 
         return data

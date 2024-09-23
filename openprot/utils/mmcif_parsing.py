@@ -27,7 +27,7 @@ from Bio import PDB
 from Bio.Data import PDBData
 import numpy as np
 
-#from openfold.data.errors import MultipleChainsError
+# from openfold.data.errors import MultipleChainsError
 from . import residue_constants
 
 
@@ -251,12 +251,8 @@ def parse(
                     residue_number=int(atom.author_seq_num),
                     insertion_code=insertion_code,
                 )
-                seq_idx = (
-                    int(atom.mmcif_seq_num) - seq_start_num[atom.mmcif_chain_id]
-                )
-                current = seq_to_structure_mappings.get(
-                    atom.author_chain_id, {}
-                )
+                seq_idx = int(atom.mmcif_seq_num) - seq_start_num[atom.mmcif_chain_id]
+                current = seq_to_structure_mappings.get(atom.author_chain_id, {})
                 current[seq_idx] = ResidueAtPosition(
                     position=position,
                     name=atom.residue_name,
@@ -349,9 +345,7 @@ def _get_header(parsed_info: MmCIFDict) -> PdbHeader:
                 header["resolution"] = float(raw_resolution)
                 break
             except ValueError:
-                logging.debug(
-                    "Invalid resolution format: %s", parsed_info[res_key]
-                )
+                logging.debug("Invalid resolution format: %s", parsed_info[res_key])
 
     return header
 
@@ -433,17 +427,13 @@ def _is_set(data: str) -> bool:
 
 
 def get_atom_coords(
-    mmcif_object: MmcifObject, 
-    chain_id: str, 
-    _zero_center_positions: bool = False
+    mmcif_object: MmcifObject, chain_id: str, _zero_center_positions: bool = False
 ) -> Tuple[np.ndarray, np.ndarray]:
     # Locate the right chain
     chains = list(mmcif_object.structure.get_chains())
     relevant_chains = [c for c in chains if c.id == chain_id]
     if len(relevant_chains) != 1:
-        raise Exception(
-            f"Expected exactly one chain in structure with id {chain_id}."
-        )
+        raise Exception(f"Expected exactly one chain in structure with id {chain_id}.")
     chain = relevant_chains[0]
 
     # Extract the coordinates
@@ -479,14 +469,16 @@ def get_atom_coords(
 
             # Fix naming errors in arginine residues where NH2 is incorrectly
             # assigned to be closer to CD than NH1
-            cd = residue_constants.atom_order['CD']
-            nh1 = residue_constants.atom_order['NH1']
-            nh2 = residue_constants.atom_order['NH2']
-            if(
-                res.get_resname() == 'ARG' and
-                all(mask[atom_index] for atom_index in (cd, nh1, nh2)) and
-                (np.linalg.norm(pos[nh1] - pos[cd]) > 
-                 np.linalg.norm(pos[nh2] - pos[cd]))
+            cd = residue_constants.atom_order["CD"]
+            nh1 = residue_constants.atom_order["NH1"]
+            nh2 = residue_constants.atom_order["NH2"]
+            if (
+                res.get_resname() == "ARG"
+                and all(mask[atom_index] for atom_index in (cd, nh1, nh2))
+                and (
+                    np.linalg.norm(pos[nh1] - pos[cd])
+                    > np.linalg.norm(pos[nh2] - pos[cd])
+                )
             ):
                 pos[nh1], pos[nh2] = pos[nh2].copy(), pos[nh1].copy()
                 mask[nh1], mask[nh2] = mask[nh2].copy(), mask[nh1].copy()

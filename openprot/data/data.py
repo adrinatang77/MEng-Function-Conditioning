@@ -23,14 +23,14 @@ class OpenProtDataset(torch.utils.data.Dataset):
         NotImplemented
 
     def make_data(self, **kwargs):
-        assert 'name' in kwargs
-        assert 'seqres' in kwargs
+        assert "name" in kwargs
+        assert "seqres" in kwargs
 
         data = OpenProtData()
 
         data["name"] = kwargs["name"]
         data["seqres"] = kwargs["seqres"]
-        
+
         L = len(data["seqres"])
         for feat, shape in self.feats.items():
             shape = [(n if n > 0 else L) for n in shape]
@@ -48,7 +48,7 @@ class OpenProtData(dict):
         for key in keys:
             data[key] = self[key]
         return data
-    
+
     def crop(self, crop_len: int):
         L = len(self["seqres"])
 
@@ -58,7 +58,7 @@ class OpenProtData(dict):
             end = start + crop_len
             for key in self.keys():
                 # special attribute
-                if key == 'seqres':
+                if key == "seqres":
                     self[key] = self[key][start:end]
 
                 # non-array attribute
@@ -66,13 +66,12 @@ class OpenProtData(dict):
                     pass
 
                 # pairwise attribute
-                elif key[-1] == '_': 
-                    self[key] = self[key][start:end,start:end]
+                elif key[-1] == "_":
+                    self[key] = self[key][start:end, start:end]
 
                 # regular attribute
                 else:
                     self[key] = self[key][start:end]
-
 
         return self
 
@@ -84,19 +83,19 @@ class OpenProtData(dict):
                 # special attribute
                 if key == "seqres":
                     self[key] = self[key] + "X" * pad
-                
+
                 # non-array attribute
                 elif type(self[key]) not in [torch.Tensor, np.ndarray]:
                     pass
 
                 # pairwise attribute
-                elif key[-1] == '_': 
+                elif key[-1] == "_":
                     shape = self[key].shape
                     dtype = self[key].dtype
                     padded = np.zeros((pad_len, pad_len, *shape[2:]), dtype=dtype)
-                    padded[:L,:L] = self[key]
+                    padded[:L, :L] = self[key]
                     self[key] = padded
-                    
+
                 # regular attribute
                 else:
                     shape = self[key].shape

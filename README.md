@@ -10,6 +10,7 @@
 * dm-tree
 * omegaconf
 * ruff (optional, see below)
+* black
 * neptune
 * pytest
 * foldcomp (must install with `pip install git+https://github.com/steineggerlab/foldcomp@f868b95` repo, see https://github.com/steineggerlab/foldcomp/issues/52)
@@ -23,6 +24,7 @@ aws s3 sync --no-sign-request s3://pdbsnapshots/20240101/pub/pdb/data/structures
 python -m scripts.unpack_mmcif --mmcif_dir ../data/pdb_mmcif --outdir ../data/pdb_npz --outcsv ../data/pdb_chains.csv --num_workers 100
 python -c "import foldcomp; foldcomp.setup('afdb_swissprot_v4')" # foldcomp server might be down though
 curl -O https://ftp.ebi.ac.uk/pub/databases/uniprot/uniref/uniref50/uniref50.fasta.gz # then gunzip it
+python -m scripts.process_uniref --fasta [PATH] --out [PATH]
 ```
 
 ## Contributing

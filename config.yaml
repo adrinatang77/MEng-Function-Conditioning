@@ -1,5 +1,5 @@
 ckpt: null # eventually this will control resuming runs
-validate: true # if true, only validate the model, don't train
+validate: false # if true, only validate the model, don't train
 logger:
     # set to true to log to neptune.ai
     neptune: false
@@ -52,26 +52,28 @@ features:
 datasets:
     PDBDataset: 
         #path: /data/cb/scratch/datasets/pdb_npz
-        path: /work/10165/bjing/vista/data/pdb_npz
+        path: /scratch/projects/cgai/openprot/data/pdb_npz
     AFDBDataset:
         #path: /data/cb/scratch/datasets/afdb_swissprot_v4/afdb_swissprot_v4
-        path: /work/10165/bjing/vista/data/afdb_swissprot_v4/afdb_swissprot_v4
-    # UnirefDataset:
-    #     path: /data/cb/scratch/datasets/uniref50.fasta
-    #     index: /data/cb/scratch/share/openprot/uniref50.index
+        path: /scratch/projects/cgai/openprot/data/afdb_swissprot_v4/afdb_swissprot_v4
+    UnirefDataset:
+        #path: /data/cb/scratch/datasets/uniref50.fasta
+        #index: /data/cb/scratch/datasets/uniref50.index
+        path: /scratch/projects/cgai/openprot/data/uniref50.fasta
+        index: /scratch/projects/cgai/openprot/data/uniref50.index
             
 tasks:
-    # SequenceGeneration:
-    #     fraction: 0.0
-    #     mask_rate: 0.15
-    #     seed: 137
-    #     datasets:
-    #         UnirefDataset: 
-    #             fraction: 1.0
-    #             start: 0
-    #             seed: 137
+    SequenceGeneration:
+        fraction: 0.1
+        mask_rate: 0.15
+        seed: 137
+        datasets:
+            UnirefDataset: 
+                fraction: 1.0
+                start: 0
+                seed: 137
     StructurePrediction:
-        fraction: 1.0
+        fraction: 0.9
         seed: 137
         datasets:
             AFDBDataset:
@@ -86,7 +88,7 @@ tasks:
 evals:
     StructurePredictionEval: 
         #path: /data/cb/scratch/datasets/afdb_swissprot_v4/afdb_swissprot_v4
-        path: /work/10165/bjing/vista/data/afdb_swissprot_v4/afdb_swissprot_v4
+        path: /scratch/projects/cgai/openprot/data/afdb_swissprot_v4/afdb_swissprot_v4
         
     
 

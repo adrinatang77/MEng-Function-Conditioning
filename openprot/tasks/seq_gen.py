@@ -5,7 +5,8 @@ import numpy as np
 class SequenceGeneration(OpenProtTask):
     def prep_data(self, data, crop=None):
 
-        if crop is not None: data.crop(crop)
+        if crop is not None:
+            data.crop(crop)
 
         data["seq_noise"] = (
             np.random.rand(len(data["seqres"])) < self.cfg.mask_rate

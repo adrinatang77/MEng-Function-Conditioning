@@ -85,7 +85,7 @@ class OpenProtWrapper(Wrapper):
 
     def transfer_batch_to_device(self, batch, device, dataloader_idx):
         return batch.to(device)
-        
+
     def get_lr(self):
         for param_group in self.optimizers().param_groups:
             return param_group["lr"]

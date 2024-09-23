@@ -19,8 +19,8 @@ class OpenProtTrackManager(dict):
             track.tokenize(data)
 
     def embed(self, model: OpenProtModel, batch: dict):
-        inp = batch.copy('name', 'pad_mask')
-        inp['x'] = 0
+        inp = batch.copy("name", "pad_mask")
+        inp["x"] = 0
         for track in self.values():
             track.embed(model, batch, inp)
         return inp
@@ -32,9 +32,9 @@ class OpenProtTrackManager(dict):
         return readout
 
     def corrupt(self, batch: dict, logger=None):
-        noisy_batch = batch.copy('name', 'pad_mask')
-        target = batch.copy('name', 'pad_mask')
-        
+        noisy_batch = batch.copy("name", "pad_mask")
+        target = batch.copy("name", "pad_mask")
+
         for track in self.values():
             track.corrupt(batch, noisy_batch, target, logger=logger)
 
