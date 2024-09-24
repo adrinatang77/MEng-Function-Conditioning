@@ -4,9 +4,26 @@ import numpy as np
 from typing import override
 from .track import OpenProtTrack
 from ..utils import residue_constants as rc
+from functools import partial
 
 MASK_IDX = 21
 
+import esm
+from esm import Alphabet
+load_fn = esm.pretrained.load_model_and_alphabet
+esm_registry = {
+    "esm2_8M": partial(load_fn, "esm2_t6_8M_UR50D_500K"),
+    "esm2_8M_270K": esm.pretrained.esm2_t6_8M_UR50D,
+    "esm2_35M": partial(load_fn, "esm2_t12_35M_UR50D_500K"),
+    "esm2_35M_270K": esm.pretrained.esm2_t12_35M_UR50D,
+    "esm2_150M": partial(load_fn, "esm2_t30_150M_UR50D_500K"),
+    "esm2_150M_270K": partial(load_fn, "esm2_t30_150M_UR50D_270K"),
+    "esm2_650M": esm.pretrained.esm2_t33_650M_UR50D,
+    "esm2_650M_270K": partial(load_fn, "esm2_t33_650M_270K_UR50D"),
+    "esm2_3B": esm.pretrained.esm2_t36_3B_UR50D,
+    "esm2_3B_270K": partial(load_fn, "esm2_t36_3B_UR50D_500K"),
+    "esm2_15B": esm.pretrained.esm2_t48_15B_UR50D,
+}
 
 class SequenceTrack(OpenProtTrack):
 
@@ -15,10 +32,59 @@ class SequenceTrack(OpenProtTrack):
             [rc.restype_order.get(c, rc.unk_restype_index) for c in data["seqres"]]
         )
 
+    @staticmethod
+    def _af2_to_esm(d: Alphabet):
+        # Remember that t is shifted from residue_constants by 1 (0 is padding).
+        esm_reorder = [d.padding_idx] + [
+            d.get_idx(v) for v in rc.restypes_with_x
+        ]
+        return torch.tensor(esm_reorder)
+
+    
+
+        
+
     def add_modules(self, model):
         model.seq_embed = nn.Embedding(22, model.cfg.dim)
         model.seq_out = nn.Linear(model.cfg.dim, 21)
+        if self.cfg.esm is not None:
+            
+            model.esm, self.esm_dict = esm_registry.get(self.cfg.esm)()
+            model.esm.requires_grad_(False)
+            model.esm.half()
+            esm_dim = model.esm.layers[0].final_layer_norm.bias.shape[0]
+            model.esm_in = nn.Linear(esm_dim, model.cfg.dim)
+            
+            model.register_buffer("af2_to_esm", self._af2_to_esm(self.esm_dict)) 
+            
         # model.seq_mask = nn.Parameter(torch.zeros(model.cfg.dim))
+
+    def _compute_language_model_representations(self, esmaa):
+        """Adds bos/eos tokens for the language model, since the structure module doesn't use these."""
+        batch_size = esmaa.size(0)
+
+        bosi, eosi = self.esm_dict.cls_idx, self.esm_dict.eos_idx
+        bos = esmaa.new_full((batch_size, 1), bosi)
+        eos = esmaa.new_full((batch_size, 1), self.esm_dict.padding_idx)
+        esmaa = torch.cat([bos, esmaa, eos], dim=1)
+        # Use the first padding index as eos during inference.
+        esmaa[range(batch_size), (esmaa != 1).sum(1)] = eosi
+
+        res = self.esm(
+            esmaa,
+            repr_layers=range(self.esm.num_layers + 1),
+            need_head_weights=self.cfg.use_esm_attn_map,
+        )
+        esm_s = torch.stack(
+            [v for _, v in sorted(res["representations"].items())], dim=2
+        )
+        esm_s = esm_s[:, 1:-1]  # B, L, nLayers, C
+        esm_z = (
+            res["attentions"].permute(0, 4, 3, 1, 2).flatten(3, 4)[:, 1:-1, 1:-1, :]
+            if self.cfg.use_esm_attn_map
+            else None
+        )
+        return esm_s, esm_z
 
     def corrupt(self, batch, noisy_batch, target, logger=None):
         if self.cfg.corrupt == "mask":
@@ -47,6 +113,17 @@ class SequenceTrack(OpenProtTrack):
             logger.log("seq/toks", batch["seq_mask"].sum())
 
     def embed(self, model, batch, inp):
+        
+        def _af2_idx_to_esm_idx(aa, mask):
+            aa = (aa + 1).masked_fill(mask != 1, 0)
+            return model.af2_to_esm[aa]
+
+        if self.cfg.esm is not None:
+            esmaa = _af2_idx_to_esm_idx(batch['aatype'], batch['pad_mask'])
+            res = model.esm(esmaa, repr_layers=[model.esm.num_layers])
+            rep = res['representations'][model.esm.num_layers]
+            inp['x'] += model.esm_in(rep.float())
+        
         inp["x"] += model.seq_embed(batch["aatype"])
 
     def predict(self, model, out, readout):

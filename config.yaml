@@ -2,20 +2,20 @@ ckpt: null # eventually this will control resuming runs
 validate: false # if true, only validate the model, don't train
 logger:
     # set to true to log to neptune.ai
-    neptune: true
+    neptune: false
     # please change "test" to something unique to your task
     project: openprot/structure
     # will log to workdir and neptune.ai with this name
-    name: fape_only
+    name: default
     # if not null, will duplicate stdout and stderr to workdir/{name}/{logfile}
-    logfile: std.out
+    logfile: null #std.out
     # if null, will log every epoch, otherwise every this number of steps
     train_log_freq: 100
     val_log_freq: null 
     ckpt_freq: 100000
 trainer:
     accelerator: auto
-    devices: 8
+    devices: 1
     max_epochs: 1
     max_steps: 1000000
     enable_progress_bar: true
@@ -55,10 +55,10 @@ features:
 
 datasets:
     PDBDataset: 
-        path: /data/cb/scratch/datasets/pdb_npz
-        #path: /scratch/projects/cgai/openprot/data/pdb_npz
+        # path: /data/cb/scratch/datasets/pdb_npz
+        path: /scratch/projects/cgai/openprot/data/pdb_npz
         cutoff: 2020-05-01
-        clusters: /data/cb/scratch/datasets/pdb_npz/pdb_clusters
+        clusters: /scratch/projects/cgai/openprot/data/pdb_clusters
     # AFDBDataset:
     #     #path: /data/cb/scratch/datasets/afdb_swissprot_v4/afdb_swissprot_v4
     #     path: /scratch/projects/cgai/openprot/data/afdb_swissprot_v4/afdb_swissprot_v4
@@ -94,7 +94,7 @@ tasks:
 evals:
     StructurePredictionEval: 
         #path: /data/cb/scratch/datasets/afdb_swissprot_v4/afdb_swissprot_v4
-        path: /data/cb/scratch/datasets/pdb_npz
+        path: /scratch/projects/cgai/openprot/data/pdb_npz
         split: splits/cameo2022.csv
         
     
@@ -121,9 +121,10 @@ tracks:
             fape: 1.0
             # distogram: 1.0
     SequenceTrack:
+        esm: esm2_8M_270K
         corrupt: mask
-        mask_rate: 0.15
-        loss_weight: 1.0
+        mask_rate: 0.0
+        loss_weight: 0.0
 
 model: # custom args
     in_norm: false

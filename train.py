@@ -26,6 +26,8 @@ from openprot.model.wrapper import OpenProtWrapper
 from openprot.evals.manager import OpenProtEvalManager
 from openprot.tracks.manager import OpenProtTrackManager
 
+cfg.trainer.devices = int(os.environ.get("SLURM_NTASKS_PER_NODE", cfg.trainer.devices))
+
 trainer = pl.Trainer(
     **cfg.trainer,
     default_root_dir=model_dir,
@@ -38,6 +40,7 @@ trainer = pl.Trainer(
         ),
         ModelSummary(max_depth=2),
     ],
+    num_nodes=int(os.environ.get("SLURM_NNODES", 1)),
 )
 ########## EVERYTHING BELOW NOW IN PARALLEL ######
 
