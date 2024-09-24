@@ -7,6 +7,7 @@ from ..utils.geometry import (
     compute_fape,
     gram_schmidt,
     compute_pade,
+    compute_lddt,
 )
 from ..utils.rotation_conversions import axis_angle_to_matrix
 from ..utils.rigid_utils import Rigid, Rotation
@@ -182,15 +183,21 @@ class StructureTrack(OpenProtTrack):
                 readout, target, logger=logger
             )
 
+        lddt = compute_lddt( # temporary
+            readout["trans"], target["frame_trans"], target["struct_supervise"]
+        )
+            
         mask = target["struct_supervise"]
 
         if logger:
             logger.log("struct/toks_sup", mask.sum())
             logger.log("struct/loss", loss, mask=mask)
+            logger.log("struct/lddt", lddt)
 
         loss = (loss * mask).sum() / target["pad_mask"].sum()
 
         return loss
+
 
     def compute_pade_loss(self, readout, target, logger=None):
         pred = readout["trans"]
