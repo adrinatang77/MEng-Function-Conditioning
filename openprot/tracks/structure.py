@@ -60,12 +60,16 @@ class StructureTrack(OpenProtTrack):
         if not self.cfg.frames:
             model.trans_embed = nn.Linear(3, model.cfg.dim)
             model.rots_embed = nn.Linear(9, model.cfg.dim)
+
+            model.trans_out = nn.Linear(model.cfg.dim, 3)
+            model.rots_out = nn.Linear(model.cfg.dim, 3)
+        
         model.frame_mask = nn.Parameter(torch.zeros(model.cfg.dim))
         model.frame_null = nn.Parameter(torch.zeros(model.cfg.dim))
-
-        model.trans_out = nn.Linear(model.cfg.dim, 3)
-        model.rots_out = nn.Linear(model.cfg.dim, 3)
-        # model.pairwise_out = PairwiseProjectionHead(model.cfg.dim, 64)
+        if self.cfg.pairwise:
+            model.pairwise_out = PairwiseProjectionHead(model.cfg.dim, 64)
+        elif self.cfg.trunk:
+            model.pairwise_out = nn.Linear(model.cfg.trunk.pairwise_state_dim, 64)
 
     def corrupt(self, batch, noisy_batch, target, logger=None):
 
@@ -149,8 +153,10 @@ class StructureTrack(OpenProtTrack):
             readout["trans"] = model.trans_out(out["x"])
             rotvec = model.rots_out(out["x"])
             readout["rots"] = axis_angle_to_matrix(rotvec)
-
-        # readout["pairwise"] = model.pairwise_out(out["x"])
+        if self.cfg.pairwise:
+            readout["pairwise"] = model.pairwise_out(out["x"])
+        elif self.cfg.trunk:
+            readout["pairwise"] = model.pairwise_out(out["z"])
 
     def compute_loss(self, readout, target, logger=None):
 

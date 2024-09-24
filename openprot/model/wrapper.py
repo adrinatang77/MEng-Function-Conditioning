@@ -40,6 +40,13 @@ class Wrapper(pl.LightningModule):
     def on_validation_epoch_end(self):
         self._logger.epoch_end(self.trainer, prefix="val")
 
+    # uncomment this to debug
+    # def on_before_optimizer_step(self, optimizer):
+    #     for name, p in self.model.named_parameters():
+    #         if p.grad is None:
+    #             print(name)
+    #     exit()
+        
     def configure_optimizers(self):
         cls = getattr(torch.optim, self.cfg.optimizer.type)
         optimizer = cls(

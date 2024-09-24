@@ -3,7 +3,8 @@ import torch.nn as nn
 import torch.nn.functional as F
 from .gmha import GeometricMultiHeadAttention
 from ..utils.rotation_conversions import axis_angle_to_matrix
-
+from .trunk import FoldingTrunk
+from ..utils.rigid_utils import Rigid
 
 class FeedForward(nn.Module):
     def __init__(self, dim, ff_dim):
@@ -46,6 +47,10 @@ class OpenProtModel(nn.Module):
     def __init__(self, cfg):
         super().__init__()
         self.cfg = cfg
+
+        if cfg.trunk:
+            self.trunk = FoldingTrunk(cfg.trunk)
+        
         if cfg.in_norm:
             self.in_norm = nn.LayerNorm(cfg.dim)
 
@@ -63,6 +68,24 @@ class OpenProtModel(nn.Module):
 
     def forward(self, inp):
 
+        
+        if self.cfg.trunk:
+            seq_feats = inp['x']
+            B, L, _ = seq_feats.shape
+            pair_feats = seq_feats.new_zeros(B, L, L, self.cfg.trunk.pairwise_state_dim)
+            true_aa = torch.zeros(B, L, dtype=torch.long, device=seq_feats.device)
+            residx = torch.arange(L, device=seq_feats.device)[None].expand(B, -1)
+            mask = inp["pad_mask"]
+
+            out = self.trunk(seq_feats, pair_feats, true_aa, residx, mask, no_recycles=0)
+
+            frames = Rigid.from_tensor_7(out['sm']['frames'])
+            return {
+                'x': out['s_s'],
+                'z': out['s_z'],
+                'trans': frames._trans,
+                'rots': frames._rots.get_rot_mats(),
+            }
         x = inp["x"]
         mask = inp["pad_mask"]
         rots = inp.get("rots", None)

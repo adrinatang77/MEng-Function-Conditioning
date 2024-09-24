@@ -59,7 +59,7 @@ class GeometricMultiHeadAttention(nn.Module):
         query = query @ rots.mT.unsqueeze(2) + trans[:, :, None, None]
         query = query.transpose(1, 2)
 
-        key = self.w_aq(x).view(B, L, self.heads, self.adim, 3)
+        key = self.w_ak(x).view(B, L, self.heads, self.adim, 3)
         key = key @ rots.mT.unsqueeze(2) + trans[:, :, None, None]
         key = key.transpose(1, 2)
 
