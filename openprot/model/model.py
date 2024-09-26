@@ -94,7 +94,13 @@ class OpenProtTransformerBlock(nn.Module):
     def forward(self, x, z, mask, rots, trans):
         
         bias = self.pair_to_sequence(z)
-        x = x + self.mha(self.mha_norm(x), mask, rots=rots, trans=trans, bias=bias)
+        x = x + self.mha(
+            self.mha_norm(x), 
+            mask.bool(),
+            rots=rots, 
+            trans=trans,
+            bias=bias.permute(0,3,1,2)
+        )
         x = x + self.ff(self.ff_norm(x))
 
         z = z + self.sequence_to_pair(x)

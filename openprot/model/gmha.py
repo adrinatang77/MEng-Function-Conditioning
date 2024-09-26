@@ -99,7 +99,7 @@ class GeometricMultiHeadAttention(nn.Module):
 
         return self.w_o(scalar_out) + self.w_vo(vector_out) + self.w_ao(affine_out)
 
-    def forward(self, x, mask=None, **kwargs):
+    def forward(self, x, mask=None, bias=None, **kwargs):
         if self.geometric:
             return self.geometric_forward(x, mask, **kwargs)
         B, L, D = x.shape
@@ -114,6 +114,12 @@ class GeometricMultiHeadAttention(nn.Module):
         if mask is not None:
             mask = mask.view(B, 1, 1, -1)
 
+        if bias is not None:
+            if mask is not None:
+                mask = torch.where(mask, 0, -float("inf")) + bias
+            else:
+                mask = bias
+
         attn = F.scaled_dot_product_attention(query, key, value, attn_mask=mask)
-        attn = attn.transpose(1, 2).view(B, L, D)
+        attn = attn.transpose(1, 2).reshape(B, L, D)
         return self.w_o(attn)

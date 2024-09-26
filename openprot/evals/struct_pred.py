@@ -45,7 +45,7 @@ class StructurePredictionEval(OpenProtEval):
         _, readout = model.forward(noisy_batch)
 
         lddt = compute_lddt(
-            readout["trans"][-1], batch["frame_trans"], batch["frame_mask"]
+            readout["trans"], batch["frame_trans"], batch["frame_mask"]
         )
 
         if logger:
@@ -68,7 +68,7 @@ class StructurePredictionEval(OpenProtEval):
         prot.atom_positions[..., 1, :] = batch["frame_trans"].cpu().numpy()
         ref_str = protein.to_pdb(prot)
 
-        prot.atom_positions[..., 1, :] = coords[-1].cpu().numpy()
+        prot.atom_positions[..., 1, :] = coords.cpu().numpy()
         pred_str = protein.to_pdb(prot)
 
         ref_str = "\n".join(ref_str.split("\n")[1:-3])
