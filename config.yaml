@@ -8,7 +8,7 @@ logger:
     # will log to workdir and neptune.ai with this name
     name: default # esmfold_12l_no_attn
     # if not null, will duplicate stdout and stderr to workdir/{name}/{logfile}
-    logfile: std.out
+    logfile: null # std.out
     # if null, will log every epoch, otherwise every this number of steps
     train_log_freq: 10
     val_log_freq: null 
@@ -103,7 +103,7 @@ tracks:
     # register tracks here
     StructureTrack: 
         pairwise: false
-        trunk: true
+        # trunk: true
         # custom args for every track
         # embedder: 
         #     type: linear
@@ -115,7 +115,7 @@ tracks:
         #     scale: 1.0
         loss_weight: 1.0
         # logit_max_norm: null
-        frames: true
+        frames: false
         losses:
             # rmsd: 0.0
             # sinusoidal: 1.0
@@ -132,7 +132,7 @@ model: # custom args
     in_norm: false
     dim: 1024
     blocks: 12
-    heads: 8
+    heads: 16
     ff_expand: 4
     geometric_attn: [] #0,1,2,3,4,5,6,7,8,9,10,11]
     frame_update: [] #0,1,2,3,4,5,6,7,8,9,10,11]

@@ -87,10 +87,10 @@ class StructureTrack(OpenProtTrack):
         
         model.frame_mask = nn.Parameter(torch.zeros(model.cfg.dim))
         model.frame_null = nn.Parameter(torch.zeros(model.cfg.dim))
-        if self.cfg.pairwise:
-            model.pairwise_out = PairwiseProjectionHead(model.cfg.dim, 64)
-        elif self.cfg.trunk:
-            model.pairwise_out = nn.Linear(model.cfg.trunk.pairwise_state_dim, 64)
+        # if self.cfg.pairwise:
+        #     model.pairwise_out = PairwiseProjectionHead(model.cfg.dim, 64)
+        # elif self.cfg.trunk:
+        model.pairwise_out = nn.Linear(model.cfg.trunk.pairwise_state_dim, 64)
 
     def corrupt(self, batch, noisy_batch, target, logger=None):
 
@@ -180,10 +180,10 @@ class StructureTrack(OpenProtTrack):
             readout["trans"] = model.trans_out(out["x"])
             rotvec = model.rots_out(out["x"])
             readout["rots"] = axis_angle_to_matrix(rotvec)
-        if self.cfg.pairwise:
-            readout["pairwise"] = model.pairwise_out(out["x"])
-        elif self.cfg.trunk:
-            readout["pairwise"] = model.pairwise_out(out["z"])
+        # if self.cfg.pairwise:
+        #     readout["pairwise"] = model.pairwise_out(out["x"])
+        # elif self.cfg.trunk:
+        readout["pairwise"] = model.pairwise_out(out["z"])
 
     def compute_loss(self, readout, target, logger=None):
 
@@ -201,6 +201,7 @@ class StructureTrack(OpenProtTrack):
                 readout, target, logger=logger
             )
         """
+        
         if "pade" in self.cfg.losses:
             loss = loss + self.cfg.losses["pade"] * self.compute_pade_loss(
                 readout, target, logger=logger
@@ -217,7 +218,7 @@ class StructureTrack(OpenProtTrack):
             )
 
         lddt = compute_lddt( # temporary
-            readout["trans"][-1], target["frame_trans"], target["struct_supervise"]
+            readout["trans"], target["frame_trans"], target["struct_supervise"]
         )
             
         mask = target["struct_supervise"]
@@ -298,7 +299,7 @@ class StructureTrack(OpenProtTrack):
             + 0.9 * fape_fn(l1_clamp_distance=10)
         )
         
-        fape_loss = fape_loss.mean(0) # loss weighted and reduced correctly! 
+        # fape_loss = fape_loss.mean(0) # loss weighted and reduced correctly! 
 
         if logger:
             logger.log("struct/fape_loss", fape_loss, mask=mask)
