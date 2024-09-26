@@ -94,11 +94,11 @@ class FoldingTrunk(nn.Module):
             ]
         )
         
-        self.recycle_bins = 15
-        self.recycle_s_norm = nn.LayerNorm(c_s)
-        self.recycle_z_norm = nn.LayerNorm(c_z)
-        self.recycle_disto = nn.Embedding(self.recycle_bins, c_z)
-        self.recycle_disto.weight[0].detach().zero_()
+        # self.recycle_bins = 15
+        # self.recycle_s_norm = nn.LayerNorm(c_s)
+        # self.recycle_z_norm = nn.LayerNorm(c_z)
+        # self.recycle_disto = nn.Embedding(self.recycle_bins, c_z)
+        # self.recycle_disto.weight[0].detach().zero_()
         
         
         self.structure_module = StructureModule(**self.cfg.structure_module)  # type: ignore

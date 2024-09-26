@@ -1,14 +1,14 @@
 ckpt: null # eventually this will control resuming runs
-validate: false # if true, only validate the model, don't train
+validate: true # if true, only validate the model, don't train
 logger:
     # set to true to log to neptune.ai
-    neptune: true
+    neptune: false
     # please change "test" to something unique to your task
     project: openprot/structure
     # will log to workdir and neptune.ai with this name
-    name: esmfold_12l
+    name: default
     # if not null, will duplicate stdout and stderr to workdir/{name}/{logfile}
-    logfile: std.out
+    logfile: null # std.out
     # if null, will log every epoch, otherwise every this number of steps
     train_log_freq: 10
     val_log_freq: null 
@@ -24,14 +24,14 @@ trainer:
     num_sanity_val_steps: 0
     gradient_clip_val: 1.0
     accumulate_grad_batches: 1
-    val_check_interval: 10000
+    val_check_interval: 1250
     check_val_every_n_epoch: 1
     logger: false
 
 # custom args to OpenProtDataset and elsewhere
 data: 
     num_workers: 8
-    batch: 8
+    batch: 4
     crop: 256
     seed: 137
 
@@ -57,7 +57,7 @@ datasets:
     PDBDataset: 
         # path: /data/cb/scratch/datasets/pdb_npz
         path: /scratch/projects/cgai/openprot/data/pdb_npz
-        cutoff: 2020-05-01
+        cutoff: 2018-05-01
         clusters: /scratch/projects/cgai/openprot/data/pdb_clusters
     # AFDBDataset:
     #     #path: /data/cb/scratch/datasets/afdb_swissprot_v4/afdb_swissprot_v4
@@ -166,7 +166,7 @@ model: # custom args
 
 optimizer:
     type: Adam
-    lr: 3e-5
+    lr: 5e-4
     scheduler: 
         total_steps: 1000000
         warmup_steps: 1000

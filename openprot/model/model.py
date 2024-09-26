@@ -50,6 +50,7 @@ class OpenProtModel(nn.Module):
 
         if cfg.trunk:
             self.trunk = FoldingTrunk(cfg.trunk)
+            return
         
         if cfg.in_norm:
             self.in_norm = nn.LayerNorm(cfg.dim)

@@ -53,7 +53,14 @@ class SequenceTrack(OpenProtTrack):
             model.esm.requires_grad_(False)
             model.esm.half()
             esm_dim = model.esm.layers[0].final_layer_norm.bias.shape[0]
-            model.esm_in = nn.Linear(esm_dim, model.cfg.dim)
+            # model.esm_in = nn.Linear(esm_dim, model.cfg.dim)
+            model.esm_s_combine = nn.Parameter(torch.zeros(model.esm.num_layers + 1))
+            model.esm_s_mlp = nn.Sequential(
+                nn.LayerNorm(esm_dim),
+                nn.Linear(esm_dim, model.cfg.dim),
+                nn.ReLU(),
+                nn.Linear(model.cfg.dim, model.cfg.dim),
+            )
             
             model.register_buffer("af2_to_esm", self._af2_to_esm(self.esm_dict)) 
             
@@ -120,10 +127,17 @@ class SequenceTrack(OpenProtTrack):
 
         if self.cfg.esm is not None:
             esmaa = _af2_idx_to_esm_idx(batch['aatype'], batch['pad_mask'])
-            res = model.esm(esmaa, repr_layers=[model.esm.num_layers])
-            rep = res['representations'][model.esm.num_layers]
-            inp['x'] += model.esm_in(rep.float())
-        
+            res = model.esm(esmaa, repr_layers=range(model.esm.num_layers + 1))
+            esm_s = torch.stack(
+                [v for _, v in sorted(res["representations"].items())], dim=2
+            )
+            # rep = res['representations'][model.esm.num_layers]
+            esm_s = esm_s.detach().float()
+
+            # === preprocessing ===
+            esm_s = (model.esm_s_combine.softmax(0).unsqueeze(0) @ esm_s).squeeze(2)
+            inp['x'] += model.esm_s_mlp(esm_s)
+            
         inp["x"] += model.seq_embed(batch["aatype"])
 
     def predict(self, model, out, readout):

@@ -53,7 +53,7 @@ class StructurePredictionEval(OpenProtEval):
             logger.log("struct/lddt", lddt)
 
         coords = readout["trans"]
-        L = coords.shape[1]
+        L = batch['frame_trans'].shape[1]
         atom37 = np.zeros((L, 37, 3))
         prot = protein.Protein(
             atom_positions=np.zeros((L, 37, 3)),
@@ -68,7 +68,7 @@ class StructurePredictionEval(OpenProtEval):
         prot.atom_positions[..., 1, :] = batch["frame_trans"].cpu().numpy()
         ref_str = protein.to_pdb(prot)
 
-        prot.atom_positions[..., 1, :] = coords.cpu().numpy()
+        prot.atom_positions[..., 1, :] = coords[0].cpu().numpy()
         pred_str = protein.to_pdb(prot)
 
         ref_str = "\n".join(ref_str.split("\n")[1:-3])
