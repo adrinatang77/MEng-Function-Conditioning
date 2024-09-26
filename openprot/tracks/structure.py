@@ -318,10 +318,10 @@ class StructureTrack(OpenProtTrack):
         return err  # (err * mask).sum() / target["pad_mask"].sum()
     """
 
-    def compute_distogram_loss(self, readout, target, logger=None, eps=1e-5):
+    def compute_distogram_loss(self, readout, target, logger=None, eps=1e-6):
 
         dev = readout["pairwise"].device
-        bins = torch.linspace(0, 22, 64, device=dev)[:63]
+        bins = torch.linspace(2.3125, 21.6875, 63, device=dev)
 
         distmat = target["beta"][:, None] - target["beta"][:, :, None]
         distmat = torch.sqrt(torch.square(distmat).sum(-1))
@@ -336,5 +336,6 @@ class StructureTrack(OpenProtTrack):
         mask = mask[:, None] * mask[:, :, None]
         if logger:
             logger.log("struct/distogram", loss, mask)
+            #logger.log("struct/distogram2", (loss * mask).sum((-1,-2)) / mask.sum((-1,-2)))
 
         return (loss * mask).sum(-1) / (eps + mask.sum(-1))

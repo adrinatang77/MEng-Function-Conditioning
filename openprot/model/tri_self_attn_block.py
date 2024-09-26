@@ -63,18 +63,18 @@ class TriangularSelfAttentionBlock(nn.Module):
             pairwise_state_dim,
             pairwise_state_dim,
         )
-        self.tri_att_start = TriangleAttentionStartingNode(
-            pairwise_state_dim,
-            pairwise_head_width,
-            pairwise_num_heads,
-            inf=1e9,
-        )  # type: ignore
-        self.tri_att_end = TriangleAttentionEndingNode(
-            pairwise_state_dim,
-            pairwise_head_width,
-            pairwise_num_heads,
-            inf=1e9,
-        )  # type: ignore
+        # self.tri_att_start = TriangleAttentionStartingNode(
+        #     pairwise_state_dim,
+        #     pairwise_head_width,
+        #     pairwise_num_heads,
+        #     inf=1e9,
+        # )  # type: ignore
+        # self.tri_att_end = TriangleAttentionEndingNode(
+        #     pairwise_state_dim,
+        #     pairwise_head_width,
+        #     pairwise_num_heads,
+        #     inf=1e9,
+        # )  # type: ignore
 
         self.mlp_seq = ResidueMLP(sequence_state_dim, 4 * sequence_state_dim, dropout=dropout)
         self.mlp_pair = ResidueMLP(pairwise_state_dim, 4 * pairwise_state_dim, dropout=dropout)
@@ -88,10 +88,10 @@ class TriangularSelfAttentionBlock(nn.Module):
         torch.nn.init.zeros_(self.tri_mul_in.linear_z.bias)
         torch.nn.init.zeros_(self.tri_mul_out.linear_z.weight)
         torch.nn.init.zeros_(self.tri_mul_out.linear_z.bias)
-        torch.nn.init.zeros_(self.tri_att_start.mha.linear_o.weight)
-        torch.nn.init.zeros_(self.tri_att_start.mha.linear_o.bias)
-        torch.nn.init.zeros_(self.tri_att_end.mha.linear_o.weight)
-        torch.nn.init.zeros_(self.tri_att_end.mha.linear_o.bias)
+        # torch.nn.init.zeros_(self.tri_att_start.mha.linear_o.weight)
+        # torch.nn.init.zeros_(self.tri_att_start.mha.linear_o.bias)
+        # torch.nn.init.zeros_(self.tri_att_end.mha.linear_o.weight)
+        # torch.nn.init.zeros_(self.tri_att_end.mha.linear_o.bias)
 
         torch.nn.init.zeros_(self.sequence_to_pair.o_proj.weight)
         torch.nn.init.zeros_(self.sequence_to_pair.o_proj.bias)
@@ -147,12 +147,12 @@ class TriangularSelfAttentionBlock(nn.Module):
         pairwise_state = pairwise_state + self.col_drop(
             self.tri_mul_in(pairwise_state, mask=tri_mask)
         )
-        pairwise_state = pairwise_state + self.row_drop(
-            self.tri_att_start(pairwise_state, mask=tri_mask, chunk_size=chunk_size)
-        )
-        pairwise_state = pairwise_state + self.col_drop(
-            self.tri_att_end(pairwise_state, mask=tri_mask, chunk_size=chunk_size)
-        )
+        # pairwise_state = pairwise_state + self.row_drop(
+        #     self.tri_att_start(pairwise_state, mask=tri_mask, chunk_size=chunk_size)
+        # )
+        # pairwise_state = pairwise_state + self.col_drop(
+        #     self.tri_att_end(pairwise_state, mask=tri_mask, chunk_size=chunk_size)
+        # )
 
         # MLP over pairs.
         pairwise_state = self.mlp_pair(pairwise_state)
