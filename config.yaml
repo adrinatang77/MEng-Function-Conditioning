@@ -2,7 +2,7 @@ ckpt: null # eventually this will control resuming runs
 validate: false # if true, only validate the model, don't train
 logger:
     # set to true to log to neptune.ai
-    neptune: true
+    neptune: false
     # please change "test" to something unique to your task
     project: openprot/structure
     # will log to workdir and neptune.ai with this name
@@ -132,10 +132,9 @@ model: # custom args
     in_norm: false
     dim: 1024
     blocks: 12
+    ipa_blocks: 8
     heads: 16
     ff_expand: 4
-    geometric_attn: true
-    frame_update: true
     trunk:
         num_blocks: 12
         sequence_state_dim: 1024

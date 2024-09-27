@@ -42,10 +42,10 @@ class Wrapper(pl.LightningModule):
 
     # uncomment this to debug
     # def on_before_optimizer_step(self, optimizer):
-        # for name, p in self.model.named_parameters():
-        #     if p.grad is None:
-        #         print(name)
-        # exit()
+    #     for name, p in self.model.named_parameters():
+    #         if p.grad is None:
+    #             print(name)
+    #     exit()
         
     def configure_optimizers(self):
         cls = getattr(torch.optim, self.cfg.optimizer.type)

@@ -39,106 +39,96 @@ class OpenProtTransformerBlock(nn.Module):
         ff_expand, 
         pairwise_dim=128,
         pairwise_heads=4,
+        ipa_dim=384,
         dropout=0,
-        geometric_attn=False,
-        frame_update=False
+        pair=False,
+        ipa=False,
     ):
         super().__init__()
-        # self.mha = GeometricMultiHeadAttention(dim, heads, geometric=geometric_attn)
-        self.ipa = InvariantPointAttention(
-            c_s=dim,
-            c_z=pairwise_dim,
-            c_hidden=dim // heads,
-            no_heads=heads,
-            no_qk_points=4,
-            no_v_points=8,
-        )
+        if ipa:
+            #self.ipa_in = nn.Linear(dim, 384)
+            self.ipa = InvariantPointAttention(
+                c_s=dim,
+                c_z=pairwise_dim,
+                c_hidden=dim // heads,
+                no_heads=heads,
+                no_qk_points=4,
+                no_v_points=8,
+            )
+            self.ff_update = nn.Linear(dim, 6)
+        else:
+            self.mha = GeometricMultiHeadAttention(dim, heads)
         self.mha_norm = nn.LayerNorm(dim)
         self.ff = FeedForward(dim, ff_expand * dim)
         self.ff_norm = nn.LayerNorm(dim)
 
+        if pair:
         ##########
         
-        # self.layernorm_1 = nn.LayerNorm(sequence_state_dim)
-
-        self.sequence_to_pair = SequenceToPair(dim, pairwise_dim // 2, pairwise_dim)
-        # self.frames_to_pair = nn.Linear(7, pairwise_dim)
-        # self.pair_to_sequence = PairToSequence(pairwise_dim, heads)
-        
-
-        # self.seq_attention = Attention(
-        #     sequence_state_dim, sequence_num_heads, sequence_head_width, gated=True
-        # )
-        self.tri_mul_out = TriangleMultiplicationOutgoing(pairwise_dim, pairwise_dim)
-        self.tri_mul_in = TriangleMultiplicationIncoming(pairwise_dim, pairwise_dim)
+            # self.layernorm_1 = nn.LayerNorm(sequence_state_dim)
+            self.sequence_to_pair = SequenceToPair(dim, pairwise_dim // 2, pairwise_dim)
+            # self.frames_to_pair = nn.Linear(7, pairwise_dim)
+            self.pair_to_sequence = PairToSequence(pairwise_dim, heads)
+            # self.seq_attention = Attention(
+            #     sequence_state_dim, sequence_num_heads, sequence_head_width, gated=True
+            # )
+            self.tri_mul_out = TriangleMultiplicationOutgoing(pairwise_dim, pairwise_dim)
+            self.tri_mul_in = TriangleMultiplicationIncoming(pairwise_dim, pairwise_dim)
+                
+            # self.mlp_seq = ResidueMLP(sequence_state_dim, 4 * sequence_state_dim, dropout=dropout)
+            self.mlp_pair = FeedForward(pairwise_dim, ff_expand * pairwise_dim)
+    
+            self.drop = nn.Dropout(dropout)
+            self.row_drop = Dropout(dropout * 2, 2)
+            self.col_drop = Dropout(dropout * 2, 1)
+    
+            torch.nn.init.zeros_(self.tri_mul_in.linear_z.weight)
+            torch.nn.init.zeros_(self.tri_mul_in.linear_z.bias)
+            torch.nn.init.zeros_(self.tri_mul_out.linear_z.weight)
+            torch.nn.init.zeros_(self.tri_mul_out.linear_z.bias)
             
-        # self.mlp_seq = ResidueMLP(sequence_state_dim, 4 * sequence_state_dim, dropout=dropout)
-        self.mlp_pair = FeedForward(pairwise_dim, ff_expand * pairwise_dim)
-
-        self.drop = nn.Dropout(dropout)
-        self.row_drop = Dropout(dropout * 2, 2)
-        self.col_drop = Dropout(dropout * 2, 1)
-
-        torch.nn.init.zeros_(self.tri_mul_in.linear_z.weight)
-        torch.nn.init.zeros_(self.tri_mul_in.linear_z.bias)
-        torch.nn.init.zeros_(self.tri_mul_out.linear_z.weight)
-        torch.nn.init.zeros_(self.tri_mul_out.linear_z.bias)
-        
-        torch.nn.init.zeros_(self.sequence_to_pair.o_proj.weight)
-        torch.nn.init.zeros_(self.sequence_to_pair.o_proj.bias)
-        # torch.nn.init.zeros_(self.pair_to_sequence.linear.weight)
-        # torch.nn.init.zeros_(self.seq_attention.o_proj.weight)
-        # torch.nn.init.zeros_(self.seq_attention.o_proj.bias)
-        # torch.nn.init.zeros_(self.mlp_seq.mlp[-2].weight)
-        # torch.nn.init.zeros_(self.mlp_seq.mlp[-2].bias)
-        # torch.nn.init.zeros_(self.mlp_pair.mlp[-2].weight)
-        # torch.nn.init.zeros_(self.mlp_pair.mlp[-2].bias)
-        ##########
+            torch.nn.init.zeros_(self.sequence_to_pair.o_proj.weight)
+            torch.nn.init.zeros_(self.sequence_to_pair.o_proj.bias)
 
         
-        if frame_update:
-            self.ff_update = nn.Linear(dim, 6)
-        else:
-            self.ff_update = None
-
     def forward(self, x, z, mask, rots, trans):
+        if hasattr(self, 'pair_to_sequence'):
         
-        # bias = self.pair_to_sequence(z)
-        
-        # x = x + self.mha(
-        #     self.mha_norm(x), 
-        #     mask.bool(),
-        #     rots=rots, 
-        #     trans=trans,
-        #     bias=bias.permute(0,3,1,2)
-        # )
-        x = x + self.ipa(
-            self.mha_norm(x),
-            z,
-            Rigid(trans=trans, rots=Rotation(rot_mats=rots)),
-            mask
-        )
+            bias = self.pair_to_sequence(z)
             
-        
-        x = x + self.ff(self.ff_norm(x))
+            x = x + self.mha(
+                self.mha_norm(x), 
+                mask.bool(),
+                rots=rots, 
+                trans=trans,
+                bias=bias.permute(0,3,1,2)
+            )
 
-        z = z + self.sequence_to_pair(x)
+        if hasattr(self, 'ipa'):
+            x = x + self.ipa(
+                self.mha_norm(x),
+                z,
+                Rigid(trans=trans, rots=Rotation(rot_mats=rots)),
+                mask
+            )
+        x = x + self.ff(self.ff_norm(x))
         
-        # if self.ff_update:
+        if hasattr(self, 'sequence_to_pair'):
+            z = z + self.sequence_to_pair(x)
+            tri_mask = mask.unsqueeze(2) * mask.unsqueeze(1) if mask is not None else None
+            z = z + self.row_drop(self.tri_mul_out(z, mask=tri_mask))
+            z = z + self.col_drop(self.tri_mul_in(z, mask=tri_mask))
+            z = z + self.mlp_pair(z)
+
+        if hasattr(self, 'ipa'):
+        
         #     rigids = Rigid(trans=trans, rots=Rotation(rot_mats=rots))
         #     offsets = rigids[:,None].invert().compose(rigids[:,:,None]).to_tensor_7()
         #     z = z + self.frames_to_pair(offsets)
-            
-        tri_mask = mask.unsqueeze(2) * mask.unsqueeze(1) if mask is not None else None
-        z = z + self.row_drop(self.tri_mul_out(z, mask=tri_mask))
-        z = z + self.col_drop(self.tri_mul_in(z, mask=tri_mask))
-        z = z + self.mlp_pair(z)
-        
-        if self.ff_update is not None:
             vec, rotvec = self.ff_update(x).split(3, dim=-1)
             trans = trans + torch.einsum("blij,blj->bli", rots, vec)
             rots = rots @ axis_angle_to_matrix(rotvec).mT
-        # exit()
+        
         return x, z, mask, rots, trans
 
 
@@ -165,8 +155,16 @@ class OpenProtModel(nn.Module):
                     dim=cfg.dim,
                     heads=cfg.heads,
                     ff_expand=cfg.ff_expand,
-                    geometric_attn=cfg.geometric_attn,
-                    frame_update=cfg.frame_update,
+                    pair=True,
+                )
+            )
+        for i in range(cfg.ipa_blocks):
+            self.blocks.append(
+                OpenProtTransformerBlock(
+                    dim=cfg.dim,
+                    heads=cfg.heads,
+                    ff_expand=cfg.ff_expand,
+                    ipa=True,
                 )
             )
 
@@ -187,10 +185,13 @@ class OpenProtModel(nn.Module):
         
         #for block in self.blocks:
         x, z, mask, rots, trans = checkpoint_blocks(
-            self.blocks,
+            self.blocks[:self.cfg.blocks],
             args=(x, z, mask, rots, trans),
             blocks_per_ckpt=1,
         )
+        for block in self.blocks[self.cfg.blocks:]:
+            x, z, mask, rots, trans = block(x, z, mask, rots, trans)
+            
              # = torch.utils.checkpoint.checkpoint(
              #    block, x, z, mask, rots, trans)
         return {
