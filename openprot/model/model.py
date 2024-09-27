@@ -4,7 +4,7 @@ import torch.nn.functional as F
 from .gmha import GeometricMultiHeadAttention
 from ..utils.rotation_conversions import axis_angle_to_matrix
 from .trunk import RelativePosition
-from ..utils.rigid_utils import Rigid
+from ..utils.rigid_utils import Rigid, Rotation
 
 from .layers import (
     Dropout,
@@ -54,7 +54,9 @@ class OpenProtTransformerBlock(nn.Module):
         # self.layernorm_1 = nn.LayerNorm(sequence_state_dim)
 
         self.sequence_to_pair = SequenceToPair(dim, pairwise_dim // 2, pairwise_dim)
+        # self.frames_to_pair = nn.Linear(7, pairwise_dim)
         self.pair_to_sequence = PairToSequence(pairwise_dim, heads)
+        
 
         # self.seq_attention = Attention(
         #     sequence_state_dim, sequence_num_heads, sequence_head_width, gated=True
@@ -104,6 +106,12 @@ class OpenProtTransformerBlock(nn.Module):
         x = x + self.ff(self.ff_norm(x))
 
         z = z + self.sequence_to_pair(x)
+        
+        # if self.ff_update:
+        #     rigids = Rigid(trans=trans, rots=Rotation(rot_mats=rots))
+        #     offsets = rigids[:,None].invert().compose(rigids[:,:,None]).to_tensor_7()
+        #     z = z + self.frames_to_pair(offsets)
+            
         tri_mask = mask.unsqueeze(2) * mask.unsqueeze(1) if mask is not None else None
         z = z + self.row_drop(self.tri_mul_out(z, mask=tri_mask))
         z = z + self.col_drop(self.tri_mul_in(z, mask=tri_mask))
@@ -140,8 +148,8 @@ class OpenProtModel(nn.Module):
                     dim=cfg.dim,
                     heads=cfg.heads,
                     ff_expand=cfg.ff_expand,
-                    geometric_attn=i in cfg.geometric_attn,
-                    frame_update=i in cfg.frame_update,
+                    geometric_attn=cfg.geometric_attn,
+                    frame_update=cfg.frame_update,
                 )
             )
 

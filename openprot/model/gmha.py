@@ -36,7 +36,7 @@ class GeometricMultiHeadAttention(nn.Module):
             self.affine_weights = nn.Parameter(torch.zeros(heads))
         self.geometric = geometric
 
-    def geometric_forward(self, x, mask, rots, trans, inf=1e6):
+    def geometric_forward(self, x, mask, rots, trans, bias=None, inf=1e6):
         B, L, D = x.shape
 
         ## scalar attention
@@ -72,7 +72,15 @@ class GeometricMultiHeadAttention(nn.Module):
 
         if mask is not None:
             mask = mask.view(B, 1, 1, -1)
-            attn = attn - inf * (1 - mask)
+
+        if bias is not None:
+            if mask is not None:
+                mask = torch.where(mask, 0, -float("inf")) + bias
+            else:
+                mask = bias
+
+        if mask is not None:
+            attn = attn + mask
 
         attn = torch.softmax(attn, dim=-1)
 
