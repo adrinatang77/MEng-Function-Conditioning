@@ -109,7 +109,7 @@ class GeometricMultiHeadAttention(nn.Module):
 
     def forward(self, x, mask=None, bias=None, **kwargs):
         if self.geometric:
-            return self.geometric_forward(x, mask, **kwargs)
+            return self.geometric_forward(x, mask=mask, bias=bias, **kwargs)
         B, L, D = x.shape
 
         query = self.w_q(x).view(B, L, self.heads, -1).transpose(1, 2)

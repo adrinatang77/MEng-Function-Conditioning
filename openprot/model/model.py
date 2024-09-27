@@ -5,7 +5,7 @@ from .gmha import GeometricMultiHeadAttention
 from ..utils.rotation_conversions import axis_angle_to_matrix
 from .trunk import RelativePosition
 from ..utils.rigid_utils import Rigid, Rotation
-
+from .ipa import InvariantPointAttention
 from .layers import (
     Dropout,
     PairToSequence,
@@ -44,7 +44,15 @@ class OpenProtTransformerBlock(nn.Module):
         frame_update=False
     ):
         super().__init__()
-        self.mha = GeometricMultiHeadAttention(dim, heads, geometric=geometric_attn)
+        # self.mha = GeometricMultiHeadAttention(dim, heads, geometric=geometric_attn)
+        self.ipa = InvariantPointAttention(
+            c_s=dim,
+            c_z=pairwise_dim,
+            c_hidden=dim // heads,
+            no_heads=heads,
+            no_qk_points=4,
+            no_v_points=8,
+        )
         self.mha_norm = nn.LayerNorm(dim)
         self.ff = FeedForward(dim, ff_expand * dim)
         self.ff_norm = nn.LayerNorm(dim)
@@ -55,7 +63,7 @@ class OpenProtTransformerBlock(nn.Module):
 
         self.sequence_to_pair = SequenceToPair(dim, pairwise_dim // 2, pairwise_dim)
         # self.frames_to_pair = nn.Linear(7, pairwise_dim)
-        self.pair_to_sequence = PairToSequence(pairwise_dim, heads)
+        # self.pair_to_sequence = PairToSequence(pairwise_dim, heads)
         
 
         # self.seq_attention = Attention(
@@ -78,7 +86,7 @@ class OpenProtTransformerBlock(nn.Module):
         
         torch.nn.init.zeros_(self.sequence_to_pair.o_proj.weight)
         torch.nn.init.zeros_(self.sequence_to_pair.o_proj.bias)
-        torch.nn.init.zeros_(self.pair_to_sequence.linear.weight)
+        # torch.nn.init.zeros_(self.pair_to_sequence.linear.weight)
         # torch.nn.init.zeros_(self.seq_attention.o_proj.weight)
         # torch.nn.init.zeros_(self.seq_attention.o_proj.bias)
         # torch.nn.init.zeros_(self.mlp_seq.mlp[-2].weight)
@@ -95,14 +103,23 @@ class OpenProtTransformerBlock(nn.Module):
 
     def forward(self, x, z, mask, rots, trans):
         
-        bias = self.pair_to_sequence(z)
-        x = x + self.mha(
-            self.mha_norm(x), 
-            mask.bool(),
-            rots=rots, 
-            trans=trans,
-            bias=bias.permute(0,3,1,2)
+        # bias = self.pair_to_sequence(z)
+        
+        # x = x + self.mha(
+        #     self.mha_norm(x), 
+        #     mask.bool(),
+        #     rots=rots, 
+        #     trans=trans,
+        #     bias=bias.permute(0,3,1,2)
+        # )
+        x = x + self.ipa(
+            self.mha_norm(x),
+            z,
+            Rigid(trans=trans, rots=Rotation(rot_mats=rots)),
+            mask
         )
+            
+        
         x = x + self.ff(self.ff_norm(x))
 
         z = z + self.sequence_to_pair(x)
