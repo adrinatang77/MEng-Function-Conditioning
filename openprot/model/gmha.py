@@ -6,7 +6,9 @@ import torch.nn.functional as F
 
 
 class GeometricMultiHeadAttention(nn.Module):
-    def __init__(self, dim, heads, geometric=False, vdim=12, adim=1, freqs_cis=None):
+    def __init__(
+        self, dim, heads, geometric=False, pair=False, vdim=12, adim=1, freqs_cis=None
+    ):
         super().__init__()
         self.dim = dim
         self.vdim = vdim
@@ -35,6 +37,37 @@ class GeometricMultiHeadAttention(nn.Module):
 
             self.affine_weights = nn.Parameter(torch.zeros(heads))
         self.geometric = geometric
+        self.pair = pair
+        if pair:
+            self.w_z = nn.Linear(heads * 128, dim)
+
+    def pair_forward(self, x, mask, z=None, bias=None, **kwargs):
+
+        B, L, D = x.shape
+
+        query = self.w_q(x).view(B, L, self.heads, -1).transpose(1, 2)  # B H L D
+        key = self.w_k(x).view(B, L, self.heads, -1).transpose(1, 2)
+
+        attn = query @ key.mT / math.sqrt(D)  # B H L L
+
+        if mask is not None:
+            mask = mask.view(B, 1, 1, -1)
+        if bias is not None:
+            if mask is not None:
+                mask = torch.where(mask, 0, -float("inf")) + bias
+            else:
+                mask = bias
+        if mask is not None:
+            attn = attn + mask
+
+        attn = torch.softmax(attn, dim=-1)
+
+        ## scalar values
+        value = self.w_v(x).view(B, L, self.heads, -1).transpose(1, 2)
+        out = (attn @ value).transpose(1, 2).reshape(B, L, D)
+
+        z_out = torch.einsum("bhij,bijd->bihd", attn, z).reshape(B, L, -1)
+        return self.w_o(out) + self.w_z(z_out)
 
     def geometric_forward(self, x, mask, rots, trans, bias=None, inf=1e6):
         B, L, D = x.shape
@@ -110,6 +143,8 @@ class GeometricMultiHeadAttention(nn.Module):
     def forward(self, x, mask=None, bias=None, **kwargs):
         if self.geometric:
             return self.geometric_forward(x, mask=mask, bias=bias, **kwargs)
+        elif self.pair:
+            return self.pair_forward(x, mask=mask, bias=bias, **kwargs)
         B, L, D = x.shape
 
         query = self.w_q(x).view(B, L, self.heads, -1).transpose(1, 2)

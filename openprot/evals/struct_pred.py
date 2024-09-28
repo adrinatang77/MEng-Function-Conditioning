@@ -12,7 +12,7 @@ import pandas as pd
 
 class StructurePredictionEval(OpenProtEval):
     def setup(self):
-        self.df = pd.read_csv(self.cfg.split, index_col='name')
+        self.df = pd.read_csv(self.cfg.split, index_col="name")
 
     def run(self, model):
         NotImplemented
@@ -45,15 +45,15 @@ class StructurePredictionEval(OpenProtEval):
         _, readout = model.forward(noisy_batch)
 
         lddt = compute_lddt(
-            readout["trans"], batch["frame_trans"], batch["frame_mask"]
+            readout["trans"][-1], batch["frame_trans"], batch["frame_mask"]
         )
 
         if logger:
             # logger.log("struct/rmsd", msd_error, post=np.sqrt)
             logger.log("struct/lddt", lddt)
 
-        coords = readout["trans"]
-        L = batch['frame_trans'].shape[1]
+        coords = readout["trans"][-1]
+        L = batch["frame_trans"].shape[1]
         atom37 = np.zeros((L, 37, 3))
         prot = protein.Protein(
             atom_positions=np.zeros((L, 37, 3)),

@@ -16,6 +16,7 @@ from ..model.positions import PositionEmbedder, PositionDecoder, PairwiseProject
 from functools import partial
 import numpy as np
 
+
 def pseudo_beta_fn(aatype, all_atom_positions, all_atom_masks):
     is_gly = aatype == rc.restype_order["G"]
     ca_idx = rc.atom_order["CA"]
@@ -84,13 +85,10 @@ class StructureTrack(OpenProtTrack):
 
             model.trans_out = nn.Linear(model.cfg.dim, 3)
             model.rots_out = nn.Linear(model.cfg.dim, 3)
-        
+
         model.frame_mask = nn.Parameter(torch.zeros(model.cfg.dim))
         model.frame_null = nn.Parameter(torch.zeros(model.cfg.dim))
-        # if self.cfg.pairwise:
-        #     model.pairwise_out = PairwiseProjectionHead(model.cfg.dim, 64)
-        # elif self.cfg.trunk:
-        model.pairwise_out = nn.Linear(model.cfg.trunk.pairwise_state_dim, 64)
+        model.pairwise_out = nn.Linear(model.cfg.pairwise_dim, 64)
 
     def corrupt(self, batch, noisy_batch, target, logger=None):
 
@@ -119,10 +117,8 @@ class StructureTrack(OpenProtTrack):
         # add noise # placeholder
         noisy_batch["frame_rots"] = torch.eye(3, device=dev).expand(B, L, 3, 3)
 
-        target['beta'], target['beta_mask'] = pseudo_beta_fn(
-            batch['aatype'], 
-            batch['atom37'], 
-            batch['atom37_mask']
+        target["beta"], target["beta_mask"] = pseudo_beta_fn(
+            batch["aatype"], batch["atom37"], batch["atom37_mask"]
         )
 
         if logger:
@@ -146,8 +142,10 @@ class StructureTrack(OpenProtTrack):
 
         if self.cfg.frames:
             empty_rots = torch.eye(3, device=dev).expand(B, L, 3, 3)
-            inp["trans"] = torch.where(embed_mask[...,None], batch["frame_trans"], 0.0)
-            inp["rots"] = torch.where(embed_mask[...,None,None], batch["frame_rots"], empty_rots)
+            inp["trans"] = torch.where(embed_mask[..., None], batch["frame_trans"], 0.0)
+            inp["rots"] = torch.where(
+                embed_mask[..., None, None], batch["frame_rots"], empty_rots
+            )
         else:
             inp["x"] += torch.where(
                 embed_mask[..., None], model.trans_embed(batch["frame_trans"]), 0.0
@@ -177,9 +175,9 @@ class StructureTrack(OpenProtTrack):
             readout["rots"] = out["rots"]
 
         else:
-            readout["trans"] = model.trans_out(out["x"])
+            readout["trans"] = model.trans_out(out["x"])[None]
             rotvec = model.rots_out(out["x"])
-            readout["rots"] = axis_angle_to_matrix(rotvec)
+            readout["rots"] = axis_angle_to_matrix(rotvec)[None]
         # if self.cfg.pairwise:
         #     readout["pairwise"] = model.pairwise_out(out["x"])
         # elif self.cfg.trunk:
@@ -201,7 +199,7 @@ class StructureTrack(OpenProtTrack):
                 readout, target, logger=logger
             )
         """
-        
+
         if "pade" in self.cfg.losses:
             loss = loss + self.cfg.losses["pade"] * self.compute_pade_loss(
                 readout, target, logger=logger
@@ -217,10 +215,10 @@ class StructureTrack(OpenProtTrack):
                 readout, target, logger=logger
             )
 
-        lddt = compute_lddt( # temporary
-            readout["trans"], target["frame_trans"], target["struct_supervise"]
+        lddt = compute_lddt(  # temporary
+            readout["trans"][-1], target["frame_trans"], target["struct_supervise"]
         )
-            
+
         mask = target["struct_supervise"]
 
         if logger:
@@ -231,7 +229,6 @@ class StructureTrack(OpenProtTrack):
         loss = (loss * mask).sum() / target["pad_mask"].sum()
 
         return loss
-
 
     def compute_pade_loss(self, readout, target, logger=None):
         pred = readout["trans"]
@@ -281,7 +278,6 @@ class StructureTrack(OpenProtTrack):
         )
 
         mask = target["struct_supervise"]
-        
 
         fape_fn = partial(
             compute_fape,
@@ -298,8 +294,8 @@ class StructureTrack(OpenProtTrack):
             # + 0.45 * fape_fn(thresh=15)
             + 0.9 * fape_fn(l1_clamp_distance=10)
         )
-        
-        # fape_loss = fape_loss.mean(0) # loss weighted and reduced correctly! 
+
+        fape_loss = fape_loss.mean(0)  # loss weighted and reduced correctly!
 
         if logger:
             logger.log("struct/fape_loss", fape_loss, mask=mask)
@@ -333,10 +329,10 @@ class StructureTrack(OpenProtTrack):
         )
 
         # some temporary stuff
-        mask = target["struct_supervise"] * target['beta_mask']
+        mask = target["struct_supervise"] * target["beta_mask"]
         mask = mask[:, None] * mask[:, :, None]
         if logger:
             logger.log("struct/distogram", loss, mask)
-            #logger.log("struct/distogram2", (loss * mask).sum((-1,-2)) / mask.sum((-1,-2)))
+            # logger.log("struct/distogram2", (loss * mask).sum((-1,-2)) / mask.sum((-1,-2)))
 
         return (loss * mask).sum(-1) / (eps + mask.sum(-1))

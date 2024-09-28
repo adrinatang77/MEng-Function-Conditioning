@@ -46,7 +46,7 @@ class Wrapper(pl.LightningModule):
     #         if p.grad is None:
     #             print(name)
     #     exit()
-        
+
     def configure_optimizers(self):
         cls = getattr(torch.optim, self.cfg.optimizer.type)
         optimizer = cls(

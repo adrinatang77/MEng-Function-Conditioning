@@ -10,6 +10,7 @@ import torch.nn.functional as F
 from einops import rearrange, repeat
 from torch import nn
 
+
 class GaussianFourierProjection(nn.Module):
     """Gaussian Fourier embeddings for noise levels.
     from https://github.com/yang-song/score_sde_pytorch/blob/1618ddea340f3e4a2ed7852a0694a809775cf8d0/models/layerspp.py#L32
@@ -25,6 +26,7 @@ class GaussianFourierProjection(nn.Module):
         x_proj = x[:, None] * self.W[None, :] * 2 * np.pi
         emb = torch.cat([torch.sin(x_proj), torch.cos(x_proj)], dim=-1)
         return emb
+
 
 class Attention(nn.Module):
     def __init__(self, embed_dim, num_heads, head_width, gated=False):

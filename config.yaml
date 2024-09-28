@@ -2,11 +2,11 @@ ckpt: null # eventually this will control resuming runs
 validate: false # if true, only validate the model, don't train
 logger:
     # set to true to log to neptune.ai
-    neptune: false
+    neptune: true
     # please change "test" to something unique to your task
     project: openprot/structure
     # will log to workdir and neptune.ai with this name
-    name: integrated_frames
+    name: shared_ipa_replica
     # if not null, will duplicate stdout and stderr to workdir/{name}/{logfile}
     logfile: std.out
     # if null, will log every epoch, otherwise every this number of steps
@@ -102,23 +102,9 @@ evals:
 tracks:
     # register tracks here
     StructureTrack: 
-        pairwise: false
-        # trunk: true
-        # custom args for every track
-        # embedder: 
-        #     type: linear
-        #     num_freqs: 50
-        #     max_period: 400
-        # decoder:
-        #     type: linear
-        #     max_period: 400
-        #     scale: 1.0
         loss_weight: 1.0
-        # logit_max_norm: null
         frames: true
         losses:
-            # rmsd: 0.0
-            # sinusoidal: 1.0
             pade: 0.0
             fape: 1.0
             distogram: 0.3
@@ -129,43 +115,20 @@ tracks:
         loss_weight: 0.0
 
 model: # custom args
-    in_norm: false
     dim: 1024
-    blocks: 12
-    ipa_blocks: 8
+    pairwise_dim: 128
     heads: 16
+    pairwise_heads: 4
+    blocks: 12
     ff_expand: 4
-    trunk:
-        num_blocks: 12
-        sequence_state_dim: 1024
-        pairwise_state_dim: 128
-        sequence_head_width: 32
-        pairwise_head_width: 32
-        position_bins: 32
-        dropout: 0
-        layer_drop: 0
-        cpu_grad_checkpoint: false
-        chunk_size: null
-        structure_module:
-            c_s: 384
-            c_z: 128
-            c_ipa: 16
-            c_resnet: 128
-            no_heads_ipa: 12
-            no_qk_points: 4
-            no_v_points: 8
-            dropout_rate: 0.1
-            no_blocks: 8
-            no_transition_layers: 1
-            no_resnet_blocks: 2
-            no_angles: 7
-            trans_scale_factor: 10
-            epsilon: 1e-8
-            inf: 1e5
+    position_bins: 32
+    no_qk_points: 4
+    no_v_points: 8
+    ipa_blocks: 8
 
 optimizer:
     type: Adam
-    lr: 1e-4
+    lr: 5e-4
     scheduler: 
         total_steps: 1000000
         warmup_steps: 1000

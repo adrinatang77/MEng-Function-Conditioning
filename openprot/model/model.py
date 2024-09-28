@@ -17,6 +17,7 @@ from openfold.model.triangular_multiplicative_update import (
 )
 from openfold.utils.checkpointing import checkpoint_blocks
 
+
 class FeedForward(nn.Module):
     def __init__(self, dim, ff_dim):
         super().__init__()
@@ -36,99 +37,111 @@ class OpenProtTransformerBlock(nn.Module):
         self,
         dim,
         heads,
-        ff_expand, 
-        pairwise_dim=128,
-        pairwise_heads=4,
-        ipa_dim=384,
+        ff_expand,
+        pairwise_dim=None,
+        pairwise_heads=None,
+        no_qk_points=None,
+        no_v_points=None,
         dropout=0,
         pair=False,
+        pair_in=False,
         ipa=False,
+        frame_update=False,
     ):
         super().__init__()
+        self.cfg = {
+            "pair": pair,
+            "pair_in": pair_in,
+            "ipa": ipa,
+            "frame_update": frame_update,
+        }
         if ipa:
-            #self.ipa_in = nn.Linear(dim, 384)
             self.ipa = InvariantPointAttention(
                 c_s=dim,
                 c_z=pairwise_dim,
                 c_hidden=dim // heads,
                 no_heads=heads,
-                no_qk_points=4,
-                no_v_points=8,
+                no_qk_points=no_qk_points,
+                no_v_points=no_v_points,
             )
-            self.ff_update = nn.Linear(dim, 6)
+
         else:
-            self.mha = GeometricMultiHeadAttention(dim, heads)
+            self.mha = GeometricMultiHeadAttention(dim, heads, pair=pair_in)
+
         self.mha_norm = nn.LayerNorm(dim)
         self.ff = FeedForward(dim, ff_expand * dim)
         self.ff_norm = nn.LayerNorm(dim)
 
-        if pair:
-        ##########
-        
-            # self.layernorm_1 = nn.LayerNorm(sequence_state_dim)
-            self.sequence_to_pair = SequenceToPair(dim, pairwise_dim // 2, pairwise_dim)
-            # self.frames_to_pair = nn.Linear(7, pairwise_dim)
+        if frame_update:
+            self.ff_update_norm = nn.LayerNorm(dim)
+            self.ff_update = nn.Linear(dim, 6)
+            torch.nn.init.zeros_(self.ff_update.weight)
+            torch.nn.init.zeros_(self.ff_update.bias)
+
+        if (pair_in or pair) and (not ipa):  # ipa has its own bias head
             self.pair_to_sequence = PairToSequence(pairwise_dim, heads)
-            # self.seq_attention = Attention(
-            #     sequence_state_dim, sequence_num_heads, sequence_head_width, gated=True
-            # )
-            self.tri_mul_out = TriangleMultiplicationOutgoing(pairwise_dim, pairwise_dim)
+
+        if pair:
+            self.sequence_to_pair = SequenceToPair(dim, pairwise_dim // 2, pairwise_dim)
+            self.pair_to_sequence = PairToSequence(pairwise_dim, heads)
+            self.tri_mul_out = TriangleMultiplicationOutgoing(
+                pairwise_dim, pairwise_dim
+            )
             self.tri_mul_in = TriangleMultiplicationIncoming(pairwise_dim, pairwise_dim)
-                
-            # self.mlp_seq = ResidueMLP(sequence_state_dim, 4 * sequence_state_dim, dropout=dropout)
             self.mlp_pair = FeedForward(pairwise_dim, ff_expand * pairwise_dim)
-    
+
             self.drop = nn.Dropout(dropout)
             self.row_drop = Dropout(dropout * 2, 2)
             self.col_drop = Dropout(dropout * 2, 1)
-    
+
             torch.nn.init.zeros_(self.tri_mul_in.linear_z.weight)
             torch.nn.init.zeros_(self.tri_mul_in.linear_z.bias)
             torch.nn.init.zeros_(self.tri_mul_out.linear_z.weight)
             torch.nn.init.zeros_(self.tri_mul_out.linear_z.bias)
-            
+
             torch.nn.init.zeros_(self.sequence_to_pair.o_proj.weight)
             torch.nn.init.zeros_(self.sequence_to_pair.o_proj.bias)
 
-        
     def forward(self, x, z, mask, rots, trans):
-        if hasattr(self, 'pair_to_sequence'):
-        
-            bias = self.pair_to_sequence(z)
-            
-            x = x + self.mha(
-                self.mha_norm(x), 
-                mask.bool(),
-                rots=rots, 
-                trans=trans,
-                bias=bias.permute(0,3,1,2)
-            )
 
-        if hasattr(self, 'ipa'):
+        if (self.cfg["pair"] or self.cfg["pair_in"]) and not self.cfg["ipa"]:
+            bias = self.pair_to_sequence(z)
+        else:
+            bias = torch.zeros_like(mask)
+
+        if self.cfg["ipa"]:
             x = x + self.ipa(
                 self.mha_norm(x),
                 z,
                 Rigid(trans=trans, rots=Rotation(rot_mats=rots)),
-                mask
+                mask,
             )
+        else:
+            x = x + self.mha(
+                self.mha_norm(x),
+                mask.bool(),
+                z=z,
+                rots=rots,
+                trans=trans,
+                bias=bias.permute(0, 3, 1, 2),
+            )
+
         x = x + self.ff(self.ff_norm(x))
-        
-        if hasattr(self, 'sequence_to_pair'):
+
+        if self.cfg["pair"]:
             z = z + self.sequence_to_pair(x)
-            tri_mask = mask.unsqueeze(2) * mask.unsqueeze(1) if mask is not None else None
+            tri_mask = (
+                mask.unsqueeze(2) * mask.unsqueeze(1) if mask is not None else None
+            )
             z = z + self.row_drop(self.tri_mul_out(z, mask=tri_mask))
             z = z + self.col_drop(self.tri_mul_in(z, mask=tri_mask))
             z = z + self.mlp_pair(z)
 
-        if hasattr(self, 'ipa'):
-        
-        #     rigids = Rigid(trans=trans, rots=Rotation(rot_mats=rots))
-        #     offsets = rigids[:,None].invert().compose(rigids[:,:,None]).to_tensor_7()
-        #     z = z + self.frames_to_pair(offsets)
-            vec, rotvec = self.ff_update(x).split(3, dim=-1)
+        if self.cfg["frame_update"]:
+            vec, rotvec = self.ff_update(self.ff_update_norm(x)).split(3, dim=-1)
             trans = trans + torch.einsum("blij,blj->bli", rots, vec)
             rots = rots @ axis_angle_to_matrix(rotvec).mT
-        
+
         return x, z, mask, rots, trans
 
 
@@ -137,16 +150,9 @@ class OpenProtModel(nn.Module):
         super().__init__()
         self.cfg = cfg
 
-        # if cfg.trunk:
-        #     self.trunk = FoldingTrunk(cfg.trunk)
-        #     return
-
-        c_s = cfg.trunk.sequence_state_dim
-        c_z = cfg.trunk.pairwise_state_dim
-        self.pairwise_positional_embedding = RelativePosition(cfg.trunk.position_bins, c_z)
-        
-        if cfg.in_norm:
-            self.in_norm = nn.LayerNorm(cfg.dim)
+        self.pairwise_positional_embedding = RelativePosition(
+            cfg.position_bins, cfg.pairwise_dim
+        )
 
         self.blocks = nn.ModuleList()
         for i in range(cfg.blocks):
@@ -155,48 +161,55 @@ class OpenProtModel(nn.Module):
                     dim=cfg.dim,
                     heads=cfg.heads,
                     ff_expand=cfg.ff_expand,
+                    pairwise_dim=cfg.pairwise_dim,
+                    pairwise_heads=cfg.pairwise_heads,
                     pair=True,
+                    ipa=False,
                 )
             )
-        for i in range(cfg.ipa_blocks):
-            self.blocks.append(
-                OpenProtTransformerBlock(
-                    dim=cfg.dim,
-                    heads=cfg.heads,
-                    ff_expand=cfg.ff_expand,
-                    ipa=True,
-                )
-            )
+
+        self.ipa_block = OpenProtTransformerBlock(
+            dim=cfg.dim,
+            heads=cfg.heads,
+            ff_expand=cfg.ff_expand,
+            pairwise_dim=cfg.pairwise_dim,
+            no_qk_points=cfg.no_qk_points,
+            no_v_points=cfg.no_v_points,
+            ipa=True,
+            frame_update=True,
+        )
 
     def forward(self, inp):
 
-        x = inp['x']
+        x = inp["x"]
         B, L, _ = x.shape
-        # true_aa = torch.zeros(B, L, dtype=torch.long, device=seq_feats.device)
         residx = torch.arange(L, device=x.device)[None].expand(B, -1)
         mask = inp["pad_mask"]
         z = self.pairwise_positional_embedding(residx, mask=mask)
-        
+
         rots = inp.get("rots", None)
         trans = inp.get("trans", None)
-        if self.cfg.in_norm:
-            x = self.in_norm(x)
 
-        
-        #for block in self.blocks:
-        x, z, mask, rots, trans = checkpoint_blocks(
-            self.blocks[:self.cfg.blocks],
-            args=(x, z, mask, rots, trans),
-            blocks_per_ckpt=1,
-        )
-        for block in self.blocks[self.cfg.blocks:]:
-            x, z, mask, rots, trans = block(x, z, mask, rots, trans)
-            
-             # = torch.utils.checkpoint.checkpoint(
-             #    block, x, z, mask, rots, trans)
+        for block in self.blocks:
+            if block.cfg["pair"]:
+                x, z, mask, rots, trans = torch.utils.checkpoint.checkpoint(
+                    block, x, z, mask, rots, trans
+                )
+            else:
+                x, z, mask, rots, trans = block(x, z, mask, rots, trans)
+
+        all_rots = [rots]
+        all_trans = [trans]
+        for block in range(self.cfg.ipa_blocks):
+            x, z, mask, rots, trans = self.ipa_block(x, z, mask, rots, trans)
+            all_rots.append(rots)
+            all_trans.append(trans)
+            rots = rots.detach()
+            trans = trans.detach()
+
         return {
             "x": x,
             "z": z,
-            "rots": rots,
-            "trans": trans,
+            "rots": torch.stack(all_rots),
+            "trans": torch.stack(all_trans),
         }

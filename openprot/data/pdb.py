@@ -3,6 +3,7 @@ import numpy as np
 import pandas as pd
 from .data import OpenProtDataset
 
+
 class PDBDataset(OpenProtDataset):
 
     def setup(self):
@@ -10,7 +11,7 @@ class PDBDataset(OpenProtDataset):
 
         if self.cfg.cutoff is not None:
             self.df = self.df[self.df.release_date < self.cfg.cutoff]
-        
+
         if self.cfg.clusters is not None:
             self.clusters = []
             with open(self.cfg.clusters) as f:
@@ -18,7 +19,8 @@ class PDBDataset(OpenProtDataset):
                     clus = []
                     names = line.split()
                     for name in names:
-                        if name in self.df.index: clus.append(name)
+                        if name in self.df.index:
+                            clus.append(name)
                     if len(clus) > 0:
                         self.clusters.append(clus)
 

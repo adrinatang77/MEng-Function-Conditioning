@@ -10,6 +10,7 @@ MASK_IDX = 21
 
 import esm
 from esm import Alphabet
+
 load_fn = esm.pretrained.load_model_and_alphabet
 esm_registry = {
     "esm2_8M": partial(load_fn, "esm2_t6_8M_UR50D_500K"),
@@ -25,6 +26,7 @@ esm_registry = {
     "esm2_15B": esm.pretrained.esm2_t48_15B_UR50D,
 }
 
+
 class SequenceTrack(OpenProtTrack):
 
     def tokenize(self, data):
@@ -35,20 +37,14 @@ class SequenceTrack(OpenProtTrack):
     @staticmethod
     def _af2_to_esm(d: Alphabet):
         # Remember that t is shifted from residue_constants by 1 (0 is padding).
-        esm_reorder = [d.padding_idx] + [
-            d.get_idx(v) for v in rc.restypes_with_x
-        ]
+        esm_reorder = [d.padding_idx] + [d.get_idx(v) for v in rc.restypes_with_x]
         return torch.tensor(esm_reorder)
-
-    
-
-        
 
     def add_modules(self, model):
         model.seq_embed = nn.Embedding(22, model.cfg.dim)
         model.seq_out = nn.Linear(model.cfg.dim, 21)
         if self.cfg.esm is not None:
-            
+
             model.esm, self.esm_dict = esm_registry.get(self.cfg.esm)()
             model.esm.requires_grad_(False)
             model.esm.half()
@@ -61,9 +57,9 @@ class SequenceTrack(OpenProtTrack):
                 nn.ReLU(),
                 nn.Linear(model.cfg.dim, model.cfg.dim),
             )
-            
-            model.register_buffer("af2_to_esm", self._af2_to_esm(self.esm_dict)) 
-            
+
+            model.register_buffer("af2_to_esm", self._af2_to_esm(self.esm_dict))
+
         # model.seq_mask = nn.Parameter(torch.zeros(model.cfg.dim))
 
     def _compute_language_model_representations(self, esmaa):
@@ -120,13 +116,13 @@ class SequenceTrack(OpenProtTrack):
             logger.log("seq/toks", batch["seq_mask"].sum())
 
     def embed(self, model, batch, inp):
-        
+
         def _af2_idx_to_esm_idx(aa, mask):
             aa = (aa + 1).masked_fill(mask != 1, 0)
             return model.af2_to_esm[aa]
 
         if self.cfg.esm is not None:
-            esmaa = _af2_idx_to_esm_idx(batch['aatype'], batch['pad_mask'])
+            esmaa = _af2_idx_to_esm_idx(batch["aatype"], batch["pad_mask"])
             res = model.esm(esmaa, repr_layers=range(model.esm.num_layers + 1))
             esm_s = torch.stack(
                 [v for _, v in sorted(res["representations"].items())], dim=2
@@ -136,8 +132,8 @@ class SequenceTrack(OpenProtTrack):
 
             # === preprocessing ===
             esm_s = (model.esm_s_combine.softmax(0).unsqueeze(0) @ esm_s).squeeze(2)
-            inp['x'] += model.esm_s_mlp(esm_s)
-            
+            inp["x"] += model.esm_s_mlp(esm_s)
+
         inp["x"] += model.seq_embed(batch["aatype"])
 
     def predict(self, model, out, readout):

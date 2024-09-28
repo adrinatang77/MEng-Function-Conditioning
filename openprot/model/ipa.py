@@ -38,6 +38,7 @@ class InvariantPointAttention(nn.Module):
     """
     Implements Algorithm 22.
     """
+
     def __init__(
         self,
         c_s: int,
@@ -127,11 +128,11 @@ class InvariantPointAttention(nn.Module):
         Returns:
             [*, N_res, C_s] single representation update
         """
-        if(_offload_inference and inplace_safe):
+        if _offload_inference and inplace_safe:
             z = _z_reference_list
         else:
             z = [z]
-       
+
         #######################################
         # Generate scalar and point activations
         #######################################
@@ -158,9 +159,7 @@ class InvariantPointAttention(nn.Module):
         q_pts = r[..., None].apply(q_pts)
 
         # [*, N_res, H, P_q, 3]
-        q_pts = q_pts.view(
-            q_pts.shape[:-2] + (self.no_heads, self.no_qk_points, 3)
-        )
+        q_pts = q_pts.view(q_pts.shape[:-2] + (self.no_heads, self.no_qk_points, 3))
 
         # [*, N_res, H * (P_q + P_v) * 3]
         kv_pts = self.linear_kv_points(s)
@@ -183,19 +182,19 @@ class InvariantPointAttention(nn.Module):
         ##########################
         # [*, N_res, N_res, H]
         b = self.linear_b(z[0])
-        
+
         # [*, H, N_res, N_res]
         a = torch.matmul(
             permute_final_dims(q, (1, 0, 2)),  # [*, H, N_res, C_hidden]
             permute_final_dims(k, (1, 2, 0)),  # [*, H, C_hidden, N_res]
         )
-        
+
         a *= math.sqrt(1.0 / (3 * self.c_hidden))
-        a += (math.sqrt(1.0 / 3) * permute_final_dims(b, (2, 0, 1)))
+        a += math.sqrt(1.0 / 3) * permute_final_dims(b, (2, 0, 1))
 
         # [*, N_res, N_res, H, P_q, 3]
         pt_att = q_pts.unsqueeze(-4) - k_pts.unsqueeze(-5)
-        pt_att = pt_att ** 2
+        pt_att = pt_att**2
 
         # [*, N_res, N_res, H, P_q]
         pt_att = sum(torch.unbind(pt_att, dim=-1))
@@ -216,9 +215,8 @@ class InvariantPointAttention(nn.Module):
 
         # [*, H, N_res, N_res]
         pt_att = permute_final_dims(pt_att, (2, 0, 1))
-        
 
-        a = a + pt_att 
+        a = a + pt_att
         a = a + square_mask.unsqueeze(-3)
         a = self.softmax(a)
 
@@ -226,14 +224,12 @@ class InvariantPointAttention(nn.Module):
         # Compute output
         ################
         # [*, N_res, H, C_hidden]
-        o = torch.matmul(
-            a, v.transpose(-2, -3).to(dtype=a.dtype)
-        ).transpose(-2, -3)
+        o = torch.matmul(a, v.transpose(-2, -3).to(dtype=a.dtype)).transpose(-2, -3)
 
         # [*, N_res, H * C_hidden]
         o = flatten_final_dims(o, 2)
 
-        # [*, H, 3, N_res, P_v] 
+        # [*, H, 3, N_res, P_v]
         o_pt = torch.sum(
             (
                 a[..., None, :, :, None]
@@ -248,7 +244,7 @@ class InvariantPointAttention(nn.Module):
 
         # [*, N_res, H * P_v]
         o_pt_norm = flatten_final_dims(
-            torch.sqrt(torch.sum(o_pt ** 2, dim=-1) + self.eps), 2
+            torch.sqrt(torch.sum(o_pt**2, dim=-1) + self.eps), 2
         )
 
         # [*, N_res, H * P_v, 3]
@@ -262,9 +258,9 @@ class InvariantPointAttention(nn.Module):
 
         # [*, N_res, C_s]
         s = self.linear_out(
-            torch.cat(
-                (o, *torch.unbind(o_pt, dim=-1), o_pt_norm, o_pair), dim=-1
-            ).to(dtype=z[0].dtype)
+            torch.cat((o, *torch.unbind(o_pt, dim=-1), o_pt_norm, o_pair), dim=-1).to(
+                dtype=z[0].dtype
+            )
         )
-        
+
         return s
