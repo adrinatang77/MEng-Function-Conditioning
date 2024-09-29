@@ -79,13 +79,6 @@ class StructureTrack(OpenProtTrack):
         """
 
     def add_modules(self, model):
-        if not self.cfg.frames:
-            model.trans_embed = nn.Linear(3, model.cfg.dim)
-            model.rots_embed = nn.Linear(9, model.cfg.dim)
-
-            model.trans_out = nn.Linear(model.cfg.dim, 3)
-            model.rots_out = nn.Linear(model.cfg.dim, 3)
-
         model.frame_mask = nn.Parameter(torch.zeros(model.cfg.dim))
         model.frame_null = nn.Parameter(torch.zeros(model.cfg.dim))
         model.pairwise_out = nn.Linear(model.cfg.pairwise_dim, 64)
@@ -140,22 +133,12 @@ class StructureTrack(OpenProtTrack):
         null_mask = ~batch["frame_mask"].bool()
         embed_mask = ~full_noise_mask & ~null_mask
 
-        if self.cfg.frames:
-            empty_rots = torch.eye(3, device=dev).expand(B, L, 3, 3)
-            inp["trans"] = torch.where(embed_mask[..., None], batch["frame_trans"], 0.0)
-            inp["rots"] = torch.where(
-                embed_mask[..., None, None], batch["frame_rots"], empty_rots
-            )
-        else:
-            inp["x"] += torch.where(
-                embed_mask[..., None], model.trans_embed(batch["frame_trans"]), 0.0
-            )
-            inp["x"] += torch.where(
-                embed_mask[..., None],
-                model.rots_embed(batch["frame_rots"].view(B, L, 9)),
-                0.0,
-            )
-
+        empty_rots = torch.eye(3, device=dev).expand(B, L, 3, 3)
+        inp["trans"] = torch.where(embed_mask[..., None], batch["frame_trans"], 0.0)
+        inp["rots"] = torch.where(
+            embed_mask[..., None, None], batch["frame_rots"], empty_rots
+        )
+        
         # tell the model which frames were not present
         inp["x"] += torch.where(
             null_mask[..., None],
@@ -170,17 +153,13 @@ class StructureTrack(OpenProtTrack):
         )
 
     def predict(self, model, out, readout):
-        if self.cfg.frames:
-            readout["trans"] = out["trans"]
-            readout["rots"] = out["rots"]
-
-        else:
-            readout["trans"] = model.trans_out(out["x"])[None]
-            rotvec = model.rots_out(out["x"])
-            readout["rots"] = axis_angle_to_matrix(rotvec)[None]
-        # if self.cfg.pairwise:
-        #     readout["pairwise"] = model.pairwise_out(out["x"])
-        # elif self.cfg.trunk:
+        readout["trans"] = out["trans"]
+        readout["rots"] = out["rots"]
+        
+        # readout["trans"] = model.trans_out(out["x"])[None]
+        # rotvec = model.rots_out(out["x"])
+        # readout["rots"] = axis_angle_to_matrix(rotvec)[None]
+    
         readout["pairwise"] = model.pairwise_out(out["z"])
 
     def compute_loss(self, readout, target, logger=None):
