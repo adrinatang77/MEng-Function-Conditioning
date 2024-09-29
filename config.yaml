@@ -6,7 +6,7 @@ logger:
     # please change "test" to something unique to your task
     project: openprot/structure
     # will log to workdir and neptune.ai with this name
-    name: supervise_rots_at_end
+    name: ipa_replica
     # if not null, will duplicate stdout and stderr to workdir/{name}/{logfile}
     logfile: std.out
     # if null, will log every epoch, otherwise every this number of steps
@@ -103,7 +103,6 @@ tracks:
     # register tracks here
     StructureTrack: 
         loss_weight: 1.0
-        frames: true
         losses:
             pade: 0.0
             fape: 1.0
@@ -121,14 +120,17 @@ model: # custom args
     pairwise_heads: 4
     blocks: 12
     pair_block_interval: 1
+    ipa_block_interval: 12
     ff_expand: 4
     position_bins: 32
     no_qk_points: 4
     no_v_points: 8
     ipa_blocks: 8
     ipa: true
-    frameless_ipa: true
+    tri_mul: true
+    ipa_frames: true
     relpos: false
+    rope: true
 
 optimizer:
     type: Adam

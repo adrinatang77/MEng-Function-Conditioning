@@ -1,8 +1,26 @@
 from . import rope
 import math
 import torch.nn as nn
+import numpy as np
 import torch
 import torch.nn.functional as F
+from openfold.model.primitives import ipa_point_weights_init_
+from openfold.utils.tensor_utils import (
+    permute_final_dims,
+    flatten_final_dims,
+)
+from openfold.utils.rigid_utils import Rotation, Rigid
+def sinusoidal_embedding(pos, n_freqs, max_period, min_period):
+    periods = torch.exp(torch.linspace(
+        math.log(min_period), 
+        math.log(max_period), 
+        n_freqs, 
+        device=pos.device
+    ))
+    freqs = 2 * np.pi / periods
+    return torch.cat(
+        [torch.cos(pos[..., None] * freqs), torch.sin(pos[..., None] * freqs)], -1
+    )
 
 
 class GeometricMultiHeadAttention(nn.Module):
@@ -27,8 +45,7 @@ class GeometricMultiHeadAttention(nn.Module):
         self.pairwise_dim = pairwise_dim
         self.pairwise_heads = pairwise_heads
         self.rope = rope
-        self.pair_reps = pair_reps
-        self.tri_mul = tri_mul
+        self.pair_bias = pair_bias
         self.pair_values = pair_values
         self.ipa = ipa
         self.ipa_frames = ipa_frames
@@ -43,13 +60,12 @@ class GeometricMultiHeadAttention(nn.Module):
         self.w_v = nn.Linear(dim, dim, bias=False)
         self.w_o = nn.Linear(dim, dim, bias=False)
 
+        if relpos or (ipa and not ipa_frames):
+            self.embed_rots = nn.Sequential(
+                nn.Linear(9, dim), nn.ReLU(), nn.Linear(dim, dim)
+            )
+
         if ipa:
-            if not ipa_frames:
-                self.embed_rots = nn.Sequential(
-                    nn.Linear(9, dim),
-                    nn.ReLU(), 
-                    nn.Linear(dim, dim)
-                )
             hpq = heads * no_qk_points * 3
             self.linear_q_points = nn.Linear(dim, hpq)
     
@@ -148,6 +164,7 @@ class GeometricMultiHeadAttention(nn.Module):
         # [*, N_res, H, P_v, 3]
         o_pt = permute_final_dims(o_pt, (2, 0, 3, 1))
         if self.ipa_frames:
+            r = Rigid(trans=trans, rots=Rotation(rot_mats=rots))
             o_pt = r[..., None, None].invert_apply(o_pt)
         
         else:
@@ -168,7 +185,7 @@ class GeometricMultiHeadAttention(nn.Module):
 
         B, L, D = x.shape
 
-        if self.ipa and not self.ipa_frames:
+        if self.relpos or (self.ipa and not self.ipa_frames):
             x = x + self.embed_rots(rots.view(B, L, -1))
 
         query = self.w_q(x).view(B, L, self.heads, -1).transpose(1, 2)  # B H L D
@@ -190,7 +207,8 @@ class GeometricMultiHeadAttention(nn.Module):
             attn = attn + self.linear_b(z).permute(0, 3, 1, 2)
 
         if self.ipa:
-            attn = attn + self.get_point_attn(x, trans, rots)
+            v_pts, pt_attn = self.get_pt_attn(x, trans, rots)
+            attn = attn + pt_attn
             
         elif self.relpos:
             relpos_query = self.linear_relpos_query(x)
@@ -220,7 +238,7 @@ class GeometricMultiHeadAttention(nn.Module):
             out = out + self.w_z(z_out)
 
         if self.ipa:
-            ipa_out = get_ipa_values(self, attn, v_pts, trans, rots):
+            ipa_out = self.get_ipa_values(attn, v_pts, trans, rots)
             out = out + self.w_pt(ipa_out)
             
         return out

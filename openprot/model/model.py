@@ -22,7 +22,7 @@ from openfold.utils.checkpointing import checkpoint_blocks
 class FeedForward(nn.Module):
     def __init__(self, dim, ff_dim):
         super().__init__()
-        self.norm = nn.Linear(dim)
+        self.norm = nn.LayerNorm(dim)
         self.lin_in = nn.Linear(dim, ff_dim)
         self.act = nn.ReLU()
         self.lin_out = nn.Linear(ff_dim, dim)
@@ -73,6 +73,7 @@ class OpenProtTransformerBlock(nn.Module):
         self.pair_values = pair_values
         self.pair_updates = pair_updates
         self.frame_update = frame_update
+        self.tri_mul = tri_mul
 
         self.mha_norm = nn.LayerNorm(dim)
         self.ff = FeedForward(dim, ff_expand * dim)
@@ -80,10 +81,12 @@ class OpenProtTransformerBlock(nn.Module):
         if frame_update:
             self.linear_frame_update = nn.Sequential(
                 nn.LayerNorm(dim),
+                nn.Linear(dim, dim),
+                nn.ReLU(),
                 nn.Linear(dim, 6),
             )
-            torch.nn.init.zeros_(self.ff_update[1].weight)
-            torch.nn.init.zeros_(self.ff_update[1].bias)
+            torch.nn.init.zeros_(self.linear_frame_update[1].weight)
+            torch.nn.init.zeros_(self.linear_frame_update[1].bias)
 
         if pair_bias or pair_values:
             self.pair_norm = nn.LayerNorm(pairwise_dim)
@@ -99,6 +102,7 @@ class OpenProtTransformerBlock(nn.Module):
                 self.tri_mul_in = TriangleMultiplicationIncoming(
                     pairwise_dim, pairwise_dim
                 )
+                dropout=0
                 self.row_drop = Dropout(dropout * 2, 2)
                 self.col_drop = Dropout(dropout * 2, 1)
                 torch.nn.init.zeros_(self.tri_mul_in.linear_z.weight)
@@ -160,6 +164,7 @@ class OpenProtModel(nn.Module):
         self.blocks = nn.ModuleList()
         for i in range(cfg.blocks):
             is_pair = i % cfg.pair_block_interval == 0
+            is_ipa = False # i % cfg.ipa_block_interval == 0
             self.blocks.append(
                 OpenProtTransformerBlock(
                     dim=cfg.dim,
@@ -168,28 +173,14 @@ class OpenProtModel(nn.Module):
                     pairwise_dim=cfg.pairwise_dim,
                     pairwise_heads=cfg.pairwise_heads,
                     rope=cfg.rope,
+                    ipa=is_ipa and cfg.ipa,
+                    ipa_frames=is_ipa and cfg.ipa_frames,
+                    relpos=is_ipa and cfg.relpos,
                     pair_bias=is_pair,
                     pair_updates=is_pair,
                     tri_mul=is_pair and cfg.tri_mul,
                 )
             )
-    #             dim,
-    #     heads,
-    #     ff_expand,
-    #     pairwise_dim=128,
-    #     pairwise_heads=4,
-    #     rope=False,        # rotate scalar queries and keys
-    #     pair_bias=False,   # use pairs to bias
-    #     pair_updates=False,
-    #     tri_mul=False,
-    #     pair_values=False, # aggregate values from pair reps
-    #     ipa=False,         # use point attention 
-    #     ipa_frames=False,  # use frames in point attention
-    #     relpos=False,      # instead use trans relpos
-    #     no_qk_points=4,
-    #     no_v_points=8,
-    #     frame_update=False,
-    # ):
             
         self.final_block = OpenProtTransformerBlock(
             dim=cfg.dim,
@@ -228,7 +219,7 @@ class OpenProtModel(nn.Module):
         all_rots = [rots]
         all_trans = [trans]
         for block in range(self.cfg.ipa_blocks):
-            x, z, mask, rots, trans = self.ipa_block(x, z, mask, rots, trans)
+            x, z, mask, rots, trans = self.final_block(x, z, mask, rots, trans)
             all_rots.append(rots)
             all_trans.append(trans)
             rots = rots.detach()
