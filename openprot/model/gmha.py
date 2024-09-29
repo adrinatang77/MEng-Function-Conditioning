@@ -4,7 +4,7 @@ import torch.nn as nn
 import numpy as np
 import torch
 import torch.nn.functional as F
-from openfold.model.primitives import ipa_point_weights_init_
+from openfold.model.primitives import ipa_point_weights_init_, Linear
 from openfold.utils.tensor_utils import (
     permute_final_dims,
     flatten_final_dims,
@@ -32,6 +32,7 @@ class GeometricMultiHeadAttention(nn.Module):
         pairwise_heads=4,
         rope=False,        # rotate scalar queries and keys
         pair_bias=False,   # use pairs to bias
+        pair_bias_norm=False,
         pair_values=False, # aggregate values from pair reps
         ipa=False,         # use point attention 
         ipa_frames=False,  # use frames in point attention
@@ -67,27 +68,27 @@ class GeometricMultiHeadAttention(nn.Module):
 
         if ipa:
             hpq = heads * no_qk_points * 3
-            self.linear_q_points = nn.Linear(dim, hpq)
+            self.linear_q_points = Linear(dim, hpq)
     
             hpkv = heads * (no_qk_points + no_v_points) * 3
-            self.linear_kv_points = nn.Linear(dim, hpkv)
+            self.linear_kv_points = Linear(dim, hpkv)
     
             hpv = heads * no_v_points * 3
     
             self.head_weights = nn.Parameter(torch.zeros((heads)))
             ipa_point_weights_init_(self.head_weights)
             self.softplus = nn.Softplus()
-            self.w_pt = nn.Linear(heads * no_v_points * 4, dim)
+            self.w_pt = Linear(heads * no_v_points * 4, dim)
     
         if pair_bias:
-            self.linear_b = nn.Linear(pairwise_dim, heads)
-
+            self.linear_b = Linear(pairwise_dim, heads, bias=False)
+            
         if relpos:
             self.linear_relpos_query = nn.Linear(dim, heads * 3 * 64, bias=False)
             self.linear_relpos_value = nn.Linear(heads * 3 * 64, dim, bias=False)
             
         if pair_values:
-            self.w_z = nn.Linear(heads * pairwise_dim, dim)
+            self.w_z = Linear(heads * pairwise_dim, dim)
 
     def get_pt_attn(self, x, trans, rots):
 
@@ -139,7 +140,7 @@ class GeometricMultiHeadAttention(nn.Module):
             *((1,) * len(pt_att.shape[:-2]) + (-1, 1))
         )
         head_weights = head_weights * math.sqrt(
-            1.0 / (3 * (self.no_qk_points * 9.0 / 2))
+            2.0 / (self.no_qk_points * 9.0)
         )
 
         pt_att = pt_att * head_weights
@@ -195,7 +196,7 @@ class GeometricMultiHeadAttention(nn.Module):
             freqs_cis = rope.compute_freqs_cis(D // self.heads, L, device=x.device)
             query, key = rope.apply_rotary_emb(query, key, freqs_cis)
         
-        attn = query @ key.mT / math.sqrt(D)  # B H L L
+        attn = query @ key.mT / math.sqrt(D / self.heads)  # B H L L
 
         if mask is None:
             mask = torch.ones(B, L, D, dtype=bool, device=x.device)
@@ -209,6 +210,7 @@ class GeometricMultiHeadAttention(nn.Module):
         if self.ipa:
             v_pts, pt_attn = self.get_pt_attn(x, trans, rots)
             attn = attn + pt_attn
+            # attn = attn * math.sqrt(1/3)
             
         elif self.relpos:
             relpos_query = self.linear_relpos_query(x)

@@ -65,12 +65,13 @@ class OpenProtTransformerBlock(nn.Module):
             pair_values=pair_values,
             ipa=ipa,
             ipa_frames=ipa_frames,
-            relpos=False,
+            relpos=relpos,
             no_qk_points=no_qk_points,
             no_v_points=no_v_points,
         )
-        self.pair_bias = pair_bias
-        self.pair_values = pair_values
+        if pair_bias or pair_values:
+            self.z_norm = nn.LayerNorm(pairwise_dim)
+            
         self.pair_updates = pair_updates
         self.frame_update = frame_update
         self.tri_mul = tri_mul
@@ -81,19 +82,15 @@ class OpenProtTransformerBlock(nn.Module):
         if frame_update:
             self.linear_frame_update = nn.Sequential(
                 nn.LayerNorm(dim),
-                nn.Linear(dim, dim),
-                nn.ReLU(),
+                # nn.Linear(dim, dim),
+                # nn.ReLU(),
                 nn.Linear(dim, 6),
             )
-            torch.nn.init.zeros_(self.linear_frame_update[1].weight)
-            torch.nn.init.zeros_(self.linear_frame_update[1].bias)
+            torch.nn.init.zeros_(self.linear_frame_update[-1].weight)
+            torch.nn.init.zeros_(self.linear_frame_update[-1].bias)
 
-        if pair_bias or pair_values:
-            self.pair_norm = nn.LayerNorm(pairwise_dim)
-        
         if pair_updates:
             self.sequence_to_pair = SequenceToPair(dim, pairwise_dim // 2, pairwise_dim)
-            self.pair_to_sequence = PairToSequence(pairwise_dim, heads)
 
             if tri_mul:
                 self.tri_mul_out = TriangleMultiplicationOutgoing(
@@ -117,16 +114,13 @@ class OpenProtTransformerBlock(nn.Module):
             torch.nn.init.zeros_(self.sequence_to_pair.o_proj.weight)
             torch.nn.init.zeros_(self.sequence_to_pair.o_proj.bias)
 
-        if pair_values:
-            self.pair_values_norm = nn.LayerNorm(pairwise_dim)
-
-
     def forward(self, x, z, mask, rots, trans):
 
-    
+        ### no pair2sequence
+        
         x = x + self.mha(
             x=self.mha_norm(x),
-            z=z if self.pair_bias or self.pair_values else None,
+            z=self.z_norm(z) if self.pair_bias or self.pair_values else None,
             mask=mask.bool(),
             trans=trans,
             rots=rots,
@@ -142,7 +136,7 @@ class OpenProtTransformerBlock(nn.Module):
                 )
                 z = z + self.row_drop(self.tri_mul_out(z, mask=tri_mask))
                 z = z + self.col_drop(self.tri_mul_in(z, mask=tri_mask))
-            z = z + self.mlp_pair(z)
+            z = z + self.mlp_pair(z) # no layer norm here
 
         if self.frame_update:
             vec, rotvec = self.linear_frame_update(x).split(3, dim=-1)
