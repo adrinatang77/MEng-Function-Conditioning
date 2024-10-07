@@ -120,7 +120,7 @@ class OpenProtTransformerBlock(nn.Module):
         
         x = x + self.mha(
             x=self.mha_norm(x),
-            z=self.z_norm(z) if self.pair_bias or self.pair_values else None,
+            z=self.z_norm(z) if hasattr(self, 'z_norm') else None,
             mask=mask.bool(),
             trans=trans,
             rots=rots,
@@ -217,7 +217,7 @@ class OpenProtModel(nn.Module):
             all_rots.append(rots)
             all_trans.append(trans)
             rots = rots.detach()
-            trans = trans.detach()
+            # trans = trans.detach()
 
         return {
             "x": x,
