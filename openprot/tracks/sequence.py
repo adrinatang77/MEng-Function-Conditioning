@@ -10,6 +10,18 @@ import pandas as pd
 MASK_IDX = 21
 NUM_TOKENS = 21
 
+# processes a sequence (integers) into its class distribution representation (one-hot encoding)
+# returns tensor of size (seqlen, NUM_TOKENS)
+def seq2prob(seq):
+    seq = seq.to(torch.int64)
+    return F.one_hot(seq, num_classes=NUM_TOKENS)
+
+# given a probability distribution over classes, returns single sample
+# pt is probability distribution of shape (seqlen, NUM_TOKENS)
+def sample_p(pt):
+    pt = pt.to(torch.float32)
+    return torch.multinomial(pt, 1, replacement=True)
+
 class SequenceTrack(OpenProtTrack):
 
     def tokenize(self, data):
@@ -58,7 +70,7 @@ class SequenceTrack(OpenProtTrack):
 
         return new_tokens
 
-    def corrupt(self, batch, noisy_batch, target, timestep=None, total_steps=None, logger=None):
+    def corrupt(self, batch, noisy_batch, target, logger=None):
         if self.cfg.corrupt == "mask":
             tokens = batch["aatype"]
 
@@ -87,7 +99,6 @@ class SequenceTrack(OpenProtTrack):
             target["aatype"] = batch["aatype"]  # original tokens as target
 
             if logger:
-                logger.log("seq/timestep", timestep)
                 logger.log("seq/toks", batch["seq_mask"].sum())
 
         # elif self.cfg.corrupt == "discrete_uniform": 
@@ -164,27 +175,5 @@ class SequenceTrack(OpenProtTrack):
             logger.log("seq/perplexity", loss, mask=mask, post=np.exp)
             logger.log("seq/toks_sup", mask.sum().item())
         return (loss * mask).sum() / target["pad_mask"].sum()
-
-def dt_p_xt_g_xt(x1, t):
-    # x1:(batch_size, dimension)
-    # t: float
-    # returns (batch_size, dimension, state space) for varying x_t value
-
-    # uniform
-    x1_onehot = F.one_hot(x1, num_classes=NUM_TOKENS) 
-    return x1_onehot - (1/NUM_TOKENS)
-
-def p_xt_g_x1(x1, t):
-    # x1: (batch_size, dimension)
-    # t: float
-    # returns (batch_size, dimension, state space) for varying x_t value
-
-    # uniform
-    x1_onehot = F.one_hot(x1, num_classes=NUM_TOKENS) 
-    return t * x1_onehot + (1-t) * (1/NUM_TOKENS)
-
-def sample_prior(num_samples, dim):
-    # uniform
-    return torch.randint(0, NUM_TOKENS, (num_samples, dim))
 
 
