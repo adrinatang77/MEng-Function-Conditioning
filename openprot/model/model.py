@@ -32,7 +32,7 @@ class MultiHeadAttention(nn.Module):
             mask = mask.view(B, 1, 1, -1)
 
         attn = F.scaled_dot_product_attention(query, key, value, attn_mask=mask)
-        attn = attn.transpose(1, 2).view(B, L, D)
+        attn = attn.transpose(1, 2).reshape(B, L, D)
         return self.w_o(attn)
 
 

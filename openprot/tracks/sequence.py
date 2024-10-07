@@ -2,9 +2,10 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import numpy as np
-from typing import override
+# from typing import override
 from .track import OpenProtTrack
 from ..utils import residue_constants as rc
+import pandas as pd
 
 MASK_IDX = 21
 NUM_TOKENS = 21
@@ -17,28 +18,43 @@ class SequenceTrack(OpenProtTrack):
         )
 
     def add_modules(self, model):
-        model.seq_embed = nn.Embedding(22, model.cfg.dim)
+        model.seq_embed = nn.Embedding(21, model.cfg.dim)
         model.seq_out = nn.Linear(model.cfg.dim, 21)
-        model.flow = nn.Parameter(torch.randn(21, 21)) # temporary random flow matrix 
+        
+        rate_matrix = pd.read_csv(self.cfg.rate_matrix_path, index_col=0)
+        self.flow = torch.tensor(rate_matrix.values, dtype=torch.float32)
+
+        Q = torch.zeros((NUM_TOKENS + 1, NUM_TOKENS))
+        Q[:-1, :] = self.flow
+        Q[-1, :] = 1
+
+        b = torch.zeros(NUM_TOKENS + 1)
+        b[-1] = 1
+
+        self.steady_state = torch.linalg.lstsq(Q, b, rcond=None).solution
+
         # model.seq_mask = nn.Parameter(torch.zeros(model.cfg.dim))
 
-    def apply_flow(self, tokens, flow, timestep, total_steps):
-        num_tokens = flow.shape[0]
+    def apply_flow(self, tokens, flow, noise_levels):
+        num_tokens, seq_len = tokens.shape
+
+        # compute transition probability for each noise level
+        # new_token sampled from probability for that token i arising from ith column in transition probability
+        # compute transition probabilities for each token
+        flows = flow.unsqueeze(0).repeat(num_tokens, seq_len, 1, 1)
+        noise_levels = noise_levels.view(num_tokens, seq_len, 1, 1)
+
+        converted_noise = torch.tan(noise_levels * (3.14/2))
+        transition_probs = torch.matrix_exp(converted_noise * flows)
+
+        # transform tokens to one-hot vectors for each amino acid in a sequence
+        tokens_one_hot = F.one_hot(tokens, num_classes = NUM_TOKENS).unsqueeze(-1).float()
         
-        # flow weight
-        flow_weight = timestep / total_steps
-        
-        # compute transition probabilities for each token 
-        transition_probs = F.softmax(flow * flow_weight, dim=-1) 
-        
-        # for each token, sample the next token based on the matrix
-        new_tokens = tokens.clone()
-        for i in range(num_tokens):
-            token_mask = (tokens == i)
-            if token_mask.any():
-                new_token_distribution = transition_probs[i]  # get transition probabilities for token `i`
-                sampled_tokens = torch.multinomial(new_token_distribution, token_mask.sum(), replacement=True).to(tokens.device)
-                new_tokens[token_mask] = sampled_tokens
+        new_tokens_distribution = torch.matmul(transition_probs, tokens_one_hot)
+        new_tokens_distribution = new_tokens_distribution.squeeze(-1)
+
+        new_tokens = torch.multinomial(new_tokens_distribution.view(-1, 21), num_samples=1)
+        new_tokens = new_tokens.view(num_tokens, seq_len).squeeze(-1)
 
         return new_tokens
 
@@ -62,7 +78,7 @@ class SequenceTrack(OpenProtTrack):
             tokens = batch["aatype"]
             
             # apply flow matrix
-            flowed_tokens = self.apply_flow(tokens, self.flow, timestep, total_steps)
+            flowed_tokens = self.apply_flow(tokens, self.flow, noise_levels=batch["seq_noise"])
             
             # update noisy batch
             noisy_batch["aatype"] = flowed_tokens
