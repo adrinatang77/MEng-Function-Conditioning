@@ -27,7 +27,6 @@ from Bio import PDB
 from Bio.Data import PDBData
 import numpy as np
 
-# from openfold.data.errors import MultipleChainsError
 from . import residue_constants
 
 

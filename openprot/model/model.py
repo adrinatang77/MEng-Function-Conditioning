@@ -3,20 +3,53 @@ import torch.nn as nn
 import torch.nn.functional as F
 from .gmha import GeometricMultiHeadAttention
 from ..utils.rotation_conversions import axis_angle_to_matrix
-from .trunk import RelativePosition
 from ..utils.rigid_utils import Rigid, Rotation
-from .ipa import InvariantPointAttention
-from .nipa import NonInvariantPointAttention
 from .layers import (
     Dropout,
     PairToSequence,
     SequenceToPair,
 )
-from openfold.model.triangular_multiplicative_update import (
+from .tri_mul import (
     TriangleMultiplicationIncoming,
     TriangleMultiplicationOutgoing,
 )
-from openfold.utils.checkpointing import checkpoint_blocks
+from ..utils.checkpointing import checkpoint_blocks
+
+
+
+class RelativePosition(nn.Module):
+    def __init__(self, bins, pairwise_state_dim):
+        super().__init__()
+        self.bins = bins
+
+        # Note an additional offset is used so that the 0th position
+        # is reserved for masked pairs.
+        self.embedding = torch.nn.Embedding(2 * bins + 2, pairwise_state_dim)
+
+    def forward(self, residue_index, mask=None):
+        """
+        Input:
+          residue_index: B x L tensor of indices (dytpe=torch.long)
+          mask: B x L tensor of booleans
+
+        Output:
+          pairwise_state: B x L x L x pairwise_state_dim tensor of embeddings
+        """
+
+        assert residue_index.dtype == torch.long
+        if mask is not None:
+            assert residue_index.shape == mask.shape
+
+        diff = residue_index[:, None, :] - residue_index[:, :, None]
+        diff = diff.clamp(-self.bins, self.bins)
+        diff = diff + self.bins + 1  # Add 1 to adjust for padding index.
+
+        if mask is not None:
+            mask = mask[:, None, :] * mask[:, :, None]
+            diff[mask == False] = 0
+
+        output = self.embedding(diff)
+        return output
 
 
 class FeedForward(nn.Module):

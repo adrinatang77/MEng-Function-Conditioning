@@ -4,12 +4,12 @@ import torch.nn as nn
 import numpy as np
 import torch
 import torch.nn.functional as F
-from openfold.model.primitives import ipa_point_weights_init_, Linear
-from openfold.utils.tensor_utils import (
+from .primitives import ipa_point_weights_init_, Linear
+from ..utils.tensor_utils import (
     permute_final_dims,
     flatten_final_dims,
 )
-from openfold.utils.rigid_utils import Rotation, Rigid
+from ..utils.rigid_utils import Rotation, Rigid
 def sinusoidal_embedding(pos, n_freqs, max_period, min_period):
     periods = torch.exp(torch.linspace(
         math.log(min_period), 
