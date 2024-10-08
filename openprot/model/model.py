@@ -114,6 +114,7 @@ class OpenProtTransformerBlock(nn.Module):
         self.pair_updates = pair_updates
         self.frame_update = frame_update
         self.update_rots = update_rots
+        self.update_rots_type = update_rots_type
         self.tri_mul = tri_mul
 
         self.mha_norm = nn.LayerNorm(dim)
@@ -183,7 +184,8 @@ class OpenProtTransformerBlock(nn.Module):
         if self.frame_update:
             
             if self.update_rots:
-                vec, rotvec = self.linear_frame_update(x).split(3, dim=-1)
+                update = self.linear_frame_update(x)
+                vec, rotvec = update[...,:3], update[...,3:]
                 trans = trans + torch.einsum("blij,blj->bli", rots, vec)
                 if self.update_rots_type == 'vec':
                     rot_update = axis_angle_to_matrix(rotvec)
