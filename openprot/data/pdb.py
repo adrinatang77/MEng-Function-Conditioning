@@ -24,6 +24,18 @@ class PDBDataset(OpenProtDataset):
                     if len(clus) > 0:
                         self.clusters.append(clus)
 
+        # PDB blacklist has a peculiar format due to how the foldseek PDB database is constrcted.
+        if self.cfg.blacklist is not None:
+            blacklist = pd.read_csv(self.cfg.blacklist, names=["query", "target", "qcov", "tcov", "evalue"], sep='\t')
+            blacklist = list(set(blacklist["target"]))
+            prefix = [name.split('-')[0] for name in blacklist]
+            suffix = [name.split('_')[-1] for name in blacklist]
+            blacklist = list(zip(prefix, suffix))
+            self.blacklist = set(['_'.join(tup) for tup in blacklist])
+            
+                
+            
+
     def __len__(self):
         if self.cfg.clusters:
             return len(self.clusters)
@@ -36,6 +48,11 @@ class PDBDataset(OpenProtDataset):
             name = np.random.choice(clus)
         else:
             name = self.df.index[idx]
+
+        if self.cfg.blacklist is not None:
+            if name in self.blacklist:
+                return self[(idx+1)%len(self)]
+                
         prot = dict(
             np.load(f"{self.cfg.path}/{name[1:3]}/{name}.npz", allow_pickle=True)
         )

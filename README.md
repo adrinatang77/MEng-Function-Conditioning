@@ -27,6 +27,9 @@ python -c "import foldcomp; foldcomp.setup('afdb_swissprot_v4')" # foldcomp serv
 curl -O https://ftp.ebi.ac.uk/pub/databases/uniprot/uniref/uniref50/uniref50.fasta.gz # then gunzip it
 python -m scripts.process_uniref --fasta [PATH] --out [PATH]
 python -m scripts.cluster_chains --mmseqs_path [PATH] --chains /scratch/projects/cgai/openprot/data/pdb_npz/pdb_chains.csv --out pdb_clusters
+python -c "import foldcomp; foldcomp.setup('afdb_rep_v4')"
+
+python -m scripts.make_splits --chains splits/cameo2022.csv --db /home1/10165/bjing/foldseek_pdb/ --blacklist_out splits/cameo_pdb_blacklist.tsv
 ```
 
 ## Contributing

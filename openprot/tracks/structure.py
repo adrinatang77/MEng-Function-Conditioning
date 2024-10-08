@@ -82,10 +82,14 @@ class StructureTrack(OpenProtTrack):
         model.frame_mask = nn.Parameter(torch.zeros(model.cfg.dim))
         model.frame_null = nn.Parameter(torch.zeros(model.cfg.dim))
         model.pairwise_out = nn.Linear(model.cfg.pairwise_dim, 64)
+        if self.cfg.readout_trans:
+            model.trans_out = nn.Linear(model.cfg.dim, 3)
+
         if self.cfg.readout_rots:
+            rot_dim = {'quat': 4, 'vec': 3}[self.cfg.readout_rots_type]
             model.rots_out = nn.Sequential(
                 nn.LayerNorm(model.cfg.dim),
-                nn.Linear(model.cfg.dim, 3)
+                nn.Linear(model.cfg.dim, rot_dim)
             )
 
     def corrupt(self, batch, noisy_batch, target, logger=None):
@@ -158,13 +162,19 @@ class StructureTrack(OpenProtTrack):
         )
 
     def predict(self, model, out, readout):
-        readout["trans"] = out["trans"]
-        readout["rots"] = out["rots"]
-
-        # readout["trans"] = model.trans_out(out["x"])[None]
+        
+        
+        if self.cfg.readout_trans:
+            readout["trans"] = model.trans_out(out["x"])[None]
+        else:
+            readout["trans"] = out["trans"]
+            
         if self.cfg.readout_rots:
             rotvec = model.rots_out(out["x"])
-            readout["rots"] = axis_angle_to_matrix(rotvec)[None]
+            if self.cfg.readout_rots_type == 'quat':
+                readout["rots"] = Rotation(quats=rotvec, normalize_quats=True).get_rot_mats()[None]
+            elif self.cfg.readout_rots_type == 'vec':
+                readout["rots"] = axis_angle_to_matrix(rotvec)[None]
         else:
             readout["rots"] = out["rots"]
 

@@ -75,5 +75,5 @@ class StructurePredictionEval(OpenProtEval):
         pred_str = "\n".join(pred_str.split("\n")[1:-3])
 
         name = batch["name"][0]
-        with open(f"{savedir}/{name}.pdb", "w") as f:
+        with open(f"{savedir}/{name}_{lddt:.2f}.pdb", "w") as f:
             f.write("\nENDMDL\nMODEL\n".join([ref_str, pred_str]))

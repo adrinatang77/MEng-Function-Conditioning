@@ -89,6 +89,7 @@ class OpenProtTransformerBlock(nn.Module):
         no_v_points=8,
         frame_update=False,
         update_rots=False,
+        update_rots_type='quat',
     ):
         super().__init__()
         self.mha = GeometricMultiHeadAttention(
@@ -120,11 +121,12 @@ class OpenProtTransformerBlock(nn.Module):
         self.ff_norm = nn.LayerNorm(dim)
 
         if frame_update:
+            rot_dim = {'quat': 4, 'vec': 3}[update_rots_type]
             self.linear_frame_update = nn.Sequential(
                 nn.LayerNorm(dim),
                 # nn.Linear(dim, dim),
                 # nn.ReLU(),
-                nn.Linear(dim, 6 if update_rots else 3),
+                nn.Linear(dim, 3 + rot_dim if update_rots else 3),
             )
             torch.nn.init.zeros_(self.linear_frame_update[-1].weight)
             torch.nn.init.zeros_(self.linear_frame_update[-1].bias)
@@ -183,7 +185,11 @@ class OpenProtTransformerBlock(nn.Module):
             if self.update_rots:
                 vec, rotvec = self.linear_frame_update(x).split(3, dim=-1)
                 trans = trans + torch.einsum("blij,blj->bli", rots, vec)
-                rots = rots @ axis_angle_to_matrix(rotvec).mT
+                if self.update_rots_type == 'vec':
+                    rot_update = axis_angle_to_matrix(rotvec)
+                elif self.update_rots_type == 'quat':
+                    rot_update = Rotation(quats=rotvec, normalize_quats=True).get_rot_mats()
+                rots = rots @ rot_update.mT
             else:
                 vec = self.linear_frame_update(x)
                 trans = trans + vec
@@ -202,8 +208,7 @@ class OpenProtModel(nn.Module):
 
         self.blocks = nn.ModuleList()
         for i in range(cfg.blocks):
-            is_pair = i % cfg.pair_block_interval == 0
-            is_ipa = False # i % cfg.ipa_block_interval == 0
+            is_pair = (i+1) % cfg.pair_block_interval == 0
             self.blocks.append(
                 OpenProtTransformerBlock(
                     dim=cfg.dim,
@@ -212,9 +217,9 @@ class OpenProtModel(nn.Module):
                     pairwise_dim=cfg.pairwise_dim,
                     pairwise_heads=cfg.pairwise_heads,
                     rope=cfg.rope,
-                    ipa=is_ipa and cfg.ipa,
-                    ipa_frames=is_ipa and cfg.ipa_frames,
-                    relpos=is_ipa and cfg.relpos,
+                    # ipa=is_ipa and cfg.ipa,
+                    # ipa_frames=is_ipa and cfg.ipa_frames,
+                    # relpos=is_ipa and cfg.relpos,
                     pair_bias=is_pair,
                     pair_updates=is_pair,
                     tri_mul=is_pair and cfg.tri_mul,
@@ -237,6 +242,7 @@ class OpenProtModel(nn.Module):
             no_v_points=cfg.no_v_points,
             frame_update=True,
             update_rots=cfg.update_rots,
+            update_rots_type=cfg.update_rots_type,
         )
         if cfg.separate_ipa_blocks:
             self.ipa_blocks = nn.ModuleList()
