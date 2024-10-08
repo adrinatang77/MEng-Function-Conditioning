@@ -103,7 +103,9 @@ class OpenProtTransformerBlock(nn.Module):
             no_v_points=no_v_points,
         )
         if pair_bias or pair_values:
-            self.z_norm = nn.LayerNorm(pairwise_dim)
+            self.pair_norm = nn.LayerNorm(pairwise_dim)
+        if pair_updates:
+            self.pair_ff_norm = nn.LayerNorm(pairwise_dim)
             
         self.pair_updates = pair_updates
         self.frame_update = frame_update
@@ -111,6 +113,7 @@ class OpenProtTransformerBlock(nn.Module):
 
         self.mha_norm = nn.LayerNorm(dim)
         self.ff = FeedForward(dim, ff_expand * dim)
+        self.ff_norm = nn.LayerNorm(dim)
 
         if frame_update:
             self.linear_frame_update = nn.Sequential(
@@ -153,13 +156,13 @@ class OpenProtTransformerBlock(nn.Module):
         
         x = x + self.mha(
             x=self.mha_norm(x),
-            z=self.z_norm(z) if hasattr(self, 'z_norm') else None,
+            z=self.pair_norm(z) if hasattr(self, 'pair_norm') else None,
             mask=mask.bool(),
             trans=trans,
             rots=rots,
         )
 
-        x = x + self.ff(x)
+        x = x + self.ff(self.ff_norm(x))
 
         if self.pair_updates:
             z = z + self.sequence_to_pair(x)
@@ -169,7 +172,7 @@ class OpenProtTransformerBlock(nn.Module):
                 )
                 z = z + self.row_drop(self.tri_mul_out(z, mask=tri_mask))
                 z = z + self.col_drop(self.tri_mul_in(z, mask=tri_mask))
-            z = z + self.mlp_pair(z) # no layer norm here
+            z = z + self.mlp_pair(self.pair_ff_norm(z)) 
 
         if self.frame_update:
             vec, rotvec = self.linear_frame_update(x).split(3, dim=-1)
@@ -250,7 +253,7 @@ class OpenProtModel(nn.Module):
             all_rots.append(rots)
             all_trans.append(trans)
             rots = rots.detach()
-            # trans = trans.detach()
+            trans = trans.detach()
 
         return {
             "x": x,
