@@ -37,6 +37,7 @@ class GeometricMultiHeadAttention(nn.Module):
         ipa=False,         # use point attention 
         ipa_frames=False,  # use frames in point attention
         relpos=False,      # instead use trans relpos
+        embed_rots=False,  # whether to embed rots into x at the top
         no_qk_points=4,
         no_v_points=8,
     ):
@@ -51,6 +52,7 @@ class GeometricMultiHeadAttention(nn.Module):
         self.ipa = ipa
         self.ipa_frames = ipa_frames
         self.relpos = relpos
+        self.embed_rots = embed_rots
         self.no_qk_points = no_qk_points
         self.no_v_points = no_v_points
 
@@ -61,8 +63,8 @@ class GeometricMultiHeadAttention(nn.Module):
         self.w_v = nn.Linear(dim, dim, bias=False)
         self.w_o = nn.Linear(dim, dim, bias=False)
 
-        if relpos or (ipa and not ipa_frames):
-            self.embed_rots = nn.Sequential(
+        if embed_rots:
+            self.linear_rots = nn.Sequential(
                 nn.Linear(9, dim), nn.ReLU(), nn.Linear(dim, dim)
             )
 
@@ -85,7 +87,7 @@ class GeometricMultiHeadAttention(nn.Module):
             
         if relpos:
             self.linear_relpos_query = nn.Linear(dim, heads * 3 * 64, bias=False)
-            self.linear_relpos_value = nn.Linear(heads * 3 * 64, dim, bias=False)
+            self.w_r = Linear(heads * 3 * 64, dim, init='final', bias=False)
             
         if pair_values:
             self.w_z = Linear(heads * pairwise_dim, dim)
@@ -186,8 +188,8 @@ class GeometricMultiHeadAttention(nn.Module):
 
         B, L, D = x.shape
 
-        if self.relpos or (self.ipa and not self.ipa_frames):
-            x = x + self.embed_rots(rots.view(B, L, -1))
+        if self.embed_rots:
+            x = x + self.linear_rots(rots.view(B, L, -1))
 
         query = self.w_q(x).view(B, L, self.heads, -1).transpose(1, 2)  # B H L D
         key = self.w_k(x).view(B, L, self.heads, -1).transpose(1, 2)
@@ -212,7 +214,7 @@ class GeometricMultiHeadAttention(nn.Module):
             attn = attn + pt_attn
             # attn = attn * math.sqrt(1/3)
             
-        elif self.relpos:
+        if self.relpos:
             relpos_query = self.linear_relpos_query(x)
             relpos_query = relpos_query.view(B, L, self.heads, -1).transpose(1, 2)
             
@@ -242,6 +244,11 @@ class GeometricMultiHeadAttention(nn.Module):
         if self.ipa:
             ipa_out = self.get_ipa_values(attn, v_pts, trans, rots)
             out = out + self.w_pt(ipa_out)
+
+        if self.relpos:
+            relpos_out = torch.einsum('bhij,bijd->bihd', attn, relpos_emb)
+            relpos_out = relpos_out.reshape(B, L, -1)
+            out = out + self.w_r(relpos_out)
             
         return out
     """

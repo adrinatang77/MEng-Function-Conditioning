@@ -82,6 +82,11 @@ class StructureTrack(OpenProtTrack):
         model.frame_mask = nn.Parameter(torch.zeros(model.cfg.dim))
         model.frame_null = nn.Parameter(torch.zeros(model.cfg.dim))
         model.pairwise_out = nn.Linear(model.cfg.pairwise_dim, 64)
+        if self.cfg.readout_rots:
+            model.rots_out = nn.Sequential(
+                nn.LayerNorm(model.cfg.dim),
+                nn.Linear(model.cfg.dim, 3)
+            )
 
     def corrupt(self, batch, noisy_batch, target, logger=None):
 
@@ -155,10 +160,17 @@ class StructureTrack(OpenProtTrack):
     def predict(self, model, out, readout):
         readout["trans"] = out["trans"]
         readout["rots"] = out["rots"]
-        
+
         # readout["trans"] = model.trans_out(out["x"])[None]
-        # rotvec = model.rots_out(out["x"])
-        # readout["rots"] = axis_angle_to_matrix(rotvec)[None]
+        if self.cfg.readout_rots:
+            rotvec = model.rots_out(out["x"])
+            readout["rots"] = axis_angle_to_matrix(rotvec)[None]
+        else:
+            readout["rots"] = out["rots"]
+
+        if not self.cfg.intermediate_loss:
+            readout["trans"] = readout["trans"][-1:]
+            readout["rots"] = readout["rots"][-1:]
     
         readout["pairwise"] = model.pairwise_out(out["z"])
 

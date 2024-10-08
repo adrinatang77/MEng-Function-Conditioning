@@ -84,9 +84,11 @@ class OpenProtTransformerBlock(nn.Module):
         ipa=False,         # use point attention 
         ipa_frames=False,  # use frames in point attention
         relpos=False,      # instead use trans relpos
+        embed_rots=False,
         no_qk_points=4,
         no_v_points=8,
         frame_update=False,
+        update_rots=False,
     ):
         super().__init__()
         self.mha = GeometricMultiHeadAttention(
@@ -99,6 +101,7 @@ class OpenProtTransformerBlock(nn.Module):
             ipa=ipa,
             ipa_frames=ipa_frames,
             relpos=relpos,
+            embed_rots=embed_rots,
             no_qk_points=no_qk_points,
             no_v_points=no_v_points,
         )
@@ -109,6 +112,7 @@ class OpenProtTransformerBlock(nn.Module):
             
         self.pair_updates = pair_updates
         self.frame_update = frame_update
+        self.update_rots = update_rots
         self.tri_mul = tri_mul
 
         self.mha_norm = nn.LayerNorm(dim)
@@ -120,7 +124,7 @@ class OpenProtTransformerBlock(nn.Module):
                 nn.LayerNorm(dim),
                 # nn.Linear(dim, dim),
                 # nn.ReLU(),
-                nn.Linear(dim, 6),
+                nn.Linear(dim, 6 if update_rots else 3),
             )
             torch.nn.init.zeros_(self.linear_frame_update[-1].weight)
             torch.nn.init.zeros_(self.linear_frame_update[-1].bias)
@@ -175,10 +179,15 @@ class OpenProtTransformerBlock(nn.Module):
             z = z + self.mlp_pair(self.pair_ff_norm(z)) 
 
         if self.frame_update:
-            vec, rotvec = self.linear_frame_update(x).split(3, dim=-1)
-            trans = trans + torch.einsum("blij,blj->bli", rots, vec)
-            rots = rots @ axis_angle_to_matrix(rotvec).mT
-
+            
+            if self.update_rots:
+                vec, rotvec = self.linear_frame_update(x).split(3, dim=-1)
+                trans = trans + torch.einsum("blij,blj->bli", rots, vec)
+                rots = rots @ axis_angle_to_matrix(rotvec).mT
+            else:
+                vec = self.linear_frame_update(x)
+                trans = trans + vec
+                
         return x, z, mask, rots, trans
 
 
@@ -211,8 +220,9 @@ class OpenProtModel(nn.Module):
                     tri_mul=is_pair and cfg.tri_mul,
                 )
             )
-            
-        self.final_block = OpenProtTransformerBlock(
+
+        
+        block_fn = lambda: OpenProtTransformerBlock(
             dim=cfg.dim,
             heads=cfg.heads,
             ff_expand=cfg.ff_expand,
@@ -222,10 +232,18 @@ class OpenProtModel(nn.Module):
             ipa=cfg.ipa,
             ipa_frames=cfg.ipa_frames,
             relpos=cfg.relpos,
+            embed_rots=cfg.embed_rots,
             no_qk_points=cfg.no_qk_points,
             no_v_points=cfg.no_v_points,
             frame_update=True,
+            update_rots=cfg.update_rots,
         )
+        if cfg.separate_ipa_blocks:
+            self.ipa_blocks = nn.ModuleList()
+            for i in range(cfg.ipa_blocks):
+                self.ipa_blocks.append(block_fn())
+        else:
+            self.ipa_block = block_fn()
 
     def forward(self, inp):
 
@@ -248,16 +266,24 @@ class OpenProtModel(nn.Module):
 
         all_rots = [rots]
         all_trans = [trans]
-        for block in range(self.cfg.ipa_blocks):
-            x, z, mask, rots, trans = self.final_block(x, z, mask, rots, trans)
+        for i in range(self.cfg.ipa_blocks):
+            if self.cfg.separate_ipa_blocks:
+                block = self.ipa_blocks[i]
+            else:
+                block = self.ipa_block
+                
+            x, z, mask, rots, trans = block(x, z, mask, rots, trans)
             all_rots.append(rots)
             all_trans.append(trans)
-            rots = rots.detach()
-            trans = trans.detach()
+            
+            if self.cfg.detach_rots:
+                rots = rots.detach()
+            if self.cfg.detach_trans:
+                trans = trans.detach()
 
         return {
             "x": x,
             "z": z,
-            "rots": torch.stack(all_rots),
+            "rots": torch.stack(all_rots) if rots is not None else None,
             "trans": torch.stack(all_trans),
         }
