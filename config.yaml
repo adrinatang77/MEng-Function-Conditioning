@@ -103,7 +103,7 @@ tracks:
         corrupt: mask
         mask_rate: 0.15
         loss_weight: 1.0
-        rate_matrix_path: /data/cb/scratch/adrina/Work/Data/blosum62.csv
+        rate_matrix_path: ./openprot/blosum62.csv
 
 model: # custom args
     in_norm: false
