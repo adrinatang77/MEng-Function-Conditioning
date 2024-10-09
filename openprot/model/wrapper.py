@@ -41,11 +41,14 @@ class Wrapper(pl.LightningModule):
         self._logger.epoch_end(self.trainer, prefix="val")
 
     # uncomment this to debug
-    # def on_before_optimizer_step(self, optimizer):
-    #     for name, p in self.model.named_parameters():
-    #         if p.grad is None:
-    #             print(name)
-    #     exit()
+    def on_before_optimizer_step(self, optimizer):
+        quit = False
+        for name, p in self.model.named_parameters():
+            if p.requires_grad and p.grad is None:
+                print(name, 'has no grad')
+                quit = True
+        
+        if quit: exit()
 
     def configure_optimizers(self):
         cls = getattr(torch.optim, self.cfg.optimizer.type)

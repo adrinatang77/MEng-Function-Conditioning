@@ -14,12 +14,15 @@ class AFDBDataset(OpenProtDataset):
         if self.cfg.blacklist is not None:
             blacklist = pd.read_csv(self.cfg.blacklist, names=["query", "target", "qcov", "tcov", "evalue"], sep='\t')
             self.blacklist = set(blacklist["target"])
+        self.annotations = dict(np.load(self.cfg.annotations))
+        self.idx = np.arange(len(self.db))
+        self.idx = self.idx[self.annotations['lddt'] > self.cfg.lddt_thresh]
 
     def __len__(self):
-        return len(self.db)
+        return len(self.idx)
 
     def __getitem__(self, idx):
-        name, pdb = self.db[idx]
+        name, pdb = self.db[self.idx[idx]]
         name = name.split('.')[0]
         if self.cfg.blacklist is not None and name in self.blacklist:
             return self[(idx+1)%len(self)]

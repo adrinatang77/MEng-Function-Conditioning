@@ -79,6 +79,7 @@ class OpenProtTransformerBlock(nn.Module):
         rope=False,        # rotate scalar queries and keys
         pair_bias=False,   # use pairs to bias
         pair_updates=False,
+        pair_ffn=False,
         tri_mul=False,
         pair_values=False, # aggregate values from pair reps
         ipa=False,         # use point attention 
@@ -108,10 +109,9 @@ class OpenProtTransformerBlock(nn.Module):
         )
         if pair_bias or pair_values:
             self.pair_norm = nn.LayerNorm(pairwise_dim)
-        if pair_updates:
-            self.pair_ff_norm = nn.LayerNorm(pairwise_dim)
             
         self.pair_updates = pair_updates
+        self.pair_ffn = pair_ffn
         self.frame_update = frame_update
         self.update_rots = update_rots
         self.update_rots_type = update_rots_type
@@ -149,9 +149,10 @@ class OpenProtTransformerBlock(nn.Module):
                 torch.nn.init.zeros_(self.tri_mul_in.linear_z.bias)
                 torch.nn.init.zeros_(self.tri_mul_out.linear_z.weight)
                 torch.nn.init.zeros_(self.tri_mul_out.linear_z.bias)
-
             
-            self.mlp_pair = FeedForward(pairwise_dim, ff_expand * pairwise_dim)
+            if pair_ffn:
+                self.mlp_pair = FeedForward(pairwise_dim, ff_expand * pairwise_dim)
+                self.pair_ff_norm = nn.LayerNorm(pairwise_dim)
     
             
             torch.nn.init.zeros_(self.sequence_to_pair.o_proj.weight)
@@ -179,7 +180,8 @@ class OpenProtTransformerBlock(nn.Module):
                 )
                 z = z + self.row_drop(self.tri_mul_out(z, mask=tri_mask))
                 z = z + self.col_drop(self.tri_mul_in(z, mask=tri_mask))
-            z = z + self.mlp_pair(self.pair_ff_norm(z)) 
+            if self.pair_ffn:
+                z = z + self.mlp_pair(self.pair_ff_norm(z)) 
 
         if self.frame_update:
             
@@ -208,9 +210,21 @@ class OpenProtModel(nn.Module):
             cfg.position_bins, cfg.pairwise_dim
         )
 
+        ipa_args = dict(
+            ipa=cfg.ipa,
+            ipa_frames=cfg.ipa_frames,
+            relpos=cfg.relpos,
+            embed_rots=cfg.embed_rots,
+            no_qk_points=cfg.no_qk_points,
+            no_v_points=cfg.no_v_points,
+            frame_update=True,
+            update_rots=cfg.update_rots,
+            update_rots_type=cfg.update_rots_type,
+        )
         self.blocks = nn.ModuleList()
         for i in range(cfg.blocks):
             is_pair = (i+1) % cfg.pair_block_interval == 0
+            is_ipa = (i+1) % cfg.ipa_block_interval == 0
             self.blocks.append(
                 OpenProtTransformerBlock(
                     dim=cfg.dim,
@@ -219,12 +233,10 @@ class OpenProtModel(nn.Module):
                     pairwise_dim=cfg.pairwise_dim,
                     pairwise_heads=cfg.pairwise_heads,
                     rope=cfg.rope,
-                    # ipa=is_ipa and cfg.ipa,
-                    # ipa_frames=is_ipa and cfg.ipa_frames,
-                    # relpos=is_ipa and cfg.relpos,
                     pair_bias=is_pair,
                     pair_updates=is_pair,
                     tri_mul=is_pair and cfg.tri_mul,
+                    **(ipa_args if is_ipa else {})
                 )
             )
 
@@ -236,15 +248,7 @@ class OpenProtModel(nn.Module):
             pairwise_dim=cfg.pairwise_dim,
             pair_bias=True,
             pair_values=True,
-            ipa=cfg.ipa,
-            ipa_frames=cfg.ipa_frames,
-            relpos=cfg.relpos,
-            embed_rots=cfg.embed_rots,
-            no_qk_points=cfg.no_qk_points,
-            no_v_points=cfg.no_v_points,
-            frame_update=True,
-            update_rots=cfg.update_rots,
-            update_rots_type=cfg.update_rots_type,
+            **ipa_args,
         )
         if cfg.separate_ipa_blocks:
             self.ipa_blocks = nn.ModuleList()
@@ -265,7 +269,7 @@ class OpenProtModel(nn.Module):
         trans = inp.get("trans", None)
 
         for block in self.blocks:
-            if block.pair_updates:
+            if block.pair_updates and self.cfg.checkpoint:
                 x, z, mask, rots, trans = torch.utils.checkpoint.checkpoint(
                     block, x, z, mask, rots, trans
                 )
