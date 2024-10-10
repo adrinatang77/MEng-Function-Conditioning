@@ -80,6 +80,7 @@ class OpenProtTransformerBlock(nn.Module):
         pair_bias=False,   # use pairs to bias
         pair_updates=False,
         pair_ffn=False,
+        pair_ff_expand=1,
         tri_mul=False,
         pair_values=False, # aggregate values from pair reps
         ipa=False,         # use point attention 
@@ -90,7 +91,8 @@ class OpenProtTransformerBlock(nn.Module):
         no_v_points=8,
         frame_update=False,
         update_rots=False,
-        update_rots_type='quat',
+        readout_rots=False,
+        rots_type='quat',
     ):
         super().__init__()
         self.mha = GeometricMultiHeadAttention(
@@ -114,15 +116,16 @@ class OpenProtTransformerBlock(nn.Module):
         self.pair_ffn = pair_ffn
         self.frame_update = frame_update
         self.update_rots = update_rots
-        self.update_rots_type = update_rots_type
+        self.rots_type = rots_type
+        self.readout_rots = readout_rots
         self.tri_mul = tri_mul
 
         self.mha_norm = nn.LayerNorm(dim)
         self.ff = FeedForward(dim, ff_expand * dim)
         self.ff_norm = nn.LayerNorm(dim)
 
+        rot_dim = {'quat': 4, 'vec': 3}[rots_type]
         if frame_update:
-            rot_dim = {'quat': 4, 'vec': 3}[update_rots_type]
             self.linear_frame_update = nn.Sequential(
                 nn.LayerNorm(dim),
                 # nn.Linear(dim, dim),
@@ -131,7 +134,12 @@ class OpenProtTransformerBlock(nn.Module):
             )
             torch.nn.init.zeros_(self.linear_frame_update[-1].weight)
             torch.nn.init.zeros_(self.linear_frame_update[-1].bias)
-
+            
+        if readout_rots:
+            self.linear_rots_out = nn.Sequential(
+                nn.LayerNorm(dim),
+                nn.Linear(dim, rot_dim)
+            )
         if pair_updates:
             self.sequence_to_pair = SequenceToPair(dim, pairwise_dim // 2, pairwise_dim)
 
@@ -151,7 +159,7 @@ class OpenProtTransformerBlock(nn.Module):
                 torch.nn.init.zeros_(self.tri_mul_out.linear_z.bias)
             
             if pair_ffn:
-                self.mlp_pair = FeedForward(pairwise_dim, ff_expand * pairwise_dim)
+                self.mlp_pair = FeedForward(pairwise_dim, pair_ff_expand * pairwise_dim)
                 self.pair_ff_norm = nn.LayerNorm(pairwise_dim)
     
             
@@ -189,14 +197,21 @@ class OpenProtTransformerBlock(nn.Module):
                 update = self.linear_frame_update(x)
                 vec, rotvec = update[...,:3], update[...,3:]
                 trans = trans + torch.einsum("blij,blj->bli", rots, vec)
-                if self.update_rots_type == 'vec':
+                if self.rots_type == 'vec':
                     rot_update = axis_angle_to_matrix(rotvec)
-                elif self.update_rots_type == 'quat':
+                elif self.rots_type == 'quat':
                     rot_update = Rotation(quats=rotvec, normalize_quats=True).get_rot_mats()
                 rots = rots @ rot_update.mT
             else:
                 vec = self.linear_frame_update(x)
                 trans = trans + vec
+
+        if self.readout_rots:
+            rotvec = self.linear_rots_out(x)
+            if self.rots_type == 'quat':
+                rots = Rotation(quats=rotvec, normalize_quats=True).get_rot_mats()
+            elif self.rots_type == 'vec':
+                rots = axis_angle_to_matrix(rotvec)
                 
         return x, z, mask, rots, trans
 
@@ -219,7 +234,8 @@ class OpenProtModel(nn.Module):
             no_v_points=cfg.no_v_points,
             frame_update=True,
             update_rots=cfg.update_rots,
-            update_rots_type=cfg.update_rots_type,
+            readout_rots=cfg.readout_rots,
+            rots_type=cfg.rots_type,
         )
         self.blocks = nn.ModuleList()
         for i in range(cfg.blocks):
@@ -235,6 +251,8 @@ class OpenProtModel(nn.Module):
                     rope=cfg.rope,
                     pair_bias=is_pair,
                     pair_updates=is_pair,
+                    pair_ffn=is_pair and cfg.pair_ffn,
+                    pair_ff_expand=cfg.pair_ff_expand,
                     tri_mul=is_pair and cfg.tri_mul,
                     **(ipa_args if is_ipa else {})
                 )

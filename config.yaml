@@ -2,11 +2,11 @@ ckpt: null # eventually this will control resuming runs
 validate: false # if true, only validate the model, don't train
 logger:
     # set to true to log to neptune.ai
-    neptune: false
+    neptune: true
     # please change "test" to something unique to your task
     project: openprot/structure
     # will log to workdir and neptune.ai with this name
-    name: default # 48l_tfmr_interleave_anneal_pdb
+    name: tfmr_fpair_sm_afdb2
     # if not null, will duplicate stdout and stderr to workdir/{name}/{logfile}
     logfile: std.out
     # if null, will log every epoch, otherwise every this number of steps
@@ -87,11 +87,11 @@ tasks:
         seed: 137
         datasets:
             AFDBDataset:
-                fraction: 0.0
+                fraction: 0.75
                 start: 0
                 seed: 142
             PDBDataset:
-                fraction: 1.0
+                fraction: 0.25
                 start: 0
                 seed: 142
             
@@ -107,11 +107,11 @@ tracks:
     # register tracks here
     StructureTrack: 
         loss_weight: 1.0
-        # embed_rots: false 
         readout_rots: false
         readout_trans: false
+        intermediate_loss: true
         readout_rots_type: 'quat'
-        intermediate_loss: false
+        
         losses:
             pade: 0.0
             fape: 1.0
@@ -129,23 +129,25 @@ model: # custom args
     heads: 16
     pairwise_heads: 4
     blocks: 48
-    pair_block_interval: 96
-    ipa_block_interval: 4
+    pair_block_interval: 4
+    ipa_block_interval: 1000
     
     ff_expand: 4
     position_bins: 32
-    pair_ffn: false
+    pair_ffn: true
+    pair_ff_expand: 1
     tri_mul: false
     rope: true
 
     ### ipa args
-    ipa_blocks: 0
-    separate_ipa_blocks: true
+    ipa_blocks: 8
+    separate_ipa_blocks: false
     ipa: true
     no_qk_points: 4
     no_v_points: 8
     update_rots: true
-    update_rots_type: "vec"
+    readout_rots: false
+    rots_type: "vec"
     embed_rots: false
     ipa_frames: true
     relpos: false
@@ -157,7 +159,7 @@ optimizer:
     lr: 5e-4
     scheduler: 
         total_steps: 1000000
-        warmup_steps: 5000
+        warmup_steps: 1000
         start_decay: 10000
         end_factor: 1.00
         
