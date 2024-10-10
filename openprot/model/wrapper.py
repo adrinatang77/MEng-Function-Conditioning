@@ -40,6 +40,16 @@ class Wrapper(pl.LightningModule):
     def on_validation_epoch_end(self):
         self._logger.epoch_end(self.trainer, prefix="val")
 
+    # uncomment this to debug
+    def on_before_optimizer_step(self, optimizer):
+        quit = False
+        for name, p in self.model.named_parameters():
+            if p.requires_grad and p.grad is None:
+                print(name, 'has no grad')
+                quit = True
+        
+        if quit: exit()
+
     def configure_optimizers(self):
         cls = getattr(torch.optim, self.cfg.optimizer.type)
         optimizer = cls(
@@ -83,16 +93,20 @@ class OpenProtWrapper(Wrapper):
 
         self.evals = evals
 
+    def transfer_batch_to_device(self, batch, device, dataloader_idx):
+        return batch.to(device)
+
     def get_lr(self):
         for param_group in self.optimizers().param_groups:
             return param_group["lr"]
 
     def forward(self, noisy_batch):
-        ## embed the tracks into an input and conditioning vector
+
+        ## embed the tracks into an input dict
         inp = self.tracks.embed(self.model, noisy_batch)
 
         ## run it thorugh the model
-        out = self.model(inp, noisy_batch["pad_mask"])
+        out = self.model(inp)
 
         ## place the readouts in a dict
         readout = self.tracks.readout(self.model, out)
@@ -114,7 +128,7 @@ class OpenProtWrapper(Wrapper):
         ## log some metrics
         self._logger.log("loss", loss)
         self._logger.log("lr", self.get_lr())
-        self._logger.log("act_norm", torch.square(out).mean(-1), batch["pad_mask"])
+        # self._logger.log("act_norm", torch.square(out).mean(-1), batch["pad_mask"])
 
         return loss
 

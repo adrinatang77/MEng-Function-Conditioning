@@ -20,10 +20,13 @@ import os
 import pytorch_lightning as pl
 from pytorch_lightning.callbacks import ModelCheckpoint, ModelSummary
 
+from openprot.data.data import OpenProtData
 from openprot.data.manager import OpenProtDatasetManager
 from openprot.model.wrapper import OpenProtWrapper
 from openprot.evals.manager import OpenProtEvalManager
 from openprot.tracks.manager import OpenProtTrackManager
+
+cfg.trainer.devices = int(os.environ.get("SLURM_NTASKS_PER_NODE", cfg.trainer.devices))
 
 trainer = pl.Trainer(
     **cfg.trainer,
@@ -37,6 +40,7 @@ trainer = pl.Trainer(
         ),
         ModelSummary(max_depth=2),
     ],
+    num_nodes=int(os.environ.get("SLURM_NNODES", 1)),
 )
 ########## EVERYTHING BELOW NOW IN PARALLEL ######
 
@@ -45,12 +49,15 @@ tracks = OpenProtTrackManager(cfg.tracks)
 dataset = OpenProtDatasetManager(cfg, tracks, trainer.global_rank, trainer.world_size)
 
 train_loader = torch.utils.data.DataLoader(
-    dataset, batch_size=cfg.data.batch, num_workers=cfg.data.num_workers
+    dataset,
+    batch_size=cfg.data.batch,
+    num_workers=cfg.data.num_workers,
+    collate_fn=OpenProtData.batch,
 )
 
 evals = OpenProtEvalManager(cfg, tracks, trainer.global_rank, trainer.world_size)
 eval_loader = torch.utils.data.DataLoader(
-    evals, batch_size=1, num_workers=0, shuffle=False
+    evals, batch_size=1, num_workers=0, shuffle=False, collate_fn=OpenProtData.batch
 )
 model = OpenProtWrapper(cfg, tracks, evals.evals)
 

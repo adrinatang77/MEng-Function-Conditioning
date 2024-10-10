@@ -1,5 +1,7 @@
 workdir
 .ipynb_checkpoints
+*.ipynb
+*.csv
 __pycache__
 scratch.ipynb
 .neptune
