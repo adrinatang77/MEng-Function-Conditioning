@@ -6,7 +6,7 @@ logger:
     # please change "test" to something unique to your task
     project: openprot/structure
     # will log to workdir and neptune.ai with this name
-    name: tfmr_fpair_sm_afdb2
+    name: esmf_relpos_sm_afdb2
     # if not null, will duplicate stdout and stderr to workdir/{name}/{logfile}
     logfile: std.out
     # if null, will log every epoch, otherwise every this number of steps
@@ -123,34 +123,36 @@ tracks:
         loss_weight: 0.0
 
 model: # custom args
-    checkpoint: false
+    checkpoint: true
     dim: 1024
     pairwise_dim: 128
     heads: 16
     pairwise_heads: 4
-    blocks: 48
-    pair_block_interval: 4
+    blocks: 12
+    pair_block_interval: 1
     ipa_block_interval: 1000
     
     ff_expand: 4
     position_bins: 32
     pair_ffn: true
-    pair_ff_expand: 1
-    tri_mul: false
+    pair_ff_expand: 4
+    tri_mul: true
     rope: true
 
     ### ipa args
     ipa_blocks: 8
     separate_ipa_blocks: false
-    ipa: true
+    ipa_attn: false
+    ipa_values: false
     no_qk_points: 4
     no_v_points: 8
     update_rots: true
     readout_rots: false
     rots_type: "vec"
-    embed_rots: false
+    embed_rots: true
     ipa_frames: true
-    relpos: false
+    relpos_attn: true
+    relpos_values: true
     detach_rots: true
     detach_trans: true
 

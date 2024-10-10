@@ -83,9 +83,11 @@ class OpenProtTransformerBlock(nn.Module):
         pair_ff_expand=1,
         tri_mul=False,
         pair_values=False, # aggregate values from pair reps
-        ipa=False,         # use point attention 
+        ipa_attn=False,         # use point attention 
+        ipa_values=False,
         ipa_frames=False,  # use frames in point attention
-        relpos=False,      # instead use trans relpos
+        relpos_attn=False,      # instead use trans relpos
+        relpos_values=False,
         embed_rots=False,
         no_qk_points=4,
         no_v_points=8,
@@ -102,9 +104,11 @@ class OpenProtTransformerBlock(nn.Module):
             rope=rope,
             pair_bias=pair_bias,
             pair_values=pair_values,
-            ipa=ipa,
+            ipa_attn=ipa_attn,
+            ipa_values=ipa_values,
             ipa_frames=ipa_frames,
-            relpos=relpos,
+            relpos_attn=relpos_attn,
+            relpos_values=relpos_values,
             embed_rots=embed_rots,
             no_qk_points=no_qk_points,
             no_v_points=no_v_points,
@@ -226,9 +230,11 @@ class OpenProtModel(nn.Module):
         )
 
         ipa_args = dict(
-            ipa=cfg.ipa,
+            ipa_attn=cfg.ipa_attn,
+            ipa_values=cfg.ipa_values,
             ipa_frames=cfg.ipa_frames,
-            relpos=cfg.relpos,
+            relpos_attn=cfg.relpos_attn,
+            relpos_values=cfg.relpos_values,
             embed_rots=cfg.embed_rots,
             no_qk_points=cfg.no_qk_points,
             no_v_points=cfg.no_v_points,

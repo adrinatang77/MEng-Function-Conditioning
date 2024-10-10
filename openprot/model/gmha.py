@@ -34,9 +34,11 @@ class GeometricMultiHeadAttention(nn.Module):
         pair_bias=False,   # use pairs to bias
         pair_bias_norm=False,
         pair_values=False, # aggregate values from pair reps
-        ipa=False,         # use point attention 
+        ipa_attn=False,         # use point attention 
+        ipa_values=False,
         ipa_frames=False,  # use frames in point attention
-        relpos=False,      # instead use trans relpos
+        relpos_attn=False,      # instead use trans relpos
+        relpos_values=False,
         embed_rots=False,  # whether to embed rots into x at the top
         no_qk_points=4,
         no_v_points=8,
@@ -49,12 +51,15 @@ class GeometricMultiHeadAttention(nn.Module):
         self.rope = rope
         self.pair_bias = pair_bias
         self.pair_values = pair_values
-        self.ipa = ipa
+        self.ipa_attn = ipa_attn
+        self.ipa_values = ipa_values
         self.ipa_frames = ipa_frames
-        self.relpos = relpos
         self.embed_rots = embed_rots
         self.no_qk_points = no_qk_points
         self.no_v_points = no_v_points
+        self.relpos_values = relpos_values
+        self.relpos_attn = relpos_attn
+        
 
         
         ## basic stuff we always need
@@ -68,25 +73,26 @@ class GeometricMultiHeadAttention(nn.Module):
                 nn.Linear(9, dim), nn.ReLU(), nn.Linear(dim, dim)
             )
 
-        if ipa:
+        if ipa_attn:
             hpq = heads * no_qk_points * 3
             self.linear_q_points = Linear(dim, hpq)
     
             hpkv = heads * (no_qk_points + no_v_points) * 3
             self.linear_kv_points = Linear(dim, hpkv)
-    
-            hpv = heads * no_v_points * 3
-    
+
             self.head_weights = nn.Parameter(torch.zeros((heads)))
             ipa_point_weights_init_(self.head_weights)
             self.softplus = nn.Softplus()
+
+        if ipa_values:
             self.w_pt = Linear(heads * no_v_points * 4, dim)
     
         if pair_bias:
             self.linear_b = Linear(pairwise_dim, heads, bias=False)
             
-        if relpos:
+        if relpos_attn:
             self.linear_relpos_query = nn.Linear(dim, heads * 3 * 64, bias=False)
+        if relpos_values:
             self.w_r = Linear(heads * 3 * 64, dim, init='final', bias=False)
             
         if pair_values:
@@ -209,20 +215,23 @@ class GeometricMultiHeadAttention(nn.Module):
         if self.pair_bias:
             attn = attn + self.linear_b(z).permute(0, 3, 1, 2)
 
-        if self.ipa:
+        if self.ipa_attn:
             v_pts, pt_attn = self.get_pt_attn(x, trans, rots)
             attn = attn + pt_attn
             # attn = attn * math.sqrt(1/3)
-            
-        if self.relpos:
-            relpos_query = self.linear_relpos_query(x)
-            relpos_query = relpos_query.view(B, L, self.heads, -1).transpose(1, 2)
-            
+
+        if self.relpos_attn or self.relpos_values:
             relpos = trans[:,None] - trans[:,:,None]
             relpos_emb = sinusoidal_embedding(
                 relpos, n_freqs=32, max_period=100, min_period=1
             )
             relpos_emb = relpos_emb.view(B, L, L, -1)
+
+        
+        if self.relpos_attn:
+            relpos_query = self.linear_relpos_query(x)
+            relpos_query = relpos_query.view(B, L, self.heads, -1).transpose(1, 2)
+            
             
             relpos_attn = torch.einsum('bhid,bijd->bhij', relpos_query, relpos_emb) 
             relpos_attn = relpos_attn / math.sqrt(3 * 64)
@@ -241,11 +250,11 @@ class GeometricMultiHeadAttention(nn.Module):
             z_out = z_out.reshape(B, L, -1)
             out = out + self.w_z(z_out)
 
-        if self.ipa:
+        if self.ipa_values:
             ipa_out = self.get_ipa_values(attn, v_pts, trans, rots)
             out = out + self.w_pt(ipa_out)
 
-        if self.relpos:
+        if self.relpos_values:
             relpos_out = torch.einsum('bhij,bijd->bihd', attn, relpos_emb)
             relpos_out = relpos_out.reshape(B, L, -1)
             out = out + self.w_r(relpos_out)
