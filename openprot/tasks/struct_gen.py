@@ -3,15 +3,20 @@ import numpy as np
 from ..utils import residue_constants as rc
 
 
-class StructurePrediction(OpenProtTask):
+class StructureGeneration(OpenProtTask):
     def prep_data(self, data, crop=None, eps=1e-6):
 
         if crop is not None:
             data.crop(crop)
 
         ## noise EVERYTHING
-        data["trans_noise"] = np.ones(len(data["seqres"]))
-        data["rots_noise"] = np.ones(len(data["seqres"]))
+
+        if np.random.rand() < 0.1:
+            noise_level = np.random.rand()
+        else:
+            noise_level = np.random.beta(1, 2)
+        data["trans_noise"] = np.ones(len(data["seqres"]), dtype=np.float32) * noise_level
+        data["rots_noise"] = np.ones(len(data["seqres"]), dtype=np.float32) * noise_level
         # data["torsion_noise"] = np.ones(len(data["seqres"]))
 
         # center the structures

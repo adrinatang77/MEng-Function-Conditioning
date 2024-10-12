@@ -15,8 +15,19 @@ from ..utils import residue_constants as rc
 from ..model.positions import PositionEmbedder, PositionDecoder, PairwiseProjectionHead
 from functools import partial
 import numpy as np
+import math
 
-
+def sinusoidal_embedding(pos, n_freqs, max_period, min_period):
+    periods = torch.exp(torch.linspace(
+        math.log(min_period), 
+        math.log(max_period), 
+        n_freqs, 
+        device=pos.device
+    ))
+    freqs = 2 * np.pi / periods
+    return torch.cat(
+        [torch.cos(pos[..., None] * freqs), torch.sin(pos[..., None] * freqs)], -1
+    )
 def pseudo_beta_fn(aatype, all_atom_positions, all_atom_masks):
     is_gly = aatype == rc.restype_order["G"]
     ca_idx = rc.atom_order["CA"]
@@ -82,9 +93,16 @@ class StructureTrack(OpenProtTrack):
         model.frame_mask = nn.Parameter(torch.zeros(model.cfg.dim))
         model.frame_null = nn.Parameter(torch.zeros(model.cfg.dim))
         model.pairwise_out = nn.Linear(model.cfg.pairwise_dim, 64)
+        if self.cfg.embed_trans:
+            model.trans_in = nn.Linear(3, model.cfg.dim)
         if self.cfg.readout_trans:
-            model.trans_out = nn.Linear(model.cfg.dim, 3)
+            model.trans_out = nn.Sequential(
+                nn.LayerNorm(model.cfg.dim),
+                nn.Linear(model.cfg.dim, 3)
+            )
 
+        if self.cfg.embed_rots:
+            model.rots_in = nn.Linear(9, model.cfg.dim)
         if self.cfg.readout_rots:
             rot_dim = {'quat': 4, 'vec': 3}[self.cfg.readout_rots_type]
             model.rots_out = nn.Sequential(
@@ -113,8 +131,12 @@ class StructureTrack(OpenProtTrack):
         dev = batch["frame_trans"].device
         B, L, _ = batch["frame_trans"].shape
 
-        # add noise # placeholder
-        noisy_batch["frame_trans"] = torch.zeros_like(batch["frame_trans"])
+        # add noise
+        sigma = 15
+        noise = torch.randn(B, L, 3, device=dev) * sigma
+        t = batch['trans_noise'][...,None]
+        noisy_batch["frame_trans"] = t * noise + (1 - t) * batch['frame_trans']
+                                                                     
 
         # add noise # placeholder
         noisy_batch["frame_rots"] = torch.eye(3, device=dev).expand(B, L, 3, 3)
@@ -142,12 +164,22 @@ class StructureTrack(OpenProtTrack):
         null_mask = ~batch["frame_mask"].bool()
         embed_mask = ~full_noise_mask & ~null_mask
 
-        empty_rots = torch.eye(3, device=dev).expand(B, L, 3, 3)
-        inp["trans"] = torch.where(embed_mask[..., None], batch["frame_trans"], 0.0)
-        inp["rots"] = torch.where(
-            embed_mask[..., None, None], batch["frame_rots"], empty_rots
-        )
-        
+        # empty_rots = torch.eye(3, device=dev).expand(B, L, 3, 3)
+        # inp["rots"] = torch.where(
+        #     embed_mask[..., None, None], batch["frame_rots"], empty_rots
+        # )
+        # inp["trans"] = torch.where(
+        #     embed_mask[..., None], batch["frame_trans"], 0.0
+        # )
+        inp['trans'] = batch['frame_trans']
+        inp['rots'] = batch['frame_rots']
+    
+        if self.cfg.embed_rots:
+            inp['x'] += model.rots_in(inp['rots'].view(B, L, 9)) 
+            
+        if self.cfg.embed_trans:
+            inp['x'] += model.trans_in(inp['trans'])
+             
         # tell the model which frames were not present
         inp["x"] += torch.where(
             null_mask[..., None],
@@ -160,6 +192,10 @@ class StructureTrack(OpenProtTrack):
             model.frame_mask[None, None],
             0.0,
         )
+
+        inp["x_cond"] += sinusoidal_embedding(
+            batch['trans_noise'], model.cfg.dim // 2, 1, 0.01
+        ).float()
 
     def predict(self, model, out, readout):
         
@@ -188,18 +224,11 @@ class StructureTrack(OpenProtTrack):
 
         loss = 0
 
-        """
-        if "rmsd" in self.cfg.losses:
-            loss = loss + self.cfg.losses["rmsd"] * self.compute_rmsd_loss(
+        
+        if "mse" in self.cfg.losses:
+            loss = loss + self.cfg.losses["mse"] * self.compute_mse_loss(
                 readout, target, logger=logger
             )
-
-        if "sinusoidal" in self.cfg.losses and self.cfg.decoder.type == "sinusoidal":
-            raise Exception("sinusoidal structural loss no longer supported")
-            loss = loss + self.cfg.losses["sinusoidal"] * self.compute_sinusoidal_loss(
-                readout, target, logger=logger
-            )
-        """
 
         if "pade" in self.cfg.losses:
             loss = loss + self.cfg.losses["pade"] * self.compute_pade_loss(
@@ -230,6 +259,17 @@ class StructureTrack(OpenProtTrack):
         loss = (loss * mask).sum() / target["pad_mask"].sum()
 
         return loss
+
+    def compute_mse_loss(self, readout, target, logger=None):
+        pred = readout["trans"]
+        gt = target["frame_trans"]
+        mask = target["struct_supervise"]
+        
+        mse = torch.square(pred - gt).sum(-1)
+        mse = mse.mean(0)
+        if logger:
+            logger.log("struct/mse_loss", mse, mask=mask)
+        return mse
 
     def compute_pade_loss(self, readout, target, logger=None):
         pred = readout["trans"]

@@ -21,6 +21,7 @@ class OpenProtTrackManager(dict):
     def embed(self, model: OpenProtModel, batch: dict):
         inp = batch.copy("name", "pad_mask")
         inp["x"] = 0
+        inp["x_cond"] = 0
         for track in self.values():
             track.embed(model, batch, inp)
         return inp

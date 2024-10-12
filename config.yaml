@@ -1,18 +1,18 @@
 ckpt: null # eventually this will control resuming runs
-validate: false # if true, only validate the model, don't train
+validate: true # if true, only validate the model, don't train
 logger:
     # set to true to log to neptune.ai
-    neptune: true
+    neptune: false
     # please change "test" to something unique to your task
     project: openprot/structure
     # will log to workdir and neptune.ai with this name
-    name: esmf_relpos_sm_afdb2
+    name: default # tfmr_fpair_sm_afdb2
     # if not null, will duplicate stdout and stderr to workdir/{name}/{logfile}
-    logfile: std.out
+    logfile: null #  std.out
     # if null, will log every epoch, otherwise every this number of steps
     train_log_freq: 10
     val_log_freq: null 
-    ckpt_freq: 100000
+    ckpt_freq: 1250
 trainer:
     accelerator: auto
     devices: 1
@@ -82,7 +82,7 @@ tasks:
     #             fraction: 1.0
     #             start: 0
     #             seed: 137
-    StructurePrediction:
+    StructureGeneration:
         fraction: 1.0
         seed: 137
         datasets:
@@ -100,6 +100,7 @@ evals:
         #path: /data/cb/scratch/datasets/afdb_swissprot_v4/afdb_swissprot_v4
         path: /scratch/projects/cgai/openprot/data/pdb_npz
         split: splits/cameo2022.csv
+        diffusion: true
         
     
 
@@ -107,6 +108,8 @@ tracks:
     # register tracks here
     StructureTrack: 
         loss_weight: 1.0
+        embed_rots: false
+        embed_trans: false
         readout_rots: false
         readout_trans: false
         intermediate_loss: true
@@ -114,8 +117,9 @@ tracks:
         
         losses:
             pade: 0.0
-            fape: 1.0
+            fape: 0.0
             distogram: 0.3
+            mse: 0.03
     SequenceTrack:
         esm: esm2_3B # esm2_650M # esm2_8M_270K
         corrupt: mask
@@ -123,38 +127,45 @@ tracks:
         loss_weight: 0.0
 
 model: # custom args
-    checkpoint: true
+    checkpoint: false
     dim: 1024
     pairwise_dim: 128
     heads: 16
     pairwise_heads: 4
-    blocks: 12
-    pair_block_interval: 1
+    blocks: 48
+    pair_block_interval: 4
     ipa_block_interval: 1000
     
     ff_expand: 4
     position_bins: 32
-    pair_ffn: true
+    pair_ffn: false
+    pair_values: false
     pair_ff_expand: 4
-    tri_mul: true
+    tri_mul: false
     rope: true
 
     ### ipa args
     ipa_blocks: 8
-    separate_ipa_blocks: false
+    separate_ipa_blocks: true
+    
     ipa_attn: false
     ipa_values: false
     no_qk_points: 4
     no_v_points: 8
-    update_rots: true
+    update_rots: false
     readout_rots: false
     rots_type: "vec"
-    embed_rots: true
+    embed_rots: false
     ipa_frames: true
+    
     relpos_attn: true
     relpos_values: true
-    detach_rots: true
-    detach_trans: true
+    
+    detach_rots: false
+    detach_trans: false
+    update_x: true
+    trunk_adaLN: false
+    sm_adaLN: true
 
 optimizer:
     type: Adam

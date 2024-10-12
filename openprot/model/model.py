@@ -15,7 +15,17 @@ from .tri_mul import (
 )
 from ..utils.checkpointing import checkpoint_blocks
 
+def modulate(x, shift, scale):
+    if shift is not None:
+        return x * (1 + scale) + shift
+    else:
+        return x
 
+def gate(x, gate_):
+    if gate_ is not None:
+        return x * gate_
+    else:
+        return x
 
 class RelativePosition(nn.Module):
     def __init__(self, bins, pairwise_state_dim):
@@ -51,20 +61,21 @@ class RelativePosition(nn.Module):
         output = self.embedding(diff)
         return output
 
-
 class FeedForward(nn.Module):
-    def __init__(self, dim, ff_dim):
+    def __init__(self, dim, ff_dim, layers=2):
         super().__init__()
-        self.norm = nn.LayerNorm(dim)
-        self.lin_in = nn.Linear(dim, ff_dim)
-        self.act = nn.ReLU()
-        self.lin_out = nn.Linear(ff_dim, dim)
+        self.layers = nn.ModuleList()
+        self.layers.append(nn.LayerNorm(dim))
+        self.layers.append(nn.Linear(dim, ff_dim))
+        for i in range(layers-2):
+            self.layers.append(nn.ReLU())
+            self.layers.append(nn.Linear(ff_dim, ff_dim))
+        self.layers.append(nn.ReLU())
+        self.layers.append(nn.Linear(ff_dim, dim))
 
     def forward(self, x):
-        x = self.norm(x)
-        x = self.lin_in(x)
-        x = self.act(x)
-        x = self.lin_out(x)
+        for layer in self.layers:
+            x = layer(x)
         return x
 
 
@@ -73,7 +84,8 @@ class OpenProtTransformerBlock(nn.Module):
         self,
         dim,
         heads,
-        ff_expand,
+        ff_expand=4,
+        ff_layers=2,
         pairwise_dim=128,
         pairwise_heads=4,
         rope=False,        # rotate scalar queries and keys
@@ -94,6 +106,8 @@ class OpenProtTransformerBlock(nn.Module):
         frame_update=False,
         update_rots=False,
         readout_rots=False,
+        update_x=True,
+        adaLN=False,
         rots_type='quat',
     ):
         super().__init__()
@@ -113,8 +127,8 @@ class OpenProtTransformerBlock(nn.Module):
             no_qk_points=no_qk_points,
             no_v_points=no_v_points,
         )
-        if pair_bias or pair_values:
-            self.pair_norm = nn.LayerNorm(pairwise_dim)
+        self.ff = FeedForward(dim, ff_expand * dim, layers=ff_layers)
+        
             
         self.pair_updates = pair_updates
         self.pair_ffn = pair_ffn
@@ -123,17 +137,25 @@ class OpenProtTransformerBlock(nn.Module):
         self.rots_type = rots_type
         self.readout_rots = readout_rots
         self.tri_mul = tri_mul
+        self.update_x = update_x
+        self.adaLN = adaLN
 
-        self.mha_norm = nn.LayerNorm(dim)
-        self.ff = FeedForward(dim, ff_expand * dim)
-        self.ff_norm = nn.LayerNorm(dim)
+        self.mha_norm = nn.LayerNorm(dim, elementwise_affine=not adaLN)
+        self.ff_norm = nn.LayerNorm(dim, elementwise_affine=not adaLN)
+
+        if adaLN:
+            self.adaLN_modulation = nn.Sequential(
+                nn.SiLU(),
+                nn.Linear(dim, 6*dim)
+            )
+        
+        if pair_bias or pair_values:
+            self.pair_norm = nn.LayerNorm(pairwise_dim)
 
         rot_dim = {'quat': 4, 'vec': 3}[rots_type]
         if frame_update:
             self.linear_frame_update = nn.Sequential(
                 nn.LayerNorm(dim),
-                # nn.Linear(dim, dim),
-                # nn.ReLU(),
                 nn.Linear(dim, 3 + rot_dim if update_rots else 3),
             )
             torch.nn.init.zeros_(self.linear_frame_update[-1].weight)
@@ -166,23 +188,28 @@ class OpenProtTransformerBlock(nn.Module):
                 self.mlp_pair = FeedForward(pairwise_dim, pair_ff_expand * pairwise_dim)
                 self.pair_ff_norm = nn.LayerNorm(pairwise_dim)
     
-            
             torch.nn.init.zeros_(self.sequence_to_pair.o_proj.weight)
             torch.nn.init.zeros_(self.sequence_to_pair.o_proj.bias)
 
-    def forward(self, x, z, mask, rots, trans):
+    def forward(self, x, z, rots, trans, mask, x_cond=None):
 
         ### no pair2sequence
+
+        if self.adaLN:
+            shift_mha, scale_mha, gate_mha, shift_mlp, scale_mlp, gate_mlp =  self.adaLN_modulation(x_cond).chunk(6, dim=-1)
+        else:
+            shift_mha, scale_mha, gate_mha, shift_mlp, scale_mlp, gate_mlp = [None]*6
         
-        x = x + self.mha(
-            x=self.mha_norm(x),
+        x_in = x
+        x = x + gate(self.mha(
+            x=modulate(self.mha_norm(x), shift_mha, scale_mha),
             z=self.pair_norm(z) if hasattr(self, 'pair_norm') else None,
             mask=mask.bool(),
             trans=trans,
             rots=rots,
-        )
+        ), gate_mha)
 
-        x = x + self.ff(self.ff_norm(x))
+        x = x + gate(self.ff(modulate(self.ff_norm(x), shift_mlp, scale_mlp)), gate_mlp)
 
         if self.pair_updates:
             z = z + self.sequence_to_pair(x)
@@ -216,8 +243,10 @@ class OpenProtTransformerBlock(nn.Module):
                 rots = Rotation(quats=rotvec, normalize_quats=True).get_rot_mats()
             elif self.rots_type == 'vec':
                 rots = axis_angle_to_matrix(rotvec)
-                
-        return x, z, mask, rots, trans
+
+        if not self.update_x:
+            x = x_in
+        return x, z, rots, trans
 
 
 class OpenProtModel(nn.Module):
@@ -242,6 +271,7 @@ class OpenProtModel(nn.Module):
             update_rots=cfg.update_rots,
             readout_rots=cfg.readout_rots,
             rots_type=cfg.rots_type,
+            update_x=cfg.update_x,
         )
         self.blocks = nn.ModuleList()
         for i in range(cfg.blocks):
@@ -257,9 +287,11 @@ class OpenProtModel(nn.Module):
                     rope=cfg.rope,
                     pair_bias=is_pair,
                     pair_updates=is_pair,
+                    pair_values=is_pair and cfg.pair_values,
                     pair_ffn=is_pair and cfg.pair_ffn,
                     pair_ff_expand=cfg.pair_ff_expand,
                     tri_mul=is_pair and cfg.tri_mul,
+                    adaLN=cfg.trunk_adaLN,
                     **(ipa_args if is_ipa else {})
                 )
             )
@@ -272,13 +304,14 @@ class OpenProtModel(nn.Module):
             pairwise_dim=cfg.pairwise_dim,
             pair_bias=True,
             pair_values=True,
+            adaLN=cfg.sm_adaLN,
             **ipa_args,
         )
         if cfg.separate_ipa_blocks:
             self.ipa_blocks = nn.ModuleList()
             for i in range(cfg.ipa_blocks):
                 self.ipa_blocks.append(block_fn())
-        else:
+        elif self.cfg.ipa_blocks > 0:
             self.ipa_block = block_fn()
 
     def forward(self, inp):
@@ -291,14 +324,15 @@ class OpenProtModel(nn.Module):
 
         rots = inp.get("rots", None)
         trans = inp.get("trans", None)
+        x_cond = inp.get("x_cond", None)
 
         for block in self.blocks:
             if block.pair_updates and self.cfg.checkpoint:
-                x, z, mask, rots, trans = torch.utils.checkpoint.checkpoint(
-                    block, x, z, mask, rots, trans
+                x, z, rots, trans = torch.utils.checkpoint.checkpoint(
+                    block, x, z, rots, trans, mask, x_cond
                 )
             else:
-                x, z, mask, rots, trans = block(x, z, mask, rots, trans)
+                x, z, rots, trans = block(x, z, rots, trans, mask, x_cond)
 
         all_rots = [rots]
         all_trans = [trans]
@@ -308,7 +342,7 @@ class OpenProtModel(nn.Module):
             else:
                 block = self.ipa_block
                 
-            x, z, mask, rots, trans = block(x, z, mask, rots, trans)
+            x, z, rots, trans = block(x, z, rots, trans, mask, x_cond)
             all_rots.append(rots)
             all_trans.append(trans)
             
