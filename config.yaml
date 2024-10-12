@@ -2,13 +2,13 @@ ckpt: null # eventually this will control resuming runs
 validate: true # if true, only validate the model, don't train
 logger:
     # set to true to log to neptune.ai
-    neptune: false
+    neptune: true
     # please change "test" to something unique to your task
     project: openprot/structure
     # will log to workdir and neptune.ai with this name
-    name: default # tfmr_fpair_sm_afdb2
+    name: diffusion-disto-fix # default # tfmr_fpair_sm_afdb2
     # if not null, will duplicate stdout and stderr to workdir/{name}/{logfile}
-    logfile: null #  std.out
+    logfile: null # std.out
     # if null, will log every epoch, otherwise every this number of steps
     train_log_freq: 10
     val_log_freq: null 
@@ -111,13 +111,13 @@ tracks:
         embed_rots: false
         embed_trans: false
         readout_rots: false
-        readout_trans: false
-        intermediate_loss: true
+        readout_trans: true
+        intermediate_loss: false
         readout_rots_type: 'quat'
         
         losses:
-            pade: 0.0
-            fape: 0.0
+            #pade: 0.0
+            #fape: 0.0
             distogram: 0.3
             mse: 0.03
     SequenceTrack:
@@ -144,8 +144,10 @@ model: # custom args
     tri_mul: false
     rope: true
 
+    embed_trans_before_ipa: true
+    detach_before_ipa: true
     ### ipa args
-    ipa_blocks: 8
+    ipa_blocks: 12
     separate_ipa_blocks: true
     
     ipa_attn: false
@@ -156,13 +158,13 @@ model: # custom args
     readout_rots: false
     rots_type: "vec"
     embed_rots: false
-    ipa_frames: true
-    
-    relpos_attn: true
-    relpos_values: true
-    
+    ipa_frames: false
+    frame_update: false
+    relpos_attn: false
+    relpos_values: false
     detach_rots: false
     detach_trans: false
+    
     update_x: true
     trunk_adaLN: false
     sm_adaLN: true

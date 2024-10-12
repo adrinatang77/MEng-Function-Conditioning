@@ -42,7 +42,7 @@ class SequenceTrack(OpenProtTrack):
 
     def add_modules(self, model):
         model.seq_embed = nn.Embedding(22, model.cfg.dim)
-        model.seq_out = nn.Linear(model.cfg.dim, 21)
+        # model.seq_out = nn.Linear(model.cfg.dim, 21)
         if self.cfg.esm is not None:
 
             model.esm, self.esm_dict = esm_registry.get(self.cfg.esm)()
@@ -137,9 +137,11 @@ class SequenceTrack(OpenProtTrack):
         inp["x"] += model.seq_embed(batch["aatype"])
 
     def predict(self, model, out, readout):
-        readout["aatype"] = model.seq_out(out["x"])
+        pass
+        # readout["aatype"] = model.seq_out(out["x"])
 
     def compute_loss(self, readout, target, logger=None, eps=1e-6):
+        return 0.0
         loss = torch.nn.functional.cross_entropy(
             readout["aatype"].transpose(1, 2), target["aatype"], reduction="none"
         )

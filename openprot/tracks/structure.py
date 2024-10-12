@@ -9,7 +9,7 @@ from ..utils.geometry import (
     compute_pade,
     compute_lddt,
 )
-from ..utils.rotation_conversions import axis_angle_to_matrix
+from ..utils.rotation_conversions import axis_angle_to_matrix, random_rotations
 from ..utils.rigid_utils import Rigid, Rotation
 from ..utils import residue_constants as rc
 from ..model.positions import PositionEmbedder, PositionDecoder, PairwiseProjectionHead
@@ -110,7 +110,7 @@ class StructureTrack(OpenProtTrack):
                 nn.Linear(model.cfg.dim, rot_dim)
             )
 
-    def corrupt(self, batch, noisy_batch, target, logger=None):
+    def corrupt(self, batch, noisy_batch, target, logger=None, augment=1):
 
         ## right now our corruption is just masking EVERYTHING
         for key in [
@@ -136,8 +136,11 @@ class StructureTrack(OpenProtTrack):
         noise = torch.randn(B, L, 3, device=dev) * sigma
         t = batch['trans_noise'][...,None]
         noisy_batch["frame_trans"] = t * noise + (1 - t) * batch['frame_trans']
-                                                                     
 
+        randrots = random_rotations(augment, device=dev)
+        noisy_batch["frame_trans"] = torch.einsum("rij,blj->rbli", randrots, noisy_batch["frame_trans"])
+        target['frame_trans'] = torch.einsum("rij,blj->rbli", randrots, target["frame_trans"])
+                                                                     
         # add noise # placeholder
         noisy_batch["frame_rots"] = torch.eye(3, device=dev).expand(B, L, 3, 3)
 
@@ -152,7 +155,7 @@ class StructureTrack(OpenProtTrack):
 
         # currently not embedding noise levels
 
-        B, L, _ = batch["frame_trans"].shape
+        B, L = batch["trans_noise"].shape
         dev = batch["frame_trans"].device
 
         # these masks add up to 1
@@ -266,7 +269,7 @@ class StructureTrack(OpenProtTrack):
         mask = target["struct_supervise"]
         
         mse = torch.square(pred - gt).sum(-1)
-        mse = mse.mean(0)
+        mse = mse.mean(0).mean(0)
         if logger:
             logger.log("struct/mse_loss", mse, mask=mask)
         return mse

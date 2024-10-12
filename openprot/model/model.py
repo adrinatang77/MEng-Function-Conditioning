@@ -267,7 +267,7 @@ class OpenProtModel(nn.Module):
             embed_rots=cfg.embed_rots,
             no_qk_points=cfg.no_qk_points,
             no_v_points=cfg.no_v_points,
-            frame_update=True,
+            frame_update=cfg.frame_update,
             update_rots=cfg.update_rots,
             readout_rots=cfg.readout_rots,
             rots_type=cfg.rots_type,
@@ -314,6 +314,9 @@ class OpenProtModel(nn.Module):
         elif self.cfg.ipa_blocks > 0:
             self.ipa_block = block_fn()
 
+        if cfg.embed_trans_before_ipa:
+            self.trans_in = nn.Linear(3, cfg.dim)
+            
     def forward(self, inp):
 
         x = inp["x"]
@@ -334,6 +337,18 @@ class OpenProtModel(nn.Module):
             else:
                 x, z, rots, trans = block(x, z, rots, trans, mask, x_cond)
 
+        if self.cfg.detach_before_ipa:
+            x = x.detach()
+        
+        if self.cfg.embed_trans_before_ipa:
+            x = x + self.trans_in(trans)
+
+        R, B, L, D = x.shape
+        x = x.reshape(R*B, L, D)
+        x_cond = x_cond[None].expand(R, -1, -1, -1).reshape(R*B, L, D)
+        mask = mask[None].expand(R, -1, -1).reshape(R*B, L)
+        z_ = z[None].expand(R, -1, -1, -1, -1).reshape(R*B, L, L, -1)
+            
         all_rots = [rots]
         all_trans = [trans]
         for i in range(self.cfg.ipa_blocks):
@@ -342,7 +357,7 @@ class OpenProtModel(nn.Module):
             else:
                 block = self.ipa_block
                 
-            x, z, rots, trans = block(x, z, rots, trans, mask, x_cond)
+            x, _, rots, trans = block(x, z_, rots, trans, mask, x_cond)
             all_rots.append(rots)
             all_trans.append(trans)
             
@@ -351,6 +366,7 @@ class OpenProtModel(nn.Module):
             if self.cfg.detach_trans:
                 trans = trans.detach()
 
+        x = x.reshape(R, B, L, D)
         return {
             "x": x,
             "z": z,
