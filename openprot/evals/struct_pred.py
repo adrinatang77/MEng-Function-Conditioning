@@ -42,11 +42,12 @@ class StructurePredictionEval(OpenProtEval):
         for track in model.tracks.values():
             track.corrupt(batch, noisy_batch, {})
 
-        noisy_batch['frame_trans'] = noisy_batch['frame_trans'][:1]
+        if self.cfg.augmented:
+            noisy_batch['frame_trans'] = noisy_batch['frame_trans'][:1]
 
         if self.cfg.diffusion:
             sched = np.linspace(1, 0, 40)
-            for a, b in tqdm.tqdm(zip(sched[:-1], sched[1:])):
+            for a, b in zip(sched[:-1], sched[1:]):
                 noisy_batch['trans_noise'] = torch.ones_like(noisy_batch['trans_noise']) * a
                 _, readout = model.forward(noisy_batch)
                 noisy_batch["frame_trans"] = (b / a) * noisy_batch["frame_trans"] + (1 - b / a) * readout["trans"][-1]

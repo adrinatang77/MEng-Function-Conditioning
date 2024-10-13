@@ -110,7 +110,7 @@ class StructureTrack(OpenProtTrack):
                 nn.Linear(model.cfg.dim, rot_dim)
             )
 
-    def corrupt(self, batch, noisy_batch, target, logger=None, augment=1):
+    def corrupt(self, batch, noisy_batch, target, logger=None):
 
         ## right now our corruption is just masking EVERYTHING
         for key in [
@@ -137,9 +137,10 @@ class StructureTrack(OpenProtTrack):
         t = batch['trans_noise'][...,None]
         noisy_batch["frame_trans"] = t * noise + (1 - t) * batch['frame_trans']
 
-        randrots = random_rotations(augment, device=dev)
-        noisy_batch["frame_trans"] = torch.einsum("rij,blj->rbli", randrots, noisy_batch["frame_trans"])
-        target['frame_trans'] = torch.einsum("rij,blj->rbli", randrots, target["frame_trans"])
+        if self.cfg.rot_augment > 1:
+            randrots = random_rotations(augment, device=dev)
+            noisy_batch["frame_trans"] = torch.einsum("rij,blj->rbli", randrots, noisy_batch["frame_trans"])
+            target['frame_trans'] = torch.einsum("rij,blj->rbli", randrots, target["frame_trans"])
                                                                      
         # add noise # placeholder
         noisy_batch["frame_rots"] = torch.eye(3, device=dev).expand(B, L, 3, 3)
@@ -252,12 +253,21 @@ class StructureTrack(OpenProtTrack):
             readout["trans"][-1], target["frame_trans"], target["struct_supervise"]
         )
 
+        
+        bins = torch.linspace(2.3125, 22, 64, device=readout['trans'].device)   
+        idx = readout['pairwise'].argmax(-1)
+
+        distmat = bins[idx] - 0.3125
+        
+        dmat_lddt = compute_lddt(distmat, target["frame_trans"], target["struct_supervise"], pred_is_dmat=True)
+        
         mask = target["struct_supervise"]
 
         if logger:
             logger.log("struct/toks_sup", mask.sum())
             logger.log("struct/loss", loss, mask=mask)
             logger.log("struct/lddt", lddt)
+            logger.log("struct/dmat_lddt", dmat_lddt)
 
         loss = (loss * mask).sum() / target["pad_mask"].sum()
 
@@ -269,7 +279,9 @@ class StructureTrack(OpenProtTrack):
         mask = target["struct_supervise"]
         
         mse = torch.square(pred - gt).sum(-1)
-        mse = mse.mean(0).mean(0)
+        mse = mse.mean(0)
+        if self.cfg.rot_augment > 1:
+            mse = mse.mean(0)
         if logger:
             logger.log("struct/mse_loss", mse, mask=mask)
         return mse

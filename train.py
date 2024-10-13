@@ -38,6 +38,11 @@ trainer = pl.Trainer(
             every_n_train_steps=cfg.logger.ckpt_freq,
             filename="{step}",
         ),
+        ModelCheckpoint(
+            dirpath=model_dir,
+            every_n_train_steps=cfg.logger.save_freq,
+            filename="last",
+        ),
         ModelSummary(max_depth=2),
     ],
     num_nodes=int(os.environ.get("SLURM_NNODES", 1)),

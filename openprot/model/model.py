@@ -343,11 +343,14 @@ class OpenProtModel(nn.Module):
         if self.cfg.embed_trans_before_ipa:
             x = x + self.trans_in(trans)
 
-        R, B, L, D = x.shape
-        x = x.reshape(R*B, L, D)
-        x_cond = x_cond[None].expand(R, -1, -1, -1).reshape(R*B, L, D)
-        mask = mask[None].expand(R, -1, -1).reshape(R*B, L)
-        z_ = z[None].expand(R, -1, -1, -1, -1).reshape(R*B, L, L, -1)
+        if self.cfg.augment_before_ipa:
+            R, B, L, D = x.shape
+            x = x.reshape(R*B, L, D)
+            x_cond = x_cond[None].expand(R, -1, -1, -1).reshape(R*B, L, D)
+            mask = mask[None].expand(R, -1, -1).reshape(R*B, L)
+            z_ = z[None].expand(R, -1, -1, -1, -1).reshape(R*B, L, L, -1)
+        else:
+            z_ = z
             
         all_rots = [rots]
         all_trans = [trans]
@@ -357,7 +360,7 @@ class OpenProtModel(nn.Module):
             else:
                 block = self.ipa_block
                 
-            x, _, rots, trans = block(x, z_, rots, trans, mask, x_cond)
+            x, z_, rots, trans = block(x, z_, rots, trans, mask, x_cond)
             all_rots.append(rots)
             all_trans.append(trans)
             
@@ -366,7 +369,8 @@ class OpenProtModel(nn.Module):
             if self.cfg.detach_trans:
                 trans = trans.detach()
 
-        x = x.reshape(R, B, L, D)
+        if self.cfg.augment_before_ipa:
+            x = x.reshape(R, B, L, D)
         return {
             "x": x,
             "z": z,

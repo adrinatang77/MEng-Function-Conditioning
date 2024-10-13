@@ -321,13 +321,14 @@ def compute_pade(pred_pos, gt_pos, gt_mask, eps=1e-6, cutoff=15):
     score = torch.abs(pred_dmat - gt_dmat)
     return (dmat_mask * score).sum(-1) / (eps + dmat_mask.sum(-1))  # B, L
 
-
-def compute_lddt(pred_pos, gt_pos, gt_mask, cutoff=15.0, eps=1e-10, symmetric=False):
-
-    pred_dmat = torch.sqrt(
-        eps
-        + torch.sum((pred_pos[..., None, :] - pred_pos[..., None, :, :]) ** 2, axis=-1)
-    )
+def compute_lddt(pred_pos, gt_pos, gt_mask, cutoff=15.0, eps=1e-10, symmetric=False, pred_is_dmat=False):
+    if pred_is_dmat:
+        pred_dmat = pred_pos
+    else:
+        pred_dmat = torch.sqrt(
+            eps
+            + torch.sum((pred_pos[..., None, :] - pred_pos[..., None, :, :]) ** 2, axis=-1)
+        )
     gt_dmat = torch.sqrt(
         eps + torch.sum((gt_pos[..., None, :] - gt_pos[..., None, :, :]) ** 2, axis=-1)
     )
