@@ -323,7 +323,7 @@ class OpenProtModel(nn.Module):
         B, L, _ = x.shape
         residx = torch.arange(L, device=x.device)[None].expand(B, -1)
         mask = inp["pad_mask"]
-        z = self.pairwise_positional_embedding(residx, mask=mask)
+        z = inp.get("z", 0) + self.pairwise_positional_embedding(residx, mask=mask)
 
         rots = inp.get("rots", None)
         trans = inp.get("trans", None)
@@ -351,6 +351,10 @@ class OpenProtModel(nn.Module):
             z_ = z[None].expand(R, -1, -1, -1, -1).reshape(R*B, L, L, -1)
         else:
             z_ = z
+
+        if self.cfg.zero_frames_before_ipa:
+            trans = torch.zeros_like(trans)
+            rots = torch.zeros_like(rots)
             
         all_rots = [rots]
         all_trans = [trans]

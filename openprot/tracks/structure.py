@@ -8,6 +8,7 @@ from ..utils.geometry import (
     gram_schmidt,
     compute_pade,
     compute_lddt,
+    rmsdalign,
 )
 from ..utils.rotation_conversions import axis_angle_to_matrix, random_rotations
 from ..utils.rigid_utils import Rigid, Rotation
@@ -95,6 +96,10 @@ class StructureTrack(OpenProtTrack):
         model.pairwise_out = nn.Linear(model.cfg.pairwise_dim, 64)
         if self.cfg.embed_trans:
             model.trans_in = nn.Linear(3, model.cfg.dim)
+        if self.cfg.embed_pairwise:
+            model.pairwise_in = nn.Linear(model.cfg.pairwise_dim, model.cfg.pairwise_dim)
+            torch.nn.init.zeros_(model.pairwise_in.weight)
+            torch.nn.init.zeros_(model.pairwise_in.bias)
         if self.cfg.readout_trans:
             model.trans_out = nn.Sequential(
                 nn.LayerNorm(model.cfg.dim),
@@ -201,6 +206,10 @@ class StructureTrack(OpenProtTrack):
             batch['trans_noise'], model.cfg.dim // 2, 1, 0.01
         ).float()
 
+        if self.cfg.embed_pairwise:
+            dmat = torch.square(inp['trans'][...,None,:,:] - inp['trans'][...,None,:]).sum(-1).sqrt()
+            inp["z"] = inp.get("z", 0) + model.pairwise_in(sinusoidal_embedding(dmat, model.cfg.pairwise_dim // 2, 100, 1))
+
     def predict(self, model, out, readout):
         
         
@@ -274,10 +283,15 @@ class StructureTrack(OpenProtTrack):
         return loss
 
     def compute_mse_loss(self, readout, target, logger=None):
+        
         pred = readout["trans"]
         gt = target["frame_trans"]
         mask = target["struct_supervise"]
-        
+
+        if self.cfg.aligned_mse:
+            gt = rmsdalign(pred.detach(), gt, mask, demean=False)
+            gt = torch.nan_to_num(gt, 0.0)
+
         mse = torch.square(pred - gt).sum(-1)
         mse = mse.mean(0)
         if self.cfg.rot_augment > 1:

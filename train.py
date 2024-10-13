@@ -65,6 +65,9 @@ eval_loader = torch.utils.data.DataLoader(
     evals, batch_size=1, num_workers=0, shuffle=False, collate_fn=OpenProtData.batch
 )
 model = OpenProtWrapper(cfg, tracks, evals.evals)
+if cfg.pretrained is not None:
+    ckpt = torch.load(cfg.pretrained)
+    model.load_state_dict(ckpt['state_dict'], strict=False)
 
 if cfg.validate:
     trainer.validate(model, eval_loader, ckpt_path=cfg.ckpt)

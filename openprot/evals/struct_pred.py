@@ -1,7 +1,7 @@
 from .eval import OpenProtEval
 import foldcomp
 from ..utils import protein
-from ..utils.geometry import compute_lddt
+from ..utils.geometry import compute_lddt, rmsdalign
 from ..utils import residue_constants as rc
 import numpy as np
 from ..tasks import StructurePrediction
@@ -50,7 +50,12 @@ class StructurePredictionEval(OpenProtEval):
             for a, b in zip(sched[:-1], sched[1:]):
                 noisy_batch['trans_noise'] = torch.ones_like(noisy_batch['trans_noise']) * a
                 _, readout = model.forward(noisy_batch)
-                noisy_batch["frame_trans"] = (b / a) * noisy_batch["frame_trans"] + (1 - b / a) * readout["trans"][-1]
+
+                noisy = noisy_batch["frame_trans"] 
+                pred = readout["trans"][-1]
+                if self.cfg.align:
+                    pred = rmsdalign(noisy, pred, demean=False)
+                noisy_batch["frame_trans"] = (b / a) * noisy + (1 - b / a) * pred
                 
         else:
             _, readout = model.forward(noisy_batch)

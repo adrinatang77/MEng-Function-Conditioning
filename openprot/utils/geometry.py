@@ -5,6 +5,30 @@ from .rigid_utils import Rigid, Rotation
 from . import residue_constants as rc
 from .tensor_utils import batched_gather
 
+#https://github.com/scipy/scipy/blob/main/scipy/spatial/transform/_rotation.pyx
+def rmsdalign(a, b, weights=None, demean=True): # alignes B to A  # [*, N, 3]
+    B = a.shape[:-2]
+    N = a.shape[-2]
+    if weights == None:
+        weights = a.new_ones(*B, N)
+    weights = weights.unsqueeze(-1)
+    if demean:
+        a_mean = (a * weights).sum(-2, keepdims=True) / weights.sum(-2, keepdims=True)
+        a = a - a_mean
+        b_mean = (b * weights).sum(-2, keepdims=True) / weights.sum(-2, keepdims=True)
+        b = b - b_mean
+    B = torch.einsum('...ji,...jk->...ik', weights * a, b)
+    u, s, vh = torch.linalg.svd(B)
+
+    # Correct improper rotation if necessary (as in Kabsch algorithm)
+    sgn = torch.sign(torch.linalg.det((u @ vh).cpu())).to(u.device) # ugly workaround
+    s[...,-1] *= sgn
+    u[...,:,-1] *= sgn.unsqueeze(-1)
+    C = u @ vh # c rotates B to A
+    if demean:
+        return b @ C.mT + a_mean
+    else:
+        return b @ C.mT
 
 def atom14_to_atom37(atom14: np.ndarray, aatype, atom14_mask=None):
     atom37 = batched_gather(

@@ -1,14 +1,15 @@
 ckpt: null # eventually this will control resuming runs
+pretrained: workdir/wpair_distogram/last-1.ckpt # load weights from here first
 validate: false # if true, only validate the model, don't train
 logger:
     # set to true to log to neptune.ai
-    neptune: true
+    neptune: false
     # please change "test" to something unique to your task
     project: openprot/structure
     # will log to workdir and neptune.ai with this name
-    name: wpair_distogram
+    name: default # diff-align-relpos-shared
     # if not null, will duplicate stdout and stderr to workdir/{name}/{logfile}
-    logfile: std.out
+    logfile: null # std.out
     # if null, will log every epoch, otherwise every this number of steps
     train_log_freq: 10
     val_log_freq: null 
@@ -25,7 +26,7 @@ trainer:
     num_sanity_val_steps: 0
     gradient_clip_val: 1.0
     accumulate_grad_batches: 1
-    val_check_interval: 125000000
+    val_check_interval: 1250
     check_val_every_n_epoch: 1
     logger: false
 
@@ -103,6 +104,7 @@ evals:
         split: splits/cameo2022.csv
         diffusion: true
         augmented: false
+        align: true
         
     
 
@@ -113,15 +115,17 @@ tracks:
         embed_rots: false
         embed_trans: false
         readout_rots: false
-        readout_trans: true
-        intermediate_loss: false
+        readout_trans: false
+        intermediate_loss: true
         readout_rots_type: 'quat'
         rot_augment: 1
+        embed_pairwise: true
+        aligned_mse: true
         losses:
             #pade: 0.0
             #fape: 0.0
             distogram: 0.3
-            mse: 0.0
+            mse: 0.001
     SequenceTrack:
         esm: esm2_3B # esm2_650M # esm2_8M_270K
         corrupt: mask
@@ -129,7 +133,7 @@ tracks:
         loss_weight: 0.0
 
 model: # custom args
-    checkpoint: true
+    checkpoint: false
     dim: 1024
     pairwise_dim: 128
     heads: 16
@@ -146,11 +150,12 @@ model: # custom args
     tri_mul: false
     rope: true
 
-    embed_trans_before_ipa: true
+    embed_trans_before_ipa: false
     detach_before_ipa: false
+    zero_frames_before_ipa: false
     ### ipa args
-    ipa_blocks: 0
-    separate_ipa_blocks: true
+    ipa_blocks: 12
+    separate_ipa_blocks: false
     
     ipa_attn: false
     ipa_values: false
@@ -161,20 +166,20 @@ model: # custom args
     rots_type: "vec"
     embed_rots: false
     ipa_frames: false
-    frame_update: false
-    relpos_attn: false
-    relpos_values: false
+    frame_update: true
+    relpos_attn: true
+    relpos_values: true
     detach_rots: false
     detach_trans: false
     
     update_x: true
-    trunk_adaLN: false
+    trunk_adaLN: true
     sm_adaLN: true
     augment_before_ipa: false
 
 optimizer:
     type: Adam
-    lr: 5e-4
+    lr: 1e-4
     scheduler: 
         total_steps: 1000000
         warmup_steps: 1000
