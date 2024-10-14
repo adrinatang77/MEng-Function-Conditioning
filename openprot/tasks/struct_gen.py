@@ -15,8 +15,12 @@ class StructureGeneration(OpenProtTask):
             noise_level = np.random.rand()
         else:
             noise_level = np.random.beta(*self.cfg.beta)
-        data["trans_noise"] = np.ones(len(data["seqres"]), dtype=np.float32) * noise_level
-        data["rots_noise"] = np.ones(len(data["seqres"]), dtype=np.float32) * noise_level
+        data["trans_noise"] = (
+            np.ones(len(data["seqres"]), dtype=np.float32) * noise_level
+        )
+        data["rots_noise"] = (
+            np.ones(len(data["seqres"]), dtype=np.float32) * noise_level
+        )
         # data["torsion_noise"] = np.ones(len(data["seqres"]))
 
         # center the structures

@@ -18,17 +18,19 @@ from functools import partial
 import numpy as np
 import math
 
+
 def sinusoidal_embedding(pos, n_freqs, max_period, min_period):
-    periods = torch.exp(torch.linspace(
-        math.log(min_period), 
-        math.log(max_period), 
-        n_freqs, 
-        device=pos.device
-    ))
+    periods = torch.exp(
+        torch.linspace(
+            math.log(min_period), math.log(max_period), n_freqs, device=pos.device
+        )
+    )
     freqs = 2 * np.pi / periods
     return torch.cat(
         [torch.cos(pos[..., None] * freqs), torch.sin(pos[..., None] * freqs)], -1
     )
+
+
 def pseudo_beta_fn(aatype, all_atom_positions, all_atom_masks):
     is_gly = aatype == rc.restype_order["G"]
     ca_idx = rc.atom_order["CA"]
@@ -97,22 +99,22 @@ class StructureTrack(OpenProtTrack):
         if self.cfg.embed_trans:
             model.trans_in = nn.Linear(3, model.cfg.dim)
         if self.cfg.embed_pairwise:
-            model.pairwise_in = nn.Linear(model.cfg.pairwise_dim, model.cfg.pairwise_dim)
+            model.pairwise_in = nn.Linear(
+                model.cfg.pairwise_dim, model.cfg.pairwise_dim
+            )
             torch.nn.init.zeros_(model.pairwise_in.weight)
             torch.nn.init.zeros_(model.pairwise_in.bias)
         if self.cfg.readout_trans:
             model.trans_out = nn.Sequential(
-                nn.LayerNorm(model.cfg.dim),
-                nn.Linear(model.cfg.dim, 3)
+                nn.LayerNorm(model.cfg.dim), nn.Linear(model.cfg.dim, 3)
             )
 
         if self.cfg.embed_rots:
             model.rots_in = nn.Linear(9, model.cfg.dim)
         if self.cfg.readout_rots:
-            rot_dim = {'quat': 4, 'vec': 3}[self.cfg.readout_rots_type]
+            rot_dim = {"quat": 4, "vec": 3}[self.cfg.readout_rots_type]
             model.rots_out = nn.Sequential(
-                nn.LayerNorm(model.cfg.dim),
-                nn.Linear(model.cfg.dim, rot_dim)
+                nn.LayerNorm(model.cfg.dim), nn.Linear(model.cfg.dim, rot_dim)
             )
 
     def corrupt(self, batch, noisy_batch, target, logger=None):
@@ -139,14 +141,18 @@ class StructureTrack(OpenProtTrack):
         # add noise
         sigma = 15
         noise = torch.randn(B, L, 3, device=dev) * sigma
-        t = batch['trans_noise'][...,None]
-        noisy_batch["frame_trans"] = t * noise + (1 - t) * batch['frame_trans']
+        t = batch["trans_noise"][..., None]
+        noisy_batch["frame_trans"] = t * noise + (1 - t) * batch["frame_trans"]
 
         if self.cfg.rot_augment > 1:
             randrots = random_rotations(augment, device=dev)
-            noisy_batch["frame_trans"] = torch.einsum("rij,blj->rbli", randrots, noisy_batch["frame_trans"])
-            target['frame_trans'] = torch.einsum("rij,blj->rbli", randrots, target["frame_trans"])
-                                                                     
+            noisy_batch["frame_trans"] = torch.einsum(
+                "rij,blj->rbli", randrots, noisy_batch["frame_trans"]
+            )
+            target["frame_trans"] = torch.einsum(
+                "rij,blj->rbli", randrots, target["frame_trans"]
+            )
+
         # add noise # placeholder
         noisy_batch["frame_rots"] = torch.eye(3, device=dev).expand(B, L, 3, 3)
 
@@ -180,15 +186,15 @@ class StructureTrack(OpenProtTrack):
         # inp["trans"] = torch.where(
         #     embed_mask[..., None], batch["frame_trans"], 0.0
         # )
-        inp['trans'] = batch['frame_trans']
-        inp['rots'] = batch['frame_rots']
-    
+        inp["trans"] = batch["frame_trans"]
+        inp["rots"] = batch["frame_rots"]
+
         if self.cfg.embed_rots:
-            inp['x'] += model.rots_in(inp['rots'].view(B, L, 9)) 
-            
+            inp["x"] += model.rots_in(inp["rots"].view(B, L, 9))
+
         if self.cfg.embed_trans:
-            inp['x'] += model.trans_in(inp['trans'])
-             
+            inp["x"] += model.trans_in(inp["trans"])
+
         # tell the model which frames were not present
         inp["x"] += torch.where(
             null_mask[..., None],
@@ -203,26 +209,33 @@ class StructureTrack(OpenProtTrack):
         )
 
         inp["x_cond"] += sinusoidal_embedding(
-            batch['trans_noise'], model.cfg.dim // 2, 1, 0.01
+            batch["trans_noise"], model.cfg.dim // 2, 1, 0.01
         ).float()
 
         if self.cfg.embed_pairwise:
-            dmat = torch.square(inp['trans'][...,None,:,:] - inp['trans'][...,None,:]).sum(-1).sqrt()
-            inp["z"] = inp.get("z", 0) + model.pairwise_in(sinusoidal_embedding(dmat, model.cfg.pairwise_dim // 2, 100, 1))
+            dmat = (
+                torch.square(inp["trans"][..., None, :, :] - inp["trans"][..., None, :])
+                .sum(-1)
+                .sqrt()
+            )
+            inp["z"] = inp.get("z", 0) + model.pairwise_in(
+                sinusoidal_embedding(dmat, model.cfg.pairwise_dim // 2, 100, 1)
+            )
 
     def predict(self, model, out, readout):
-        
-        
+
         if self.cfg.readout_trans:
             readout["trans"] = model.trans_out(out["x"])[None]
         else:
             readout["trans"] = out["trans"]
-            
+
         if self.cfg.readout_rots:
             rotvec = model.rots_out(out["x"])
-            if self.cfg.readout_rots_type == 'quat':
-                readout["rots"] = Rotation(quats=rotvec, normalize_quats=True).get_rot_mats()[None]
-            elif self.cfg.readout_rots_type == 'vec':
+            if self.cfg.readout_rots_type == "quat":
+                readout["rots"] = Rotation(
+                    quats=rotvec, normalize_quats=True
+                ).get_rot_mats()[None]
+            elif self.cfg.readout_rots_type == "vec":
                 readout["rots"] = axis_angle_to_matrix(rotvec)[None]
         else:
             readout["rots"] = out["rots"]
@@ -230,14 +243,13 @@ class StructureTrack(OpenProtTrack):
         if not self.cfg.intermediate_loss:
             readout["trans"] = readout["trans"][-1:]
             readout["rots"] = readout["rots"][-1:]
-    
+
         readout["pairwise"] = model.pairwise_out(out["z"])
 
     def compute_loss(self, readout, target, logger=None):
 
         loss = 0
 
-        
         if "mse" in self.cfg.losses:
             loss = loss + self.cfg.losses["mse"] * self.compute_mse_loss(
                 readout, target, logger=logger
@@ -267,19 +279,18 @@ class StructureTrack(OpenProtTrack):
             readout["trans"][-1], target["frame_trans"], target["struct_supervise"]
         )
 
-        
-        bins = torch.linspace(2.3125, 22, 64, device=readout['trans'].device)   
-        idx = readout['pairwise'].argmax(-1)
+        bins = torch.linspace(2.3125, 22, 64, device=readout["trans"].device)
+        idx = readout["pairwise"].argmax(-1)
 
         distmat = bins[idx] - 0.3125
-        
+
         dmat_lddt = compute_lddt(
             distmat,
-            target["frame_trans"], 
-            target["struct_supervise"], 
-            pred_is_dmat=True
+            target["frame_trans"],
+            target["struct_supervise"],
+            pred_is_dmat=True,
         )
-        
+
         mask = target["struct_supervise"]
 
         if logger:
@@ -304,7 +315,7 @@ class StructureTrack(OpenProtTrack):
         return 1 - soft_lddt
 
     def compute_mse_loss(self, readout, target, logger=None):
-        
+
         pred = readout["trans"]
         gt = target["frame_trans"]
         mask = target["struct_supervise"]

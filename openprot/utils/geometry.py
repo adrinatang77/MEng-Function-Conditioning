@@ -5,8 +5,9 @@ from .rigid_utils import Rigid, Rotation
 from . import residue_constants as rc
 from .tensor_utils import batched_gather
 
-#https://github.com/scipy/scipy/blob/main/scipy/spatial/transform/_rotation.pyx
-def rmsdalign(a, b, weights=None, demean=True): # alignes B to A  # [*, N, 3]
+
+# https://github.com/scipy/scipy/blob/main/scipy/spatial/transform/_rotation.pyx
+def rmsdalign(a, b, weights=None, demean=True):  # alignes B to A  # [*, N, 3]
     B = a.shape[:-2]
     N = a.shape[-2]
     if weights == None:
@@ -17,18 +18,19 @@ def rmsdalign(a, b, weights=None, demean=True): # alignes B to A  # [*, N, 3]
         a = a - a_mean
         b_mean = (b * weights).sum(-2, keepdims=True) / weights.sum(-2, keepdims=True)
         b = b - b_mean
-    B = torch.einsum('...ji,...jk->...ik', weights * a, b)
+    B = torch.einsum("...ji,...jk->...ik", weights * a, b)
     u, s, vh = torch.linalg.svd(B)
 
     # Correct improper rotation if necessary (as in Kabsch algorithm)
-    sgn = torch.sign(torch.linalg.det((u @ vh).cpu())).to(u.device) # ugly workaround
-    s[...,-1] *= sgn
-    u[...,:,-1] *= sgn.unsqueeze(-1)
-    C = u @ vh # c rotates B to A
+    sgn = torch.sign(torch.linalg.det((u @ vh).cpu())).to(u.device)  # ugly workaround
+    s[..., -1] *= sgn
+    u[..., :, -1] *= sgn.unsqueeze(-1)
+    C = u @ vh  # c rotates B to A
     if demean:
         return b @ C.mT + a_mean
     else:
         return b @ C.mT
+
 
 def atom14_to_atom37(atom14: np.ndarray, aatype, atom14_mask=None):
     atom37 = batched_gather(
@@ -345,17 +347,26 @@ def compute_pade(pred_pos, gt_pos, gt_mask, eps=1e-6, cutoff=15):
     score = torch.abs(pred_dmat - gt_dmat)
     return (dmat_mask * score).sum(-1) / (eps + dmat_mask.sum(-1))  # B, L
 
+
 def compute_lddt(
-    pred_pos, gt_pos, gt_mask,
-    cutoff=15.0, eps=1e-10, symmetric=False,
-    pred_is_dmat=False, reduce=(-1,-2), soft=False
+    pred_pos,
+    gt_pos,
+    gt_mask,
+    cutoff=15.0,
+    eps=1e-10,
+    symmetric=False,
+    pred_is_dmat=False,
+    reduce=(-1, -2),
+    soft=False,
 ):
     if pred_is_dmat:
         pred_dmat = pred_pos
     else:
         pred_dmat = torch.sqrt(
             eps
-            + torch.sum((pred_pos[..., None, :] - pred_pos[..., None, :, :]) ** 2, axis=-1)
+            + torch.sum(
+                (pred_pos[..., None, :] - pred_pos[..., None, :, :]) ** 2, axis=-1
+            )
         )
     gt_dmat = torch.sqrt(
         eps + torch.sum((gt_pos[..., None, :] - gt_pos[..., None, :, :]) ** 2, axis=-1)
@@ -373,14 +384,16 @@ def compute_lddt(
     dist_l1 = torch.abs(pred_dmat - gt_dmat)
     cutoffs = torch.tensor([0.5, 1.0, 2.0, 4.0], device=gt_mask.device)
     if soft:
-        score = torch.sigmoid(cutoffs - dist_l1[...,None])
+        score = torch.sigmoid(cutoffs - dist_l1[..., None])
     else:
         score = dist_l1[..., None] < cutoffs
     score = score.float().mean(-1)
-    
+
     if reduce:
-        score = (dists_to_score * score).sum(reduce) / (eps + dists_to_score.sum(reduce))
-        
+        score = (dists_to_score * score).sum(reduce) / (
+            eps + dists_to_score.sum(reduce)
+        )
+
     return score
 
 

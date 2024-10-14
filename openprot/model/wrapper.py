@@ -45,10 +45,11 @@ class Wrapper(pl.LightningModule):
         quit = False
         for name, p in self.model.named_parameters():
             if p.requires_grad and p.grad is None:
-                print(name, 'has no grad')
+                print(name, "has no grad")
                 quit = True
-        
-        if quit: exit()
+
+        if quit:
+            exit()
 
     def configure_optimizers(self):
         cls = getattr(torch.optim, self.cfg.optimizer.type)
