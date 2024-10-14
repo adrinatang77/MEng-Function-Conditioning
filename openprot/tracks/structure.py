@@ -243,6 +243,11 @@ class StructureTrack(OpenProtTrack):
                 readout, target, logger=logger
             )
 
+        if "lddt" in self.cfg.losses:
+            loss = loss + self.cfg.losses["lddt"] * self.compute_lddt_loss(
+                readout, target, logger=logger
+            )
+
         if "pade" in self.cfg.losses:
             loss = loss + self.cfg.losses["pade"] * self.compute_pade_loss(
                 readout, target, logger=logger
@@ -268,7 +273,12 @@ class StructureTrack(OpenProtTrack):
 
         distmat = bins[idx] - 0.3125
         
-        dmat_lddt = compute_lddt(distmat, target["frame_trans"], target["struct_supervise"], pred_is_dmat=True)
+        dmat_lddt = compute_lddt(
+            distmat,
+            target["frame_trans"], 
+            target["struct_supervise"], 
+            pred_is_dmat=True
+        )
         
         mask = target["struct_supervise"]
 
@@ -282,6 +292,17 @@ class StructureTrack(OpenProtTrack):
 
         return loss
 
+    def compute_lddt_loss(self, readout, target, logger=None):
+
+        pred = readout["trans"][-1]
+        gt = target["frame_trans"]
+        mask = target["struct_supervise"]
+        soft_lddt = compute_lddt(pred, gt, mask, soft=True, reduce=(-1,))
+
+        if logger:
+            logger.log("struct/lddt_loss", 1 - soft_lddt, mask=mask)
+        return 1 - soft_lddt
+
     def compute_mse_loss(self, readout, target, logger=None):
         
         pred = readout["trans"]
@@ -289,7 +310,7 @@ class StructureTrack(OpenProtTrack):
         mask = target["struct_supervise"]
 
         if self.cfg.aligned_mse:
-            gt = rmsdalign(pred.detach(), gt, mask, demean=False)
+            gt = rmsdalign(pred.detach(), gt, mask, demean=self.cfg.demean)
             gt = torch.nan_to_num(gt, 0.0)
 
         mse = torch.square(pred - gt).sum(-1)

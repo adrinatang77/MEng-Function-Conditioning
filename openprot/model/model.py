@@ -148,6 +148,8 @@ class OpenProtTransformerBlock(nn.Module):
                 nn.SiLU(),
                 nn.Linear(dim, 6*dim)
             )
+            nn.init.constant_(self.adaLN_modulation[-1].weight, 0)
+            nn.init.constant_(self.adaLN_modulation[-1].bias, 0)
         
         if pair_bias or pair_values:
             self.pair_norm = nn.LayerNorm(pairwise_dim)
@@ -354,7 +356,7 @@ class OpenProtModel(nn.Module):
 
         if self.cfg.zero_frames_before_ipa:
             trans = torch.zeros_like(trans)
-            rots = torch.zeros_like(rots)
+            rots = torch.zeros_like(rots) + torch.eye(3, device=rots.device, dtype=rots.dtype)
             
         all_rots = [rots]
         all_trans = [trans]

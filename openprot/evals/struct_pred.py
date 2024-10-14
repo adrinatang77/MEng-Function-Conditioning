@@ -54,7 +54,7 @@ class StructurePredictionEval(OpenProtEval):
                 noisy = noisy_batch["frame_trans"] 
                 pred = readout["trans"][-1]
                 if self.cfg.align:
-                    pred = rmsdalign(noisy, pred, demean=False)
+                    pred = rmsdalign(noisy, pred, demean=self.cfg.demean)
                 noisy_batch["frame_trans"] = (b / a) * noisy + (1 - b / a) * pred
                 
         else:

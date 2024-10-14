@@ -1,13 +1,13 @@
 ckpt: null # eventually this will control resuming runs
-pretrained: workdir/wpair_distogram/last-1.ckpt # load weights from here first
+pretrained: null # workdir/wpair_distogram/last-1.ckpt # load weights from here first
 validate: false # if true, only validate the model, don't train
 logger:
     # set to true to log to neptune.ai
-    neptune: false
+    neptune: true
     # please change "test" to something unique to your task
     project: openprot/structure
     # will log to workdir and neptune.ai with this name
-    name: default # diff-align-relpos-shared
+    name: nodiff-vanilla
     # if not null, will duplicate stdout and stderr to workdir/{name}/{logfile}
     logfile: null # std.out
     # if null, will log every epoch, otherwise every this number of steps
@@ -86,6 +86,8 @@ tasks:
     #             seed: 137
     StructureGeneration:
         fraction: 1.0
+        beta: [1, 2]
+        uniform_prob: 0.1
         seed: 137
         datasets:
             AFDBDataset:
@@ -102,9 +104,10 @@ evals:
         #path: /data/cb/scratch/datasets/afdb_swissprot_v4/afdb_swissprot_v4
         path: /scratch/projects/cgai/openprot/data/pdb_npz
         split: splits/cameo2022.csv
-        diffusion: true
+        diffusion: false
         augmented: false
-        align: true
+        align: false
+        demean: true
         
     
 
@@ -115,15 +118,17 @@ tracks:
         embed_rots: false
         embed_trans: false
         readout_rots: false
-        readout_trans: false
-        intermediate_loss: true
+        readout_trans: true
+        intermediate_loss: false
         readout_rots_type: 'quat'
         rot_augment: 1
-        embed_pairwise: true
+        embed_pairwise: false
         aligned_mse: true
+        demean: true
         losses:
             #pade: 0.0
             #fape: 0.0
+            lddt: 1.0
             distogram: 0.3
             mse: 0.001
     SequenceTrack:
@@ -144,7 +149,7 @@ model: # custom args
     
     ff_expand: 4
     position_bins: 32
-    pair_ffn: false
+    pair_ffn: true
     pair_values: false
     pair_ff_expand: 4
     tri_mul: false
@@ -154,8 +159,8 @@ model: # custom args
     detach_before_ipa: false
     zero_frames_before_ipa: false
     ### ipa args
-    ipa_blocks: 12
-    separate_ipa_blocks: false
+    ipa_blocks: 0
+    separate_ipa_blocks: true
     
     ipa_attn: false
     ipa_values: false
@@ -166,14 +171,13 @@ model: # custom args
     rots_type: "vec"
     embed_rots: false
     ipa_frames: false
-    frame_update: true
-    relpos_attn: true
-    relpos_values: true
-    detach_rots: false
-    detach_trans: false
-    
+    frame_update: false
+    relpos_attn: false
+    relpos_values: false
+    detach_rots: true
+    detach_trans: true
     update_x: true
-    trunk_adaLN: true
+    trunk_adaLN: false
     sm_adaLN: true
     augment_before_ipa: false
 

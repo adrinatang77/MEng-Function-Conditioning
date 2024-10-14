@@ -11,10 +11,10 @@ class StructureGeneration(OpenProtTask):
 
         ## noise EVERYTHING
 
-        if np.random.rand() < 0.1:
+        if np.random.rand() < self.cfg.uniform_prob:
             noise_level = np.random.rand()
         else:
-            noise_level = np.random.beta(1, 2)
+            noise_level = np.random.beta(*self.cfg.beta)
         data["trans_noise"] = np.ones(len(data["seqres"]), dtype=np.float32) * noise_level
         data["rots_noise"] = np.ones(len(data["seqres"]), dtype=np.float32) * noise_level
         # data["torsion_noise"] = np.ones(len(data["seqres"]))

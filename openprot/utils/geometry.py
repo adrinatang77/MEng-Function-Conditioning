@@ -345,7 +345,11 @@ def compute_pade(pred_pos, gt_pos, gt_mask, eps=1e-6, cutoff=15):
     score = torch.abs(pred_dmat - gt_dmat)
     return (dmat_mask * score).sum(-1) / (eps + dmat_mask.sum(-1))  # B, L
 
-def compute_lddt(pred_pos, gt_pos, gt_mask, cutoff=15.0, eps=1e-10, symmetric=False, pred_is_dmat=False):
+def compute_lddt(
+    pred_pos, gt_pos, gt_mask,
+    cutoff=15.0, eps=1e-10, symmetric=False,
+    pred_is_dmat=False, reduce=(-1,-2), soft=False
+):
     if pred_is_dmat:
         pred_dmat = pred_pos
     else:
@@ -367,13 +371,16 @@ def compute_lddt(pred_pos, gt_pos, gt_mask, cutoff=15.0, eps=1e-10, symmetric=Fa
         * (1.0 - torch.eye(gt_mask.shape[-1], device=gt_mask.device))
     )
     dist_l1 = torch.abs(pred_dmat - gt_dmat)
-    score = (
-        (dist_l1[..., None] < torch.tensor([0.5, 1.0, 2.0, 4.0], device=gt_mask.device))
-        .float()
-        .mean(-1)
-    )
-    score = (dists_to_score * score).sum((-1, -2)) / dists_to_score.sum((-1, -2))
-
+    cutoffs = torch.tensor([0.5, 1.0, 2.0, 4.0], device=gt_mask.device)
+    if soft:
+        score = torch.sigmoid(cutoffs - dist_l1[...,None])
+    else:
+        score = dist_l1[..., None] < cutoffs
+    score = score.float().mean(-1)
+    
+    if reduce:
+        score = (dists_to_score * score).sum(reduce) / (eps + dists_to_score.sum(reduce))
+        
     return score
 
 
