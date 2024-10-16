@@ -1,5 +1,5 @@
 ckpt: null # eventually this will control resuming runs
-pretrained: null # workdir/wpair_distogram/last-1.ckpt # load weights from here first
+pretrained: null # workdir/nodiff-relpos-pade/last.ckpt # load weights from here first
 validate: false # if true, only validate the model, don't train
 logger:
     # set to true to log to neptune.ai
@@ -7,9 +7,9 @@ logger:
     # please change "test" to something unique to your task
     project: openprot/structure
     # will log to workdir and neptune.ai with this name
-    name: nodiff-vanilla
+    name: tri_mul_vanilla-lr1e-4-no-pade
     # if not null, will duplicate stdout and stderr to workdir/{name}/{logfile}
-    logfile: null # std.out
+    logfile: std.out
     # if null, will log every epoch, otherwise every this number of steps
     train_log_freq: 10
     val_log_freq: null 
@@ -25,7 +25,7 @@ trainer:
     limit_val_batches: 1.0
     num_sanity_val_steps: 0
     gradient_clip_val: 1.0
-    accumulate_grad_batches: 1
+    accumulate_grad_batches: 2
     val_check_interval: 1250
     check_val_every_n_epoch: 1
     logger: false
@@ -87,7 +87,8 @@ tasks:
     StructureGeneration:
         fraction: 1.0
         beta: [1, 2]
-        uniform_prob: 0.1
+        uniform_prob: 0.0
+        max_noise_prob: 1.0
         seed: 137
         datasets:
             AFDBDataset:
@@ -125,12 +126,17 @@ tracks:
         embed_pairwise: false
         aligned_mse: true
         demean: true
+        clamp_pade: false
+        clamp_nape: true
+        clamp_mse: false
+        nape_cutoff: 15
         losses:
-            #pade: 0.0
+            pade: 0.0
             #fape: 0.0
             lddt: 1.0
             distogram: 0.3
             mse: 0.001
+            nape: 0.0
     SequenceTrack:
         esm: esm2_3B # esm2_650M # esm2_8M_270K
         corrupt: mask
@@ -138,7 +144,7 @@ tracks:
         loss_weight: 0.0
 
 model: # custom args
-    checkpoint: false
+    checkpoint: true
     dim: 1024
     pairwise_dim: 128
     heads: 16
@@ -152,12 +158,12 @@ model: # custom args
     pair_ffn: true
     pair_values: false
     pair_ff_expand: 4
-    tri_mul: false
+    tri_mul: true
     rope: true
 
     embed_trans_before_ipa: false
     detach_before_ipa: false
-    zero_frames_before_ipa: false
+    zero_frames_before_ipa: true
     ### ipa args
     ipa_blocks: 0
     separate_ipa_blocks: true
@@ -174,15 +180,16 @@ model: # custom args
     frame_update: false
     relpos_attn: false
     relpos_values: false
+    ipa_pair_values: false
     detach_rots: true
     detach_trans: true
     update_x: true
     trunk_adaLN: false
-    sm_adaLN: true
+    sm_adaLN: false
     augment_before_ipa: false
 
 optimizer:
-    type: Adam
+    type: AdamW
     lr: 1e-4
     scheduler: 
         total_steps: 1000000

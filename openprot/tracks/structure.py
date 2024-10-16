@@ -145,7 +145,7 @@ class StructureTrack(OpenProtTrack):
         noisy_batch["frame_trans"] = t * noise + (1 - t) * batch["frame_trans"]
 
         if self.cfg.rot_augment > 1:
-            randrots = random_rotations(augment, device=dev)
+            randrots = random_rotations(self.cfg.rot_augment, device=dev)
             noisy_batch["frame_trans"] = torch.einsum(
                 "rij,blj->rbli", randrots, noisy_batch["frame_trans"]
             )
@@ -250,6 +250,7 @@ class StructureTrack(OpenProtTrack):
 
         loss = 0
 
+
         if "mse" in self.cfg.losses:
             loss = loss + self.cfg.losses["mse"] * self.compute_mse_loss(
                 readout, target, logger=logger
@@ -265,6 +266,12 @@ class StructureTrack(OpenProtTrack):
                 readout, target, logger=logger
             )
 
+        if "nape" in self.cfg.losses:
+            loss = loss + self.cfg.losses["nape"] * self.compute_nape_loss(
+                readout, target, logger=logger
+            )
+
+        
         if "fape" in self.cfg.losses:
             loss = loss + self.cfg.losses["fape"] * self.compute_fape_loss(
                 readout, target, logger=logger
@@ -305,26 +312,37 @@ class StructureTrack(OpenProtTrack):
 
     def compute_lddt_loss(self, readout, target, logger=None):
 
-        pred = readout["trans"][-1]
+        pred = readout["trans"]
         gt = target["frame_trans"]
         mask = target["struct_supervise"]
         soft_lddt = compute_lddt(pred, gt, mask, soft=True, reduce=(-1,))
 
+        soft_lddt = soft_lddt.mean(0)
+        
         if logger:
             logger.log("struct/lddt_loss", 1 - soft_lddt, mask=mask)
         return 1 - soft_lddt
 
-    def compute_mse_loss(self, readout, target, logger=None):
+    def compute_mse_loss(self, readout, target, clamp=None, logger=None):
 
         pred = readout["trans"]
         gt = target["frame_trans"]
         mask = target["struct_supervise"]
 
-        if self.cfg.aligned_mse:
-            gt = rmsdalign(pred.detach(), gt, mask, demean=self.cfg.demean)
-            gt = torch.nan_to_num(gt, 0.0)
+        def compute_mse(pred, gt, mask, clamp=None):
+            if self.cfg.aligned_mse:
+                gt = rmsdalign(pred.detach(), gt, mask, demean=self.cfg.demean)
+                gt = torch.nan_to_num(gt, 0.0)
+            mse = torch.square(pred - gt).sum(-1)
+            if clamp is not None:
+                mse = torch.clamp(mse, max=clamp)
+            return mse
 
-        mse = torch.square(pred - gt).sum(-1)
+        if self.cfg.clamp_mse:
+            mse = 0.9 * compute_mse(pred, gt, mask, clamp=100) + 0.1 * compute_mse(pred, gt, mask)
+        else:
+            mse = compute_mse(pred, gt, mask)
+        
         mse = mse.mean(0)
         if self.cfg.rot_augment > 1:
             mse = mse.mean(0)
@@ -337,7 +355,14 @@ class StructureTrack(OpenProtTrack):
         gt = target["frame_trans"]
         mask = target["struct_supervise"]  # this does not do exactly what we want
 
-        pade = compute_pade(pred, gt, mask)
+        if self.cfg.clamp_pade:
+            pade = 0.9 * compute_pade(pred, gt, mask, clamp=10) + 0.1 * compute_pade(pred, gt, mask)
+        else:
+            pade = compute_pade(pred, gt, mask)
+
+        pade = pade.mean(0)
+        if self.cfg.rot_augment > 1:
+            pade = pade.mean(0)
         if logger:
             logger.log("struct/pade_loss", pade, mask=mask)
         return pade
@@ -370,6 +395,48 @@ class StructureTrack(OpenProtTrack):
         return nll.sum(-1)  # * mask).sum() / target["pad_mask"].sum()
     """
 
+    def compute_nape_loss(self, readout, target, eps=1e-5, logger=None):
+        pred = readout["trans"]
+        gt = target["frame_trans"]
+        mask = target["struct_supervise"] 
+
+        def compute_nape(pred, gt, mask, cutoff=15, scale=10, clamp=None):
+            gt_dmat = (gt[..., None, :] - gt[..., None, :, :]).square().sum(-1).sqrt()
+            dists_to_score = (gt_dmat < cutoff) * mask.unsqueeze(-1) * mask.unsqueeze(-2)
+    
+            aligned_pos = rmsdalign(
+                pred.unsqueeze(-3).detach(), 
+                gt.unsqueeze(-3),
+                dists_to_score
+            )
+            aligned_pos = torch.nan_to_num(aligned_pos)
+            
+            pred_pos = pred.unsqueeze(-3)
+            
+            nape = (eps + (aligned_pos - pred_pos).square().sum(-1)).sqrt()
+
+            if clamp is not None:
+                nape = torch.clamp(nape, max=clamp)
+            nape = nape / scale
+            nape = (nape * dists_to_score).sum(-1) / (dists_to_score.sum(-1) + eps)
+            
+            return nape
+
+        if self.cfg.clamp_nape:
+            nape = 0.1 * compute_nape(pred, gt, mask, cutoff=self.cfg.nape_cutoff) + 0.9 * compute_nape(pred, gt, mask, cutoff=self.cfg.nape_cutoff, clamp=10)
+        else:
+            nape = compute_nape(pred, gt, mask, cutoff=self.cfg.nape_cutoff)
+            
+        
+        nape = nape.mean(0)
+        if self.cfg.rot_augment > 1:
+            nape = nape.mean(0)
+
+        if logger:
+            logger.log("struct/nape_loss", nape, mask=mask)
+
+        return nape
+            
     def compute_fape_loss(self, readout, target, logger=None):
 
         pred_frames = Rigid(

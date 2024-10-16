@@ -7,7 +7,7 @@ from .tensor_utils import batched_gather
 
 
 # https://github.com/scipy/scipy/blob/main/scipy/spatial/transform/_rotation.pyx
-def rmsdalign(a, b, weights=None, demean=True):  # alignes B to A  # [*, N, 3]
+def rmsdalign(a, b, weights=None, demean=True, a_origin=None, b_origin=None):  # alignes B to A  # [*, N, 3]
     B = a.shape[:-2]
     N = a.shape[-2]
     if weights == None:
@@ -18,6 +18,10 @@ def rmsdalign(a, b, weights=None, demean=True):  # alignes B to A  # [*, N, 3]
         a = a - a_mean
         b_mean = (b * weights).sum(-2, keepdims=True) / weights.sum(-2, keepdims=True)
         b = b - b_mean
+    if a_origin is not None:
+        a = a - a_origin
+    if b_origin is not None:
+        b = b - b_origin
     B = torch.einsum("...ji,...jk->...ik", weights * a, b)
     u, s, vh = torch.linalg.svd(B)
 
@@ -28,6 +32,8 @@ def rmsdalign(a, b, weights=None, demean=True):  # alignes B to A  # [*, N, 3]
     C = u @ vh  # c rotates B to A
     if demean:
         return b @ C.mT + a_mean
+    elif a_origin is not None:
+        return b @ C.mT + a_origin
     else:
         return b @ C.mT
 
@@ -333,7 +339,7 @@ def compute_fape(
     return normed_error
 
 
-def compute_pade(pred_pos, gt_pos, gt_mask, eps=1e-6, cutoff=15):
+def compute_pade(pred_pos, gt_pos, gt_mask, eps=1e-6, cutoff=15, clamp=None):
     def get_dmat(pos):
         dmat = torch.square(pos[..., None, :] - pos[..., None, :, :]).sum(-1)
         return torch.sqrt(eps + dmat)
@@ -345,6 +351,9 @@ def compute_pade(pred_pos, gt_pos, gt_mask, eps=1e-6, cutoff=15):
     dmat_mask = dmat_mask * (1.0 - torch.eye(gt_mask.shape[-1], device=gt_mask.device))
 
     score = torch.abs(pred_dmat - gt_dmat)
+    if clamp is not None:
+        score = torch.clamp(score, max=clamp)
+        
     return (dmat_mask * score).sum(-1) / (eps + dmat_mask.sum(-1))  # B, L
 
 

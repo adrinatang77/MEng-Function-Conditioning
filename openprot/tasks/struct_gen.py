@@ -11,7 +11,9 @@ class StructureGeneration(OpenProtTask):
 
         ## noise EVERYTHING
 
-        if np.random.rand() < self.cfg.uniform_prob:
+        if np.random.rand() < self.cfg.max_noise_prob:
+            noise_level = 1.0
+        elif np.random.rand() < self.cfg.uniform_prob:
             noise_level = np.random.rand()
         else:
             noise_level = np.random.beta(*self.cfg.beta)
