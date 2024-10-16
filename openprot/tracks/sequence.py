@@ -7,7 +7,6 @@ from ..utils import residue_constants as rc
 from functools import partial
 
 
-
 import esm
 from esm import Alphabet
 
@@ -90,8 +89,8 @@ class SequenceTrack(OpenProtTrack):
         return esm_s, esm_z
 
     def corrupt(self, batch, noisy_batch, target, logger=None):
-        MASK_IDX = 20 # not ideal but whatever
-        
+        MASK_IDX = 20  # not ideal but whatever
+
         if self.cfg.corrupt == "mask":
             tokens = batch["aatype"]
 
@@ -124,7 +123,7 @@ class SequenceTrack(OpenProtTrack):
             return model.af2_to_esm[aa]
 
         if self.cfg.esm is not None:
-            
+
             esmaa = _af2_idx_to_esm_idx(batch["aatype"], batch["pad_mask"])
             res = model.esm(esmaa, repr_layers=range(model.esm.num_layers + 1))
             esm_s = torch.stack(

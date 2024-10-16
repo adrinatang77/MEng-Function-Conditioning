@@ -26,6 +26,8 @@ class AFDBDataset(OpenProtDataset):
         return len(self.idx)
 
     def __getitem__(self, idx):
+        if self.cfg.overfit:
+            idx = 0
         name, pdb = self.db[self.idx[idx]]
         name = name.split(".")[0]
         if self.cfg.blacklist is not None and name in self.blacklist:

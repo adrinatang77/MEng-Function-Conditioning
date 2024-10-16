@@ -33,6 +33,7 @@ class StructureGenerationEval(OpenProtEval):
         return data
 
     def run_batch(self, model, batch: dict, savedir=".", device=None, logger=None):
+
         os.makedirs(savedir, exist_ok=True)
 
         
@@ -62,14 +63,8 @@ class StructureGenerationEval(OpenProtEval):
         )
 
         prot.atom_mask[..., 1] = batch["frame_mask"].cpu().numpy()
-        prot.atom_positions[..., 1, :] = batch["frame_trans"].cpu().numpy()
+        prot.atom_positions[..., 1, :] = coords.cpu().numpy()
         ref_str = protein.to_pdb(prot)
-
-        # prot.atom_positions[..., 1, :] = coords.cpu().numpy()
-        # pred_str = protein.to_pdb(prot)
-
-        # ref_str = "\n".join(ref_str.split("\n")[1:-3])
-        # pred_str = "\n".join(pred_str.split("\n")[1:-3])
 
         name = batch["name"][0]
         with open(f"{savedir}/{name}.pdb", "w") as f:

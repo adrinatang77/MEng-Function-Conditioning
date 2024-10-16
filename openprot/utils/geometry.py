@@ -7,7 +7,9 @@ from .tensor_utils import batched_gather
 
 
 # https://github.com/scipy/scipy/blob/main/scipy/spatial/transform/_rotation.pyx
-def rmsdalign(a, b, weights=None, demean=True, a_origin=None, b_origin=None):  # alignes B to A  # [*, N, 3]
+def rmsdalign(
+    a, b, weights=None, demean=True, a_origin=None, b_origin=None
+):  # alignes B to A  # [*, N, 3]
     B = a.shape[:-2]
     N = a.shape[-2]
     if weights == None:
@@ -353,7 +355,7 @@ def compute_pade(pred_pos, gt_pos, gt_mask, eps=1e-6, cutoff=15, clamp=None):
     score = torch.abs(pred_dmat - gt_dmat)
     if clamp is not None:
         score = torch.clamp(score, max=clamp)
-        
+
     return (dmat_mask * score).sum(-1) / (eps + dmat_mask.sum(-1))  # B, L
 
 

@@ -24,7 +24,7 @@ class StructureGeneration(OpenProtTask):
         data["rots_noise"] = np.ones(L, dtype=np.float32) * noise_level
 
         data["seq_noise"] = np.ones(L, dtype=np.float32)
-            
+
         # data["torsion_noise"] = np.ones(len(data["seqres"]))
 
         # center the structures
@@ -36,5 +36,5 @@ class StructureGeneration(OpenProtTask):
         if self.cfg.random_rot:
             randrot = R.random().as_matrix()
             data["atom37"] @= randrot.T
-        
+
         return data

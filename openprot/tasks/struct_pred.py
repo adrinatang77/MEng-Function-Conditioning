@@ -21,7 +21,7 @@ class StructurePrediction(OpenProtTask):
         L = len(data["seqres"])
         data["trans_noise"] = np.ones(L, dtype=np.float32) * noise_level
         data["rots_noise"] = np.ones(L, dtype=np.float32) * noise_level
-            
+
         # data["torsion_noise"] = np.ones(len(data["seqres"]))
 
         # center the structures

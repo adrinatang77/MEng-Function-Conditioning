@@ -15,7 +15,8 @@ class OpenProtEvalManager(torch.utils.data.IterableDataset):
 
         self.evals = {}
         for name in cfg.evals:  # autoload the eval tasks
-            eval_ = autoimport(f"openprot.evals.{name}")(cfg.evals[name], cfg.features, tracks)
+            type_ = cfg.evals[name].type
+            eval_ = autoimport(f"openprot.evals.{type_}")(cfg.evals[name], cfg.features, tracks)
             self.evals[name] = eval_
 
     def process(self, data: OpenProtData):

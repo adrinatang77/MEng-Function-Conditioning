@@ -44,6 +44,8 @@ class PDBDataset(OpenProtDataset):
             return len(self.df)
 
     def __getitem__(self, idx: int):
+        if self.cfg.overfit:
+            idx = 0
         if self.cfg.clusters:
             clus = self.clusters[idx]
             name = np.random.choice(clus)

@@ -142,8 +142,7 @@ class StructureTrack(OpenProtTrack):
 
         # add noise
         noisy, target_tensor = self.diffusion.add_noise(
-            batch["frame_trans"], 
-            batch["trans_noise"]
+            batch["frame_trans"], batch["trans_noise"]
         )
         noisy_batch["frame_trans"] = noisy
         target["frame_trans"] = target_tensor
@@ -258,7 +257,6 @@ class StructureTrack(OpenProtTrack):
 
         loss = 0
 
-
         if "mse" in self.cfg.losses:
             loss = loss + self.cfg.losses["mse"] * self.compute_mse_loss(
                 readout, target, logger=logger
@@ -279,7 +277,6 @@ class StructureTrack(OpenProtTrack):
                 readout, target, logger=logger
             )
 
-        
         if "fape" in self.cfg.losses:
             loss = loss + self.cfg.losses["fape"] * self.compute_fape_loss(
                 readout, target, logger=logger
@@ -297,9 +294,9 @@ class StructureTrack(OpenProtTrack):
         if self.cfg.readout_pairwise:
             bins = torch.linspace(2.3125, 22, 64, device=readout["trans"].device)
             idx = readout["pairwise"].argmax(-1)
-    
+
             distmat = bins[idx] - 0.3125
-    
+
             dmat_lddt = compute_lddt(
                 distmat,
                 target["frame_trans"],
@@ -307,7 +304,7 @@ class StructureTrack(OpenProtTrack):
                 pred_is_dmat=True,
             )
             if logger:
-                logger.log("struct/dmat_lddt", dmat_lddt)    
+                logger.log("struct/dmat_lddt", dmat_lddt)
 
         mask = target["struct_supervise"]
 
@@ -315,7 +312,6 @@ class StructureTrack(OpenProtTrack):
             logger.log("struct/toks_sup", mask.sum())
             logger.log("struct/loss", loss, mask=mask)
             logger.log("struct/lddt", lddt)
-            
 
         loss = (loss * mask).sum() / target["pad_mask"].sum()
 
@@ -329,7 +325,7 @@ class StructureTrack(OpenProtTrack):
         soft_lddt = compute_lddt(pred, gt, mask, soft=True, reduce=(-1,))
 
         soft_lddt = soft_lddt.mean(0)
-        
+
         if logger:
             logger.log("struct/lddt_loss", 1 - soft_lddt, mask=mask)
         return 1 - soft_lddt
@@ -350,10 +346,12 @@ class StructureTrack(OpenProtTrack):
             return mse
 
         if self.cfg.clamp_mse:
-            mse = 0.9 * compute_mse(pred, gt, mask, clamp=100) + 0.1 * compute_mse(pred, gt, mask)
+            mse = 0.9 * compute_mse(pred, gt, mask, clamp=100) + 0.1 * compute_mse(
+                pred, gt, mask
+            )
         else:
             mse = compute_mse(pred, gt, mask)
-        
+
         mse = mse.mean(0)
         if self.cfg.rot_augment > 1:
             mse = mse.mean(0)
@@ -367,7 +365,9 @@ class StructureTrack(OpenProtTrack):
         mask = target["struct_supervise"]  # this does not do exactly what we want
 
         if self.cfg.clamp_pade:
-            pade = 0.9 * compute_pade(pred, gt, mask, clamp=10) + 0.1 * compute_pade(pred, gt, mask)
+            pade = 0.9 * compute_pade(pred, gt, mask, clamp=10) + 0.1 * compute_pade(
+                pred, gt, mask
+            )
         else:
             pade = compute_pade(pred, gt, mask)
 
@@ -409,36 +409,39 @@ class StructureTrack(OpenProtTrack):
     def compute_nape_loss(self, readout, target, eps=1e-5, logger=None):
         pred = readout["trans"]
         gt = target["frame_trans"]
-        mask = target["struct_supervise"] 
+        mask = target["struct_supervise"]
 
         def compute_nape(pred, gt, mask, cutoff=15, scale=10, clamp=None):
             gt_dmat = (gt[..., None, :] - gt[..., None, :, :]).square().sum(-1).sqrt()
-            dists_to_score = (gt_dmat < cutoff) * mask.unsqueeze(-1) * mask.unsqueeze(-2)
-    
+            dists_to_score = (
+                (gt_dmat < cutoff) * mask.unsqueeze(-1) * mask.unsqueeze(-2)
+            )
+
             aligned_pos = rmsdalign(
-                pred.unsqueeze(-3).detach(), 
-                gt.unsqueeze(-3),
-                dists_to_score
+                pred.unsqueeze(-3).detach(), gt.unsqueeze(-3), dists_to_score
             )
             aligned_pos = torch.nan_to_num(aligned_pos)
-            
+
             pred_pos = pred.unsqueeze(-3)
-            
+
             nape = (eps + (aligned_pos - pred_pos).square().sum(-1)).sqrt()
 
             if clamp is not None:
                 nape = torch.clamp(nape, max=clamp)
             nape = nape / scale
             nape = (nape * dists_to_score).sum(-1) / (dists_to_score.sum(-1) + eps)
-            
+
             return nape
 
         if self.cfg.clamp_nape:
-            nape = 0.1 * compute_nape(pred, gt, mask, cutoff=self.cfg.nape_cutoff) + 0.9 * compute_nape(pred, gt, mask, cutoff=self.cfg.nape_cutoff, clamp=10)
+            nape = 0.1 * compute_nape(
+                pred, gt, mask, cutoff=self.cfg.nape_cutoff
+            ) + 0.9 * compute_nape(
+                pred, gt, mask, cutoff=self.cfg.nape_cutoff, clamp=10
+            )
         else:
             nape = compute_nape(pred, gt, mask, cutoff=self.cfg.nape_cutoff)
-            
-        
+
         nape = nape.mean(0)
         if self.cfg.rot_augment > 1:
             nape = nape.mean(0)
@@ -447,7 +450,7 @@ class StructureTrack(OpenProtTrack):
             logger.log("struct/nape_loss", nape, mask=mask)
 
         return nape
-            
+
     def compute_fape_loss(self, readout, target, logger=None):
 
         pred_frames = Rigid(
