@@ -262,9 +262,10 @@ class OpenProtModel(nn.Module):
         super().__init__()
         self.cfg = cfg
 
-        self.pairwise_positional_embedding = RelativePosition(
-            cfg.position_bins, cfg.pairwise_dim
-        )
+        if cfg.pairwise_pos_emb:
+            self.pairwise_positional_embedding = RelativePosition(
+                cfg.position_bins, cfg.pairwise_dim
+            )
 
         ipa_args = dict(
             ipa_attn=cfg.ipa_attn,
@@ -330,7 +331,9 @@ class OpenProtModel(nn.Module):
         B, L, _ = x.shape
         residx = torch.arange(L, device=x.device)[None].expand(B, -1)
         mask = inp["pad_mask"]
-        z = inp.get("z", 0) + self.pairwise_positional_embedding(residx, mask=mask)
+        z = inp.get("z", 0)
+        if self.cfg.pairwise_pos_emb:
+            self.pairwise_positional_embedding(residx, mask=mask)
 
         rots = inp.get("rots", None)
         trans = inp.get("trans", None)

@@ -14,6 +14,7 @@ from ..utils.rotation_conversions import axis_angle_to_matrix, random_rotations
 from ..utils.rigid_utils import Rigid, Rotation
 from ..utils import residue_constants as rc
 from ..model.positions import PositionEmbedder, PositionDecoder, PairwiseProjectionHead
+from ..utils import diffusion
 from functools import partial
 import numpy as np
 import math
@@ -77,6 +78,9 @@ def torus_logZ(x):  # x = 1 / sigma^2
 
 class StructureTrack(OpenProtTrack):
 
+    def setup(self):
+        self.diffusion = getattr(diffusion, self.cfg.diffusion.type)(self.cfg.diffusion)
+
     def tokenize(self, data):
 
         frames, frame_mask = atom37_to_frames(data["atom37"], data["atom37_mask"])
@@ -95,7 +99,8 @@ class StructureTrack(OpenProtTrack):
     def add_modules(self, model):
         model.frame_mask = nn.Parameter(torch.zeros(model.cfg.dim))
         model.frame_null = nn.Parameter(torch.zeros(model.cfg.dim))
-        model.pairwise_out = nn.Linear(model.cfg.pairwise_dim, 64)
+        if self.cfg.readout_pairwise:
+            model.pairwise_out = nn.Linear(model.cfg.pairwise_dim, 64)
         if self.cfg.embed_trans:
             model.trans_in = nn.Linear(3, model.cfg.dim)
         if self.cfg.embed_pairwise:
@@ -127,22 +132,24 @@ class StructureTrack(OpenProtTrack):
         ]:
             noisy_batch[key] = batch[key]
 
-        for key in [
-            "frame_trans",
-            "frame_rots",
-        ]:
-            target[key] = batch[key]
+        # for key in [
+        #     "frame_trans",
+        #     "frame_rots",
+        # ]:
+        #     target[key] = batch[key]
 
         target["struct_supervise"] = batch["frame_mask"]
 
+        # add noise
+        noisy, target_tensor = self.diffusion.add_noise(
+            batch["frame_trans"], 
+            batch["trans_noise"]
+        )
+        noisy_batch["frame_trans"] = noisy
+        target["frame_trans"] = target_tensor
+
         dev = batch["frame_trans"].device
         B, L, _ = batch["frame_trans"].shape
-
-        # add noise
-        sigma = 15
-        noise = torch.randn(B, L, 3, device=dev) * sigma
-        t = batch["trans_noise"][..., None]
-        noisy_batch["frame_trans"] = t * noise + (1 - t) * batch["frame_trans"]
 
         if self.cfg.rot_augment > 1:
             randrots = random_rotations(self.cfg.rot_augment, device=dev)
@@ -244,7 +251,8 @@ class StructureTrack(OpenProtTrack):
             readout["trans"] = readout["trans"][-1:]
             readout["rots"] = readout["rots"][-1:]
 
-        readout["pairwise"] = model.pairwise_out(out["z"])
+        if self.cfg.readout_pairwise:
+            readout["pairwise"] = model.pairwise_out(out["z"])
 
     def compute_loss(self, readout, target, logger=None):
 
@@ -286,17 +294,20 @@ class StructureTrack(OpenProtTrack):
             readout["trans"][-1], target["frame_trans"], target["struct_supervise"]
         )
 
-        bins = torch.linspace(2.3125, 22, 64, device=readout["trans"].device)
-        idx = readout["pairwise"].argmax(-1)
-
-        distmat = bins[idx] - 0.3125
-
-        dmat_lddt = compute_lddt(
-            distmat,
-            target["frame_trans"],
-            target["struct_supervise"],
-            pred_is_dmat=True,
-        )
+        if self.cfg.readout_pairwise:
+            bins = torch.linspace(2.3125, 22, 64, device=readout["trans"].device)
+            idx = readout["pairwise"].argmax(-1)
+    
+            distmat = bins[idx] - 0.3125
+    
+            dmat_lddt = compute_lddt(
+                distmat,
+                target["frame_trans"],
+                target["struct_supervise"],
+                pred_is_dmat=True,
+            )
+            if logger:
+                logger.log("struct/dmat_lddt", dmat_lddt)    
 
         mask = target["struct_supervise"]
 
@@ -304,7 +315,7 @@ class StructureTrack(OpenProtTrack):
             logger.log("struct/toks_sup", mask.sum())
             logger.log("struct/loss", loss, mask=mask)
             logger.log("struct/lddt", lddt)
-            logger.log("struct/dmat_lddt", dmat_lddt)
+            
 
         loss = (loss * mask).sum() / target["pad_mask"].sum()
 

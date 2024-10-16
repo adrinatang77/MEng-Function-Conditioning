@@ -1,6 +1,7 @@
 from .task import OpenProtTask
 import numpy as np
 from ..utils import residue_constants as rc
+from scipy.spatial.transform import Rotation as R
 
 
 class StructureGeneration(OpenProtTask):
@@ -17,12 +18,13 @@ class StructureGeneration(OpenProtTask):
             noise_level = np.random.rand()
         else:
             noise_level = np.random.beta(*self.cfg.beta)
-        data["trans_noise"] = (
-            np.ones(len(data["seqres"]), dtype=np.float32) * noise_level
-        )
-        data["rots_noise"] = (
-            np.ones(len(data["seqres"]), dtype=np.float32) * noise_level
-        )
+
+        L = len(data["seqres"])
+        data["trans_noise"] = np.ones(L, dtype=np.float32) * noise_level
+        data["rots_noise"] = np.ones(L, dtype=np.float32) * noise_level
+
+        data["seq_noise"] = np.ones(L, dtype=np.float32)
+            
         # data["torsion_noise"] = np.ones(len(data["seqres"]))
 
         # center the structures
@@ -31,4 +33,8 @@ class StructureGeneration(OpenProtTask):
         com = (pos * mask).sum(-2) / (mask.sum(-2) + eps)
         data["atom37"] -= com
 
+        if self.cfg.random_rot:
+            randrot = R.random().as_matrix()
+            data["atom37"] @= randrot.T
+        
         return data

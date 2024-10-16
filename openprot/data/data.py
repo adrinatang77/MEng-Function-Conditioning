@@ -4,10 +4,11 @@ from abc import abstractmethod
 
 
 class OpenProtDataset(torch.utils.data.Dataset):
-    def __init__(self, cfg, feats=None):
+    def __init__(self, cfg, feats=None, tracks=None):
         super().__init__()
         self.cfg = cfg
         self.feats = feats
+        self.tracks = tracks
         self.setup()
 
     @abstractmethod

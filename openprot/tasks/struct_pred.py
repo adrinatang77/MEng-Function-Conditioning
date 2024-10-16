@@ -10,8 +10,18 @@ class StructurePrediction(OpenProtTask):
             data.crop(crop)
 
         ## noise EVERYTHING
-        data["trans_noise"] = np.ones(len(data["seqres"]), dtype=np.float32)
-        data["rots_noise"] = np.ones(len(data["seqres"]), dtype=np.float32)
+
+        if np.random.rand() < self.cfg.max_noise_prob:
+            noise_level = 1.0
+        elif np.random.rand() < self.cfg.uniform_prob:
+            noise_level = np.random.rand()
+        else:
+            noise_level = np.random.beta(*self.cfg.beta)
+
+        L = len(data["seqres"])
+        data["trans_noise"] = np.ones(L, dtype=np.float32) * noise_level
+        data["rots_noise"] = np.ones(L, dtype=np.float32) * noise_level
+            
         # data["torsion_noise"] = np.ones(len(data["seqres"]))
 
         # center the structures

@@ -7,6 +7,10 @@ from ..data.data import OpenProtData
 class OpenProtTrack:
     def __init__(self, cfg):
         self.cfg = cfg
+        self.setup()
+
+    def setup(self):
+        pass
 
     @abstractmethod
     def tokenize(self, data: OpenProtData):
