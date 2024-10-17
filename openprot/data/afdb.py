@@ -18,16 +18,20 @@ class AFDBDataset(OpenProtDataset):
                 sep="\t",
             )
             self.blacklist = set(blacklist["target"])
-        self.annotations = dict(np.load(self.cfg.annotations))
+        
         self.idx = np.arange(len(self.db))
-        self.idx = self.idx[self.annotations["lddt"] > self.cfg.lddt_thresh]
+        self.annotations = pd.read_pickle(self.cfg.annotations)
+        if self.cfg.plddt_thresh is not None:
+            self.idx = self.idx[self.annotations["plddt"] > self.cfg.plddt_thresh]
+
+        if self.cfg.index is not None:
+            names = [f"{s.strip()}.cif.gz" for s in open(self.cfg.index)]
+            self.idx = self.annotations.reset_index().set_index('name').loc[names].index
 
     def __len__(self):
         return len(self.idx)
 
     def __getitem__(self, idx):
-        if self.cfg.overfit:
-            idx = 0
         name, pdb = self.db[self.idx[idx]]
         name = name.split(".")[0]
         if self.cfg.blacklist is not None and name in self.blacklist:

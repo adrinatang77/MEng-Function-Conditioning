@@ -70,8 +70,9 @@ class GaussianFM(Diffusion):
             g = cfg.sde_weight / (1 - t2 + 0.01)
             gamma = cfg.temp_factor
             dx = v * dt + g * s * dt + np.sqrt(2 * g * gamma * dt) * noise
+            
             x = x + dx
-
+            
         return x
 
 

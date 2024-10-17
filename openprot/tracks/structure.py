@@ -141,6 +141,7 @@ class StructureTrack(OpenProtTrack):
         target["struct_supervise"] = batch["frame_mask"]
 
         # add noise
+        
         noisy, target_tensor = self.diffusion.add_noise(
             batch["frame_trans"], batch["trans_noise"]
         )

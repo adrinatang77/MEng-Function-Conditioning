@@ -7,13 +7,12 @@ parser.add_argument("--num_workers", type=int, default=1)
 args = parser.parse_args()
 
 import numpy as np
+import pandas as pd
 from collections import defaultdict
 
-arrs = defaultdict(list)
+dfs = []
 for i in range(args.num_workers):
-    npz = dict(np.load(f"{args.dir}/tmp_{i}.npz"))
-    for key in npz:
-        arrs[key].append(npz[key])
+    df = pd.read_pickle(f"{args.dir}/{i}.pkl")
+    dfs.append(df)
 
-arrs = {key: np.stack(arrs[key]).sum(0) for key in arrs}
-np.savez(args.out, **arrs)
+pd.concat(dfs).sort_index().to_pickle(args.out)

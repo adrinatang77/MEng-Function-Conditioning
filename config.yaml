@@ -1,15 +1,15 @@
 ckpt: null # eventually this will control resuming runs
 pretrained: null # workdir/nodiff-relpos-pade/last.ckpt # load weights from here first
-validate: false # if true, only validate the model, don't train
+validate: true # if true, only validate the model, don't train
 logger:
     # set to true to log to neptune.ai
-    neptune: true
+    neptune: false
     # please change "test" to something unique to your task
     project: openprot/diffusion
     # will log to workdir and neptune.ai with this name
-    name: test-diffusion
+    name: struct-gen-fs
     # if not null, will duplicate stdout and stderr to workdir/{name}/{logfile}
-    logfile: std.out
+    logfile: null # std.out
     # if null, will log every epoch, otherwise every this number of steps
     train_log_freq: 10
     val_log_freq: null 
@@ -62,14 +62,14 @@ datasets:
         cutoff: 2018-05-01
         clusters: /scratch/projects/cgai/openprot/data/pdb_clusters
         blacklist: /scratch/projects/cgai/openprot/cameo_pdb_blacklist.tsv
-        overfit: false
     AFDBDataset:
         #path: /data/cb/scratch/datasets/afdb_swissprot_v4/afdb_swissprot_v4
         path: /scratch/projects/cgai/openprot/data/afdb_rep_v4/afdb_rep_v4
-        annotations: /scratch/projects/cgai/openprot/data/afdb_rep_v4.npz
-        blacklist: /scratch/projects/cgai/openprot/cameo_afdb_blacklist.tsv
-        lddt_thresh: 70
-        overfit: false
+        annotations: /scratch/projects/cgai/openprot/data/afdb_rep_v4.pkl.gz
+        blacklist: null # /scratch/projects/cgai/openprot/cameo_afdb_blacklist.tsv
+        plddt_thresh: null
+        index: /scratch/projects/cgai/openprot/afdbreps_l-256_plddt_80.txt
+        
     # UnirefDataset:
     #     #path: /data/cb/scratch/datasets/uniref50.fasta
     #     #index: /data/cb/scratch/datasets/uniref50.index
@@ -117,14 +117,14 @@ evals:
         num_samples: 10
         sample_length: 256
         nsteps: 40
-        sde_weight: 1.0
+        sde_weight: 0.0
         temp_factor: 0.3
     struct_gen_sde:
         type: StructureGenerationEval
         num_samples: 10
         sample_length: 256
         nsteps: 40
-        sde_weight: 0.0
+        sde_weight: 1.0
         temp_factor: 0.3
         
     

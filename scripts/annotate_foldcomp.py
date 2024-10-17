@@ -10,17 +10,21 @@ args = parser.parse_args()
 
 import foldcomp, tqdm
 import numpy as np
+import pandas as pd
 from openprot.utils import protein
 
 db = foldcomp.open(args.db)
 
-lddt = np.zeros(len(db))
-lens = np.zeros(len(db))
+df = []
 
 for i in tqdm.trange(args.worker_id, len(db), args.num_workers):
     name, pdb = db[i]
     prot = protein.from_pdb_string(pdb)
-    lddt[i] = prot.b_factors[:, 1].mean()
-    lens[i] = len(prot.aatype)
+    df.append({
+        'index': i,
+        'name': name,
+        'plddt': prot.b_factors[:, 1].mean(),
+        'length': len(prot.aatype)
+    })
 
-np.savez(args.out, lddt=lddt.astype(np.float16), lens=lens.astype(np.int16))
+pd.DataFrame(df).set_index('index').to_pickle(args.out)
