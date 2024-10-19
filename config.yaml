@@ -1,15 +1,16 @@
-ckpt: null # eventually this will control resuming runs
+ckpt: null # workdir/struct-gen-fs/last.ckpt
 pretrained: null # workdir/nodiff-relpos-pade/last.ckpt # load weights from here first
-validate: true # if true, only validate the model, don't train
+validate: false # if true, only validate the model, don't train
 logger:
     # set to true to log to neptune.ai
     neptune: false
+    run_id: null  
     # please change "test" to something unique to your task
     project: openprot/diffusion
     # will log to workdir and neptune.ai with this name
-    name: struct-gen-fs
+    name: diff2-velocity
     # if not null, will duplicate stdout and stderr to workdir/{name}/{logfile}
-    logfile: null # std.out
+    logfile: std.out
     # if null, will log every epoch, otherwise every this number of steps
     train_log_freq: 10
     val_log_freq: null 
@@ -26,13 +27,13 @@ trainer:
     num_sanity_val_steps: 0
     gradient_clip_val: 1.0
     accumulate_grad_batches: 1
-    val_check_interval: 1250
+    val_check_interval: 5000
     check_val_every_n_epoch: 1
     logger: false
 
 # custom args to OpenProtDataset and elsewhere
 data: 
-    num_workers: 8
+    num_workers: 16
     batch: 32
     crop: 256
     seed: 137
@@ -95,11 +96,11 @@ tasks:
         random_rot: true
         datasets:
             AFDBDataset:
-                fraction: 0.75
+                fraction: 1.0
                 start: 0
                 seed: 142
             PDBDataset:
-                fraction: 0.25
+                fraction: 0.0
                 start: 0
                 seed: 142
             
@@ -116,16 +117,18 @@ evals:
         type: StructureGenerationEval
         num_samples: 10
         sample_length: 256
-        nsteps: 40
+        nsteps: 200
         sde_weight: 0.0
+        sched_type: 'log'
         temp_factor: 0.3
     struct_gen_sde:
         type: StructureGenerationEval
         num_samples: 10
         sample_length: 256
-        nsteps: 40
-        sde_weight: 1.0
-        temp_factor: 0.3
+        nsteps: 200
+        sched_type: 'log'
+        sde_weight: 10.0
+        temp_factor: 0.5
         
     
 
@@ -151,12 +154,13 @@ tracks:
         clamp_nape: true
         clamp_mse: false
         nape_cutoff: 15
+        weighted_mse: true
         losses:
             #pade: 0.0
             #fape: 0.0
             #lddt: 0.0
             #distogram: 0.0
-            mse: 0.001
+            mse: 1.0
             #nape: 0.0
         diffusion:
             type: GaussianFM
@@ -172,7 +176,7 @@ tracks:
         loss_weight: 0.0
 
 model: # custom args
-    checkpoint: true
+    checkpoint: false
     dim: 1024
     pairwise_dim: 128
     heads: 16

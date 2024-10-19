@@ -42,6 +42,7 @@ trainer = pl.Trainer(
             dirpath=model_dir,
             every_n_train_steps=cfg.logger.save_freq,
             filename="last",
+            enable_version_counter=False,
         ),
         ModelSummary(max_depth=2),
     ],

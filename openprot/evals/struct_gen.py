@@ -23,8 +23,8 @@ class StructureGenerationEval(OpenProtEval):
     def __getitem__(self, idx):
         L = self.cfg.sample_length
         data = self.make_data(
-            name=f'sample{idx}',
-            seqres='X'*L,
+            name=f"sample{idx}",
+            seqres="A" * L,
             seq_mask=np.zeros(L, dtype=np.float32),
             seq_noise=np.ones(L, dtype=np.float32),
             atom37=np.random.randn(L, 37, 3).astype(np.float32) * 0.0,
@@ -36,12 +36,11 @@ class StructureGenerationEval(OpenProtEval):
 
         os.makedirs(savedir, exist_ok=True)
 
-        
         noisy_batch = batch.copy("name", "pad_mask")
         for track in model.tracks.values():
             track.corrupt(batch, noisy_batch, {})
 
-        diffusion = self.tracks['StructureTrack'].diffusion
+        diffusion = self.tracks["StructureTrack"].diffusion
 
         def model_func(pos, t):
             noisy_batch["trans_noise"] = torch.ones_like(noisy_batch["trans_noise"]) * t
@@ -49,9 +48,11 @@ class StructureGenerationEval(OpenProtEval):
             _, readout = model.forward(noisy_batch)
             return readout["trans"][-1]
 
-        samps = diffusion.inference(model_func, cfg=self.cfg, mask=noisy_batch["pad_mask"])
-            
-        coords = samps[-1]
+        samps = diffusion.inference(
+            model_func, cfg=self.cfg, mask=noisy_batch["pad_mask"], return_traj=True
+        )
+
+        coords = samps[-1, -1]
         L = batch["frame_trans"].shape[1]
         atom37 = np.zeros((L, 37, 3))
         prot = protein.Protein(
@@ -64,9 +65,20 @@ class StructureGenerationEval(OpenProtEval):
         )
 
         prot.atom_mask[..., 1] = batch["frame_mask"].cpu().numpy()
+
         prot.atom_positions[..., 1, :] = coords.cpu().numpy()
         ref_str = protein.to_pdb(prot)
 
         name = batch["name"][0]
         with open(f"{savedir}/{name}.pdb", "w") as f:
             f.write(ref_str)
+
+        strs = []
+        for coords in samps.squeeze(1):
+            prot.atom_positions[..., 1, :] = coords.cpu().numpy()
+            str_ = protein.to_pdb(prot)
+            str_ = "\n".join(str_.split("\n")[1:-3])
+            strs.append(str_)
+
+        with open(f"{savedir}/{name}_traj.pdb", "w") as f:
+            f.write("\nENDMDL\nMODEL\n".join(strs))

@@ -138,10 +138,11 @@ class StructureTrack(OpenProtTrack):
         # ]:
         #     target[key] = batch[key]
 
+        target["trans_noise"] = batch["trans_noise"]
         target["struct_supervise"] = batch["frame_mask"]
 
         # add noise
-        
+
         noisy, target_tensor = self.diffusion.add_noise(
             batch["frame_trans"], batch["trans_noise"]
         )
@@ -331,17 +332,21 @@ class StructureTrack(OpenProtTrack):
             logger.log("struct/lddt_loss", 1 - soft_lddt, mask=mask)
         return 1 - soft_lddt
 
-    def compute_mse_loss(self, readout, target, clamp=None, logger=None):
+    def compute_mse_loss(self, readout, target, logger=None, eps=1e-5):
 
         pred = readout["trans"]
         gt = target["frame_trans"]
         mask = target["struct_supervise"]
+        t = target["trans_noise"]
 
         def compute_mse(pred, gt, mask, clamp=None):
             if self.cfg.aligned_mse:
                 gt = rmsdalign(pred.detach(), gt, mask, demean=self.cfg.demean)
                 gt = torch.nan_to_num(gt, 0.0)
             mse = torch.square(pred - gt).sum(-1)
+
+            if self.cfg.weighted_mse:
+                mse = mse / (1 + self.cfg.diffusion.prior_sigma**2 * t**2)
             if clamp is not None:
                 mse = torch.clamp(mse, max=clamp)
             return mse

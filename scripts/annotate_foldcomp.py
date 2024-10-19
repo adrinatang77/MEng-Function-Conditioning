@@ -20,11 +20,13 @@ df = []
 for i in tqdm.trange(args.worker_id, len(db), args.num_workers):
     name, pdb = db[i]
     prot = protein.from_pdb_string(pdb)
-    df.append({
-        'index': i,
-        'name': name,
-        'plddt': prot.b_factors[:, 1].mean(),
-        'length': len(prot.aatype)
-    })
+    df.append(
+        {
+            "index": i,
+            "name": name,
+            "plddt": prot.b_factors[:, 1].mean(),
+            "length": len(prot.aatype),
+        }
+    )
 
-pd.DataFrame(df).set_index('index').to_pickle(args.out)
+pd.DataFrame(df).set_index("index").to_pickle(args.out)

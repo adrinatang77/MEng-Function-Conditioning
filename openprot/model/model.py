@@ -310,7 +310,7 @@ class OpenProtModel(nn.Module):
             heads=cfg.heads,
             ff_expand=cfg.ff_expand,
             pairwise_dim=cfg.pairwise_dim,
-            pair_bias=True,
+            pair_bias=cfg.ipa_pair_bias,
             pair_values=cfg.ipa_pair_values,
             adaLN=cfg.sm_adaLN,
             **ipa_args,
