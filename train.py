@@ -7,6 +7,7 @@ args = parser.parse_args()
 from omegaconf import OmegaConf
 
 cfg = OmegaConf.load(args.config)
+os.environ["CONFIG"] = args.config
 
 os.environ["MODEL_DIR"] = model_dir = os.path.join("workdir", cfg.logger.name)
 os.makedirs(model_dir, exist_ok=True)

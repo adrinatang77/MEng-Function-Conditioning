@@ -3,12 +3,12 @@ pretrained: null # workdir/nodiff-relpos-pade/last.ckpt # load weights from here
 validate: false # if true, only validate the model, don't train
 logger:
     # set to true to log to neptune.ai
-    neptune: false
+    neptune: true
     run_id: null  
     # please change "test" to something unique to your task
     project: openprot/diffusion
     # will log to workdir and neptune.ai with this name
-    name: diff2-velocity
+    name: diff2-target-align
     # if not null, will duplicate stdout and stderr to workdir/{name}/{logfile}
     logfile: std.out
     # if null, will log every epoch, otherwise every this number of steps
@@ -148,7 +148,7 @@ tracks:
         rot_augment: 1
         embed_pairwise: false
         
-        aligned_mse: false
+        aligned_mse: true
         demean: true
         clamp_pade: false
         clamp_nape: true
@@ -167,8 +167,9 @@ tracks:
             prior_sigma: 15.0
             center_noise: false
             center_pos: true
-            train_align: false
-            prediction: "velocity"
+            train_align: true
+            inf_align: true
+            prediction: "target"
     SequenceTrack:
         esm: null # esm2_3B # esm2_650M # esm2_8M_270K
         corrupt: mask

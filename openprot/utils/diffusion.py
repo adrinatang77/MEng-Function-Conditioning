@@ -1,7 +1,7 @@
 import torch
 import numpy as np
 from abc import abstractmethod
-
+from ..utils.geometry import rmsdalign
 
 class Diffusion:
 
@@ -85,6 +85,10 @@ class GaussianFM(Diffusion):
                 v = model(x, t2)
             elif self.cfg.prediction == "target":
                 x0 = model(x, t2)
+
+                if self.cfg.inf_align:
+                    x0 = rmsdalign(x, x0, mask)
+                    
                 v = (x0 - x) / t2
 
             # score = ((1-t)x0 - x_t) / t^2 * sigma^2

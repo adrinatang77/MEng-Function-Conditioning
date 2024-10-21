@@ -140,7 +140,7 @@ class Logger:
             project=self.cfg.project,
             with_id=self.cfg.run_id,
             name=os.environ["MODEL_DIR"].split("/")[1],
-            source_files=["config.yaml"],
+            source_files=[os.environ["CONFIG"]],
         )
 
     @rank_zero_only
