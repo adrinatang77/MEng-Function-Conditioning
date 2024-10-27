@@ -21,6 +21,8 @@ class Diffusion:
     def compute_loss(self, pred, gt, t, mask=None):
         NotImplemented
 
+def sigmoid(x):
+    return 1/(1+np.exp(-x))
 
 def masked_center(x, mask=None):
     if mask is None:
@@ -104,6 +106,8 @@ class GaussianFM(Diffusion):
 
             g = cfg.sde_weight * t2 * self.cfg.prior_sigma**2
 
+            g *= sigmoid((t2 - cfg.sde_cutoff_time) / cfg.sde_cutoff_width)
+            
             gamma = cfg.temp_factor
             dx = v * dt + g * s * dt + np.sqrt(2 * g * gamma * dt) * noise
 

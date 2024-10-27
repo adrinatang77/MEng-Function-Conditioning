@@ -276,7 +276,6 @@ class OpenProtModel(nn.Module):
             embed_rots=cfg.embed_rots,
             no_qk_points=cfg.no_qk_points,
             no_v_points=cfg.no_v_points,
-            frame_update=cfg.frame_update,
             update_rots=cfg.update_rots,
             readout_rots=cfg.readout_rots,
             rots_type=cfg.rots_type,
@@ -313,6 +312,7 @@ class OpenProtModel(nn.Module):
             pair_bias=cfg.ipa_pair_bias,
             pair_values=cfg.ipa_pair_values,
             adaLN=cfg.sm_adaLN,
+            frame_update=cfg.frame_update,
             **ipa_args,
         )
         if cfg.separate_ipa_blocks:

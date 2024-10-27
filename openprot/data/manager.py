@@ -28,7 +28,6 @@ class OpenProtDatasetManager(torch.utils.data.IterableDataset):
             self.tasks[name] = task
 
         self.task_probs = np.array([cfg.tasks[name].fraction for name in cfg.tasks])
-        assert self.task_probs.sum() == 1
 
         self.tracks = tracks
 
@@ -51,6 +50,7 @@ class OpenProtDatasetManager(torch.utils.data.IterableDataset):
             rank = self.rank * worker_info.num_workers + worker_info.id
 
         rng = np.random.default_rng(seed=self.cfg.data.seed)
+        assert self.task_probs.sum() == 1
 
         i = 0
         while True:
