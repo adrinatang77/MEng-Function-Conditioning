@@ -192,7 +192,7 @@ class OpenProtTransformerBlock(nn.Module):
             torch.nn.init.zeros_(self.sequence_to_pair.o_proj.weight)
             torch.nn.init.zeros_(self.sequence_to_pair.o_proj.bias)
 
-    def forward(self, x, z, rots, trans, mask, x_cond=None):
+    def forward(self, x, z, rots, trans, mask, x_cond=None, update_coeff=None):
 
         ### no pair2sequence
 
@@ -243,6 +243,8 @@ class OpenProtTransformerBlock(nn.Module):
                 rots = rots @ rot_update.mT
             else:
                 vec = self.linear_frame_update(x)
+                if update_coeff is not None:
+                    vec = vec * update_coeff[...,None]
                 trans = trans + vec
 
         if self.readout_rots:
@@ -331,13 +333,14 @@ class OpenProtModel(nn.Module):
         B, L, _ = x.shape
         residx = torch.arange(L, device=x.device)[None].expand(B, -1)
         mask = inp["pad_mask"]
-        z = inp.get("z", 0)
+        z = inp.get("z", 0) # this line needs to be fixed
         if self.cfg.pairwise_pos_emb:
-            self.pairwise_positional_embedding(residx, mask=mask)
+            z = z + self.pairwise_positional_embedding(residx, mask=mask)
 
         rots = inp.get("rots", None)
         trans = inp.get("trans", None)
         x_cond = inp.get("x_cond", None)
+        update_coeff = inp.get("update_coeff", None)
 
         for block in self.blocks:
             if block.pair_updates and self.cfg.checkpoint:
@@ -376,7 +379,7 @@ class OpenProtModel(nn.Module):
             else:
                 block = self.ipa_block
 
-            x, z_, rots, trans = block(x, z_, rots, trans, mask, x_cond)
+            x, z_, rots, trans = block(x, z_, rots, trans, mask, x_cond, update_coeff)
             all_rots.append(rots)
             all_trans.append(trans)
 

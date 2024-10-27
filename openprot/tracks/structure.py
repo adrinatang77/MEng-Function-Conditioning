@@ -215,6 +215,8 @@ class StructureTrack(OpenProtTrack):
             model.frame_mask[None, None],
             0.0,
         )
+        if self.cfg.update_coeff:
+            inp["update_coeff"] = batch["trans_noise"]
 
         inp["x_cond"] += sinusoidal_embedding(
             batch["trans_noise"], model.cfg.dim // 2, 1, 0.01
@@ -346,7 +348,10 @@ class StructureTrack(OpenProtTrack):
             mse = torch.square(pred - gt).sum(-1)
 
             if self.cfg.weighted_mse:
-                mse = mse / (1 + self.cfg.diffusion.prior_sigma**2 * t**2)
+                if self.cfg.soft_weighted_mse:
+                    mse = mse / (1 + self.cfg.diffusion.prior_sigma**2 * t**2)
+                else:
+                    mse = mse / (eps + self.cfg.diffusion.prior_sigma**2 * t**2)
             if clamp is not None:
                 mse = torch.clamp(mse, max=clamp)
             return mse
