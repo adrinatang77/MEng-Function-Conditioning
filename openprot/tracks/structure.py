@@ -194,7 +194,7 @@ class StructureTrack(OpenProtTrack):
         # inp["trans"] = torch.where(
         #     embed_mask[..., None], batch["frame_trans"], 0.0
         # )
-        inp["trans"] = batch["frame_trans"]
+        inp["trans"] = batch["frame_trans"] 
         inp["rots"] = batch["frame_rots"]
 
         if self.cfg.embed_rots:
@@ -256,8 +256,6 @@ class StructureTrack(OpenProtTrack):
 
         if self.cfg.readout_pairwise:
             readout["pairwise"] = model.pairwise_out(out["z"])
-
-        readout["trans"] *= self.cfg.trans_scale
 
     def compute_loss(self, readout, target, logger=None):
 
