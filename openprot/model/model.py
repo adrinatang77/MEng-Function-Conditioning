@@ -270,17 +270,8 @@ class OpenProtModel(nn.Module):
             )
 
         ipa_args = dict(
-            ipa_attn=cfg.ipa_attn,
-            ipa_values=cfg.ipa_values,
-            ipa_frames=cfg.ipa_frames,
             relpos_attn=cfg.relpos_attn,
             relpos_values=cfg.relpos_values,
-            embed_rots=cfg.embed_rots,
-            no_qk_points=cfg.no_qk_points,
-            no_v_points=cfg.no_v_points,
-            update_rots=cfg.update_rots,
-            readout_rots=cfg.readout_rots,
-            rots_type=cfg.rots_type,
             update_x=cfg.update_x,
         )
         self.blocks = nn.ModuleList()
@@ -324,8 +315,8 @@ class OpenProtModel(nn.Module):
         elif self.cfg.ipa_blocks > 0:
             self.ipa_block = block_fn()
 
-        if cfg.embed_trans_before_ipa:
-            self.trans_in = nn.Linear(3, cfg.dim)
+        # if cfg.embed_trans_before_ipa:
+        #     self.trans_in = nn.Linear(3, cfg.dim)
 
     def forward(self, inp):
 
@@ -350,11 +341,11 @@ class OpenProtModel(nn.Module):
             else:
                 x, z, rots, trans = block(x, z, rots, trans, mask, x_cond)
 
-        if self.cfg.detach_before_ipa:
-            x = x.detach()
+        # if self.cfg.detach_before_ipa:
+        #     x = x.detach()
 
-        if self.cfg.embed_trans_before_ipa:
-            x = x + self.trans_in(trans)
+        # if self.cfg.embed_trans_before_ipa:
+        #     x = x + self.trans_in(trans)
 
         if self.cfg.augment_before_ipa:
             R, B, L, D = x.shape

@@ -257,6 +257,8 @@ class StructureTrack(OpenProtTrack):
         if self.cfg.readout_pairwise:
             readout["pairwise"] = model.pairwise_out(out["z"])
 
+        readout["trans"] *= self.cfg.trans_scale
+
     def compute_loss(self, readout, target, logger=None):
 
         loss = 0

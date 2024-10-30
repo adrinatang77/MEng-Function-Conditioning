@@ -4,7 +4,6 @@ from ..utils import protein
 from ..utils.geometry import compute_lddt, rmsdalign
 from ..utils import residue_constants as rc
 import numpy as np
-from ..tasks import StructurePrediction
 import torch
 import os, tqdm
 import pandas as pd
@@ -33,7 +32,12 @@ class StructurePredictionEval(OpenProtEval):
             atom37=prot["all_atom_positions"].astype(np.float32),
             atom37_mask=prot["all_atom_mask"].astype(np.float32),
         )
-        return StructurePrediction.prep_data(self, data)
+        
+        L = len(seqres)
+        data["trans_noise"] = np.ones(L, dtype=np.float32) * 1.0
+        data["rots_noise"] = np.ones(L, dtype=np.float32) * 1.0
+        
+        return data
 
     def run_batch(self, model, batch: dict, savedir=".", device=None, logger=None):
         os.makedirs(savedir, exist_ok=True)
