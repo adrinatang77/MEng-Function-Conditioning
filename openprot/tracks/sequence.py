@@ -4,6 +4,7 @@ import numpy as np
 from typing import override
 from .track import OpenProtTrack
 from ..utils import residue_constants as rc
+from ..utils.prot_utils import seqres_to_aatype
 from functools import partial
 
 
@@ -29,9 +30,7 @@ esm_registry = {
 class SequenceTrack(OpenProtTrack):
 
     def tokenize(self, data):
-        data["aatype"] = np.array(
-            [rc.restype_order.get(c, rc.unk_restype_index) for c in data["seqres"]]
-        )
+        data["aatype"] = np.array(seqres_to_aatype(data["seqres"]))
 
     @staticmethod
     def _af2_to_esm(d: Alphabet):

@@ -336,7 +336,7 @@ class OpenProtModel(nn.Module):
         for block in self.blocks:
             if block.pair_updates and self.cfg.checkpoint:
                 x, z, rots, trans = torch.utils.checkpoint.checkpoint(
-                    block, x, z, rots, trans, mask, x_cond
+                    block, x, z, rots, trans, mask, x_cond, use_reentrant=False
                 )
             else:
                 x, z, rots, trans = block(x, z, rots, trans, mask, x_cond)

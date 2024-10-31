@@ -328,12 +328,15 @@ class StructureTrack(OpenProtTrack):
         mask = target["struct_supervise"]
         soft_lddt = compute_lddt(pred, gt, mask, soft=True, reduce=(-1,))
 
-        soft_lddt = soft_lddt.mean(0)
+        soft_lddt_loss = 1 - soft_lddt # [9, B, L]
 
         if logger:
-            logger.log("struct/lddt_loss", 1 - soft_lddt, mask=mask)
-        return 1 - soft_lddt
+            logger.log("struct/lddt_loss", soft_lddt_loss[-1], mask=mask)
+            logger.log("struct/lddt_loss_aux", soft_lddt_loss.mean(0), mask=mask)
 
+        w = self.cfg.int_loss_weight
+        return w * soft_lddt_loss.mean(0) + (1-w) * soft_lddt_loss[-1]
+    
     def compute_mse_loss(self, readout, target, logger=None, eps=1e-5):
 
         pred = readout["trans"]
@@ -363,12 +366,14 @@ class StructureTrack(OpenProtTrack):
         else:
             mse = compute_mse(pred, gt, mask)
 
-        mse = mse.mean(0)
-        if self.cfg.rot_augment > 1:
-            mse = mse.mean(0)
+        
         if logger:
-            logger.log("struct/mse_loss", mse, mask=mask)
-        return mse
+            logger.log("struct/mse_loss", mse[-1], mask=mask)
+            logger.log("struct/mse_loss_aux", mse.mean(0), mask=mask)
+
+        w = self.cfg.int_loss_weight
+        return w * mse.mean(0) + (1-w) * mse[-1]
+        
 
     def compute_pade_loss(self, readout, target, logger=None):
         pred = readout["trans"]
@@ -382,40 +387,12 @@ class StructureTrack(OpenProtTrack):
         else:
             pade = compute_pade(pred, gt, mask)
 
-        pade = pade.mean(0)
-        if self.cfg.rot_augment > 1:
-            pade = pade.mean(0)
         if logger:
-            logger.log("struct/pade_loss", pade, mask=mask)
-        return pade
+            logger.log("struct/pade_loss", pade[-1], mask=mask)
+            logger.log("struct/pade_loss_aux", pade.mean(0), mask=mask)
+        w = self.cfg.int_loss_weight
+        return w * pade.mean(0) + (1-w) * pade[-1]
 
-    """
-    def compute_sinusoidal_loss(self, readout, target, logger=None, eps=1e-6):
-
-        logits = readout["trans"]
-        logits = logits.reshape(*logits.shape[:2], 3, 2)
-
-        sqnorm = torch.square(logits).sum(-1)
-        norm = torch.sqrt(eps + sqnorm)
-
-        if self.cfg.logit_max_norm:
-            denom = torch.sqrt(1 + (sqnorm / self.cfg.logit_max_norm) ** 2)
-            logits = logits / denom[..., None]
-
-        mask = target["struct_supervise"]
-        ang = torch.atan2(logits[..., 1], logits[..., 0])
-        gt_ang = 2 * np.pi * target["frame_trans"] / self.cfg.decoder.max_period
-
-        logp = torch.cos(gt_ang) * logits[..., 0] + torch.sin(gt_ang) * logits[..., 1]
-        logz = np.log(2 * np.pi) + log_I0(norm)
-        nll = logz - logp
-
-        if logger:
-            logger.log("struct/logit_norm", norm, mask=mask[..., None])
-            logger.log("struct/sinusoidal_loss", nll.sum(-1), mask=mask)
-
-        return nll.sum(-1)  # * mask).sum() / target["pad_mask"].sum()
-    """
 
     def compute_nape_loss(self, readout, target, eps=1e-5, logger=None):
         pred = readout["trans"]
