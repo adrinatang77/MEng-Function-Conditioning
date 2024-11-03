@@ -8,7 +8,7 @@ logger:
     # please change "test" to something unique to your task
     project: openprot/diffusion
     # will log to workdir and neptune.ai with this name
-    name: official-trimul-shared
+    name: struct-gen-trimul-weight1.0
     # if not null, will duplicate stdout and stderr to workdir/{name}/{logfile}
     logfile: std.out
     # if null, will log every epoch, otherwise every this number of steps
@@ -122,16 +122,16 @@ evals:
         temp_factor: 0.3
         sde_cutoff_time: 0.0
         sde_cutoff_width: 0.00001
-    struct_gen_sde:
-        type: StructureGenerationEval
-        num_samples: 8
-        sample_length: 256
-        nsteps: 200
-        sched_type: 'log'
-        sde_weight: 10.0
-        temp_factor: 0.5
-        sde_cutoff_time: 0.0
-        sde_cutoff_width: 0.00001
+    # struct_gen_sde:
+    #     type: StructureGenerationEval
+    #     num_samples: 8
+    #     sample_length: 256
+    #     nsteps: 200
+    #     sched_type: 'log'
+    #     sde_weight: 10.0
+    #     temp_factor: 0.5
+    #     sde_cutoff_time: 0.0
+    #     sde_cutoff_width: 0.00001
     
 
 tracks:
@@ -146,7 +146,7 @@ tracks:
         embed_trans: false
         readout_trans: false
         intermediate_loss: true
-        int_loss_weight: 0.5
+        int_loss_weight: 1.0
         
         rot_augment: 1
         embed_pairwise: false
@@ -207,7 +207,7 @@ model: # custom args
     zero_frames_before_ipa: false
     
     ipa_blocks: 8
-    separate_ipa_blocks: true
+    separate_ipa_blocks: false
     frame_update: true
     relpos_attn: true
     relpos_values: true
@@ -216,7 +216,7 @@ model: # custom args
     ipa_pair_bias: true
     
     detach_rots: true
-    detach_trans: false
+    detach_trans: true
     update_x: true
     trunk_adaLN: true
     sm_adaLN: true

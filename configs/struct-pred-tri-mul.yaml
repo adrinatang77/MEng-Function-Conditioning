@@ -8,7 +8,7 @@ logger:
     # please change "test" to something unique to your task
     project: openprot/structure
     # will log to workdir and neptune.ai with this name
-    name: struct-pred-trimul
+    name: struct-pred-trimul-weight1.0
     # if not null, will duplicate stdout and stderr to workdir/{name}/{logfile}
     logfile: std.out
     # if null, will log every epoch, otherwise every this number of steps
@@ -143,7 +143,7 @@ tracks:
         embed_trans: false
         readout_trans: false
         intermediate_loss: true
-        int_loss_weight: 0.5
+        int_loss_weight: 1.0
         
         rot_augment: 1
         embed_pairwise: false

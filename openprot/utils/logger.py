@@ -21,7 +21,7 @@ def setup_logging(cfg):
     if not cfg.logfile:
         return
     tee = subprocess.Popen(
-        ["tee", f"workdir/{cfg.name}/{cfg.logfile}"], stdin=subprocess.PIPE
+        ["tee", "-a", f"workdir/{cfg.name}/{cfg.logfile}"], stdin=subprocess.PIPE
     )
     # Cause tee's stdin to get a copy of our stdin/stdout (as well as that
     # of any child processes we spawn)
