@@ -35,11 +35,14 @@ def compute_tmscore(coords1, coords2, seq1, seq2, mask1=None, mask2=None):
     path2 = tempfile.NamedTemporaryFile()
     prot2 = make_ca_prot(coords2, seq2, mask=mask2)
     open(path2.name, 'w').write(protein.to_pdb(prot2))
-    
-    out = subprocess.check_output(
-        ['TMscore', '-seq', path1.name, path2.name], 
-        stderr=open('/dev/null', 'w')
-    )
+    try:
+        out = subprocess.check_output(
+            ['TMscore', '-seq', path1.name, path2.name], 
+            stderr=subprocess.STDOUT
+        )
+    except subprocess.CalledProcessError as exc:
+        print("Status : FAIL", exc.returncode, exc.output)
+        
     start = out.find(b'RMSD')
     end = out.find(b'rotation')
     out = out[start:end]

@@ -6,16 +6,16 @@ logger:
     neptune: false
     run_id: null  
     # please change "test" to something unique to your task
-    project: openprot/structure
+    project: openprot/diffusion
     # will log to workdir and neptune.ai with this name
-    name: default
+    name: struct-gen-trimul-noalign
     # if not null, will duplicate stdout and stderr to workdir/{name}/{logfile}
-    logfile: null # std.out
+    logfile: std.out
     # if null, will log every epoch, otherwise every this number of steps
     train_log_freq: 10
     val_log_freq: null 
-    ckpt_freq: 1000000000
-    save_freq: 1250
+    ckpt_freq: 5000
+    save_freq: 1000000000
 trainer:
     accelerator: auto
     devices: 1
@@ -26,8 +26,8 @@ trainer:
     limit_val_batches: 1.0
     num_sanity_val_steps: 0
     gradient_clip_val: 1.0
-    accumulate_grad_batches: 2
-    val_check_interval: 1250
+    accumulate_grad_batches: 1
+    val_check_interval: 5000
     check_val_every_n_epoch: 1
     logger: false
 
@@ -65,9 +65,9 @@ datasets:
     AFDBDataset:
         path: /scratch/projects/cgai/openprot/data/afdb_rep_v4/afdb_rep_v4
         annotations: /scratch/projects/cgai/openprot/data/afdb_rep_v4.pkl.gz
-        blacklist: /scratch/projects/cgai/openprot/cameo_afdb_blacklist.tsv
-        plddt_thresh: 70
-        index: null # tmp/afdbreps_l-256_plddt_80.txt
+        blacklist: null # /scratch/projects/cgai/openprot/cameo_afdb_blacklist.tsv
+        plddt_thresh: null # 70
+        index: /scratch/projects/cgai/openprot/afdbreps_l-256_plddt_80.txt
         
     # UnirefDataset:
     #     #path: /data/cb/scratch/datasets/uniref50.fasta
@@ -85,12 +85,12 @@ tasks:
     #             fraction: 1.0
     #             start: 0
     #             seed: 137
-    # StructureGeneration:
-    StructurePrediction:
+    StructureGeneration:
+    # StructurePrediction:
         fraction: 1.0
         beta: [1, 2]
-        uniform_prob: 0.0
-        max_noise_prob: 1.0
+        uniform_prob: 0.1
+        max_noise_prob: 0.0
         seed: 137
         random_rot: true
         datasets:
@@ -121,18 +121,30 @@ evals:
         sched_type: 'log'
         temp_factor: 0.3
         sde_cutoff_time: 0.0
-        sde_cutoff_width: 0.001
+        sde_cutoff_width: 0.00001
         run_designability: true
-        run_diversity: true
-    # struct_gen_sde:
-    #     type: StructureGenerationEval
-    #     num_samples: 10
-    #     sample_length: 256
-    #     nsteps: 200
-    #     sched_type: 'log'
-    #     sde_weight: 10.0
-    #     temp_factor: 0.5
-        
+    struct_gen_sde_0.5:
+        type: StructureGenerationEval
+        num_samples: 100
+        sample_length: 128
+        nsteps: 200
+        sched_type: 'log'
+        sde_weight: 10.0
+        temp_factor: 0.5
+        sde_cutoff_time: 0.0
+        sde_cutoff_width: 0.00001
+        run_designability: true
+    struct_gen_sde_0.7:
+        type: StructureGenerationEval
+        num_samples: 100
+        sample_length: 128
+        nsteps: 200
+        sched_type: 'log'
+        sde_weight: 10.0
+        temp_factor: 0.7
+        sde_cutoff_time: 0.0
+        sde_cutoff_width: 0.00001
+        run_designability: true
     
 
 tracks:
@@ -145,40 +157,40 @@ tracks:
         readout_pairwise: true
         
         embed_trans: false
-        readout_trans: true
-        intermediate_loss: false
+        readout_trans: false
+        intermediate_loss: true
         int_loss_weight: 0.5
-        trans_scale: 15.0
         
         rot_augment: 1
         embed_pairwise: false
         
-        aligned_mse: true
+        aligned_mse: false
         demean: true
         clamp_pade: false
         clamp_nape: true
         clamp_mse: false
         nape_cutoff: 15
-        weighted_mse: false
+        weighted_mse: true
         soft_weighted_mse: false
-        update_coeff: true
+        
+        update_coeff: false
         losses:
             pade: 0.1
             # fape: 0.0
             lddt: 1.0
             distogram: 0.3
-            mse: 0.001
+            mse: 1.0
             # nape: 0.0
         diffusion:
             type: GaussianFM
             prior_sigma: 15.0
             center_noise: false
             center_pos: true
-            train_align: true
-            inf_align: true
+            train_align: false
+            inf_align: false
             prediction: "target"
     SequenceTrack:
-        esm: esm2_3B # esm2_650M # esm2_8M_270K
+        esm: null # esm2_3B # esm2_650M # esm2_8M_270K
         corrupt: mask
         mask_rate: 0.0
         loss_weight: 0.0
@@ -189,9 +201,9 @@ model: # custom args
     pairwise_dim: 128
     heads: 16
     pairwise_heads: 4
-    blocks: 48
-    pair_block_interval: 4
-    ipa_block_interval: 1000
+    blocks: 12
+    pair_block_interval: 1
+    ipa_block_interval: 100
     pairwise_pos_emb: true
     
     ff_expand: 4
@@ -208,23 +220,24 @@ model: # custom args
     zero_frames_before_ipa: false
     
     ipa_blocks: 8
-    separate_ipa_blocks: true
-    frame_update: false
-    relpos_attn: false
-    relpos_values: false
+    separate_ipa_blocks: false
+    frame_update: true
+    relpos_attn: true
+    relpos_values: true
     ipa_pair_values: false
+    
     ipa_pair_bias: true
     
     detach_rots: true
     detach_trans: true
     update_x: true
-    trunk_adaLN: false
-    sm_adaLN: false
+    trunk_adaLN: true
+    sm_adaLN: true
 
 
 optimizer:
     type: AdamW
-    lr: 1e-4
+    lr: 5e-4
     scheduler: 
         total_steps: 1000000
         warmup_steps: 1000

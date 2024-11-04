@@ -6,7 +6,7 @@ from ..utils import residue_constants as rc
 import numpy as np
 from ..tasks import StructurePrediction
 import torch
-import os, tqdm
+import os, tqdm, math, subprocess
 import pandas as pd
 
 
@@ -32,6 +32,41 @@ class StructureGenerationEval(OpenProtEval):
         )
         return data
 
+    def compute_metrics(self, rank=0, world_size=1, device=None, savedir='.', logger=None):
+
+        if self.cfg.run_designability:
+            torch.cuda.empty_cache() 
+            
+            ## distributed designability
+            count = math.ceil(self.cfg.num_samples / world_size)
+            start = rank * count
+            end = min((rank + 1) * count, self.cfg.num_samples)
+    
+            cmd = [
+                'bash',
+                'scripts/run_genie_pipeline.sh',
+                savedir,
+                str(start),
+                str(end-1),
+            ]
+            subprocess.run(cmd) # env=os.environ | {"CUDA_VISIBLE_DEVICES")
+    
+            df = pd.read_csv(f"{savedir}/eval{start}_{end-1}/info.csv", index_col='domain')
+            df['designable'] = df['scRMSD'] < 2
+            if logger is not None:
+                for col in df.columns:
+                    for val in df[col].tolist():
+                        logger.log(f"{self.cfg.name}/{col}", val)
+                
+
+            # os.makedirs(f"{savedir}/designable", exist_ok=True)
+            # for name in df[df.scRMSD < 100].index:
+            #     subprocess.run([
+            #         'cp',
+            #         f"{savedir}/eval{start}_{end-1}/designs/{name}.pdb",
+            #         f"{savedir}/designable"
+            #     ])          
+        
     def run_batch(self, model, batch: dict, savedir=".", device=None, logger=None):
 
         os.makedirs(savedir, exist_ok=True)

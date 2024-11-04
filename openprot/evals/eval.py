@@ -16,6 +16,9 @@ class OpenProtEval(OpenProtDataset):
             self.run_batch(batch)
         """
 
+    def compute_metrics(self, rank=0, world_size=1, device=None, savedir='.', logger=None):
+        pass
+        
     @abstractmethod
     def run_batch(self, model: OpenProtWrapper, batch: dict, device=None):
         NotImplemented

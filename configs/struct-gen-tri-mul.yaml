@@ -8,14 +8,14 @@ logger:
     # please change "test" to something unique to your task
     project: openprot/diffusion
     # will log to workdir and neptune.ai with this name
-    name: struct-gen-trimul-weight1.0
+    name: struct-gen-trimul
     # if not null, will duplicate stdout and stderr to workdir/{name}/{logfile}
     logfile: std.out
     # if null, will log every epoch, otherwise every this number of steps
     train_log_freq: 10
     val_log_freq: null 
-    ckpt_freq: 1000000000
-    save_freq: 1250
+    ckpt_freq: 5000
+    save_freq: 1000000000
 trainer:
     accelerator: auto
     devices: 1
@@ -26,8 +26,8 @@ trainer:
     limit_val_batches: 1.0
     num_sanity_val_steps: 0
     gradient_clip_val: 1.0
-    accumulate_grad_batches: 2
-    val_check_interval: 10000
+    accumulate_grad_batches: 1
+    val_check_interval: 5000
     check_val_every_n_epoch: 1
     logger: false
 
@@ -114,24 +114,37 @@ evals:
     #     demean: true
     struct_gen_ode:
         type: StructureGenerationEval
-        num_samples: 8
-        sample_length: 256
+        num_samples: 100
+        sample_length: 128
         nsteps: 200
         sde_weight: 0.0
         sched_type: 'log'
         temp_factor: 0.3
         sde_cutoff_time: 0.0
         sde_cutoff_width: 0.00001
-    # struct_gen_sde:
-    #     type: StructureGenerationEval
-    #     num_samples: 8
-    #     sample_length: 256
-    #     nsteps: 200
-    #     sched_type: 'log'
-    #     sde_weight: 10.0
-    #     temp_factor: 0.5
-    #     sde_cutoff_time: 0.0
-    #     sde_cutoff_width: 0.00001
+        run_designability: true
+    struct_gen_sde_0.5:
+        type: StructureGenerationEval
+        num_samples: 100
+        sample_length: 128
+        nsteps: 200
+        sched_type: 'log'
+        sde_weight: 10.0
+        temp_factor: 0.5
+        sde_cutoff_time: 0.0
+        sde_cutoff_width: 0.00001
+        run_designability: true
+    struct_gen_sde_0.7:
+        type: StructureGenerationEval
+        num_samples: 100
+        sample_length: 128
+        nsteps: 200
+        sched_type: 'log'
+        sde_weight: 10.0
+        temp_factor: 0.7
+        sde_cutoff_time: 0.0
+        sde_cutoff_width: 0.00001
+        run_designability: true
     
 
 tracks:
@@ -146,7 +159,7 @@ tracks:
         embed_trans: false
         readout_trans: false
         intermediate_loss: true
-        int_loss_weight: 1.0
+        int_loss_weight: 0.5
         
         rot_augment: 1
         embed_pairwise: false
@@ -190,7 +203,7 @@ model: # custom args
     pairwise_heads: 4
     blocks: 12
     pair_block_interval: 1
-    ipa_block_interval: 1
+    ipa_block_interval: 100
     pairwise_pos_emb: true
     
     ff_expand: 4

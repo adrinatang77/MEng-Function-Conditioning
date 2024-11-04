@@ -6,6 +6,7 @@ from abc import abstractmethod
 from ..utils.misc_utils import autoimport
 import os
 from ..tracks.manager import OpenProtTrackManager
+# from ..evals.manager import OpenProtEvalManager
 
 
 class Wrapper(pl.LightningModule):
@@ -132,6 +133,18 @@ class OpenProtWrapper(Wrapper):
         # self._logger.log("act_norm", torch.square(out).mean(-1), batch["pad_mask"])
 
         return loss
+
+    def on_validation_epoch_end(self):
+        savedir=f'{os.environ["MODEL_DIR"]}/eval_step{self.trainer.global_step}'
+        for name, eval_ in self.evals.items():
+            eval_.compute_metrics(
+                rank=self.trainer.global_rank,
+                world_size=self.trainer.world_size,
+                device=self.device,
+                savedir=f"{savedir}/{name}",
+                logger=self._logger,
+            )
+        super().on_validation_epoch_end()
 
     def validation_step_extra(self, batch, batch_idx):
         name = batch["eval"][0]

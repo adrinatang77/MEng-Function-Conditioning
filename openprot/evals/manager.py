@@ -19,12 +19,17 @@ class OpenProtEvalManager(torch.utils.data.IterableDataset):
             eval_ = autoimport(f"openprot.evals.{type_}")(
                 cfg.evals[name], cfg.features, tracks
             )
+            eval_.cfg.name = name # know its own name
             self.evals[name] = eval_
+            
 
     def process(self, data: OpenProtData):
         data.pad(None)  # just to get the pad mask
 
         self.tracks.tokenize(data)
+
+    def compute_metrics(self):
+        breakpoint()
 
     def __iter__(self):
         i = 0
