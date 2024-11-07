@@ -8,7 +8,7 @@ logger:
     # please change "test" to something unique to your task
     project: openprot/diffusion
     # will log to workdir and neptune.ai with this name
-    name: struct-gen-trimul-noalign
+    name: struct-gen-relpos-singlestep-target-align-u0.5-train-align
     # if not null, will duplicate stdout and stderr to workdir/{name}/{logfile}
     logfile: std.out
     # if null, will log every epoch, otherwise every this number of steps
@@ -34,7 +34,7 @@ trainer:
 # custom args to OpenProtDataset and elsewhere
 data: 
     num_workers: 16
-    batch: 8
+    batch: 32
     crop: 256
     seed: 137
 
@@ -89,17 +89,17 @@ tasks:
     # StructurePrediction:
         fraction: 1.0
         beta: [1, 2]
-        uniform_prob: 0.1
+        uniform_prob: 0.5
         max_noise_prob: 0.0
         seed: 137
         random_rot: true
         datasets:
             AFDBDataset:
-                fraction: 0.75
+                fraction: 1.0
                 start: 0
                 seed: 142
             PDBDataset:
-                fraction: 0.25
+                fraction: 0.0
                 start: 0
                 seed: 142
             
@@ -112,17 +112,17 @@ evals:
     #     augmented: false
     #     align: false
     #     demean: true
-    struct_gen_ode:
-        type: StructureGenerationEval
-        num_samples: 100
-        sample_length: 128
-        nsteps: 200
-        sde_weight: 0.0
-        sched_type: 'log'
-        temp_factor: 0.3
-        sde_cutoff_time: 0.0
-        sde_cutoff_width: 0.00001
-        run_designability: true
+    # struct_gen_ode:
+    #     type: StructureGenerationEval
+    #     num_samples: 100
+    #     sample_length: 128
+    #     nsteps: 200
+    #     sde_weight: 0.0
+    #     sched_type: 'log'
+    #     temp_factor: 0.3
+    #     sde_cutoff_time: 0.0
+    #     sde_cutoff_width: 0.00001
+    #     run_designability: true
     struct_gen_sde_0.5:
         type: StructureGenerationEval
         num_samples: 100
@@ -154,17 +154,17 @@ tracks:
         embed_rots: false
         readout_rots: false
         readout_rots_type: 'quat'
-        readout_pairwise: true
+        readout_pairwise: false
         
-        embed_trans: false
+        embed_trans: true
         readout_trans: false
-        intermediate_loss: true
-        int_loss_weight: 0.5
+        intermediate_loss: false
+        int_loss_weight: 0.0
         
         rot_augment: 1
         embed_pairwise: false
         
-        aligned_mse: false
+        aligned_mse: true
         demean: true
         clamp_pade: false
         clamp_nape: true
@@ -175,10 +175,10 @@ tracks:
         
         update_coeff: false
         losses:
-            pade: 0.1
+            # pade: 0.1
             # fape: 0.0
-            lddt: 1.0
-            distogram: 0.3
+            # lddt: 1.0
+            # distogram: 0.3
             mse: 1.0
             # nape: 0.0
         diffusion:
@@ -186,8 +186,8 @@ tracks:
             prior_sigma: 15.0
             center_noise: false
             center_pos: true
-            train_align: false
-            inf_align: false
+            train_align: true
+            inf_align: true
             prediction: "target"
     SequenceTrack:
         esm: null # esm2_3B # esm2_650M # esm2_8M_270K
@@ -202,9 +202,9 @@ model: # custom args
     heads: 16
     pairwise_heads: 4
     blocks: 12
-    pair_block_interval: 1
+    pair_block_interval: 100
     ipa_block_interval: 100
-    pairwise_pos_emb: true
+    pairwise_pos_emb: false
     
     ff_expand: 4
     position_bins: 32
@@ -219,17 +219,17 @@ model: # custom args
     augment_before_ipa: false
     zero_frames_before_ipa: false
     
-    ipa_blocks: 8
+    ipa_blocks: 1
     separate_ipa_blocks: false
     frame_update: true
-    relpos_attn: true
-    relpos_values: true
+    relpos_attn: false
+    relpos_values: false
     ipa_pair_values: false
     
-    ipa_pair_bias: true
+    ipa_pair_bias: false
     
     detach_rots: true
-    detach_trans: true
+    detach_trans: false
     update_x: true
     trunk_adaLN: true
     sm_adaLN: true
@@ -237,7 +237,7 @@ model: # custom args
 
 optimizer:
     type: AdamW
-    lr: 5e-4
+    lr: 1e-4
     scheduler: 
         total_steps: 1000000
         warmup_steps: 1000

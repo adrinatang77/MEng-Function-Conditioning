@@ -8,7 +8,7 @@ logger:
     # please change "test" to something unique to your task
     project: openprot/diffusion
     # will log to workdir and neptune.ai with this name
-    name: struct-gen-trimul-noalign
+    name: struct-gen-notri-vanilla-velocity
     # if not null, will duplicate stdout and stderr to workdir/{name}/{logfile}
     logfile: std.out
     # if null, will log every epoch, otherwise every this number of steps
@@ -34,7 +34,7 @@ trainer:
 # custom args to OpenProtDataset and elsewhere
 data: 
     num_workers: 16
-    batch: 8
+    batch: 32
     crop: 256
     seed: 137
 
@@ -154,12 +154,12 @@ tracks:
         embed_rots: false
         readout_rots: false
         readout_rots_type: 'quat'
-        readout_pairwise: true
+        readout_pairwise: false
         
-        embed_trans: false
-        readout_trans: false
-        intermediate_loss: true
-        int_loss_weight: 0.5
+        embed_trans: true
+        readout_trans: true
+        intermediate_loss: false
+        int_loss_weight: 0.0
         
         rot_augment: 1
         embed_pairwise: false
@@ -170,15 +170,15 @@ tracks:
         clamp_nape: true
         clamp_mse: false
         nape_cutoff: 15
-        weighted_mse: true
+        weighted_mse: false
         soft_weighted_mse: false
         
         update_coeff: false
         losses:
-            pade: 0.1
+            # pade: 0.1
             # fape: 0.0
-            lddt: 1.0
-            distogram: 0.3
+            # lddt: 1.0
+            # distogram: 0.3
             mse: 1.0
             # nape: 0.0
         diffusion:
@@ -188,7 +188,7 @@ tracks:
             center_pos: true
             train_align: false
             inf_align: false
-            prediction: "target"
+            prediction: "velocity"
     SequenceTrack:
         esm: null # esm2_3B # esm2_650M # esm2_8M_270K
         corrupt: mask
@@ -202,9 +202,9 @@ model: # custom args
     heads: 16
     pairwise_heads: 4
     blocks: 12
-    pair_block_interval: 1
+    pair_block_interval: 100
     ipa_block_interval: 100
-    pairwise_pos_emb: true
+    pairwise_pos_emb: false
     
     ff_expand: 4
     position_bins: 32
@@ -219,11 +219,11 @@ model: # custom args
     augment_before_ipa: false
     zero_frames_before_ipa: false
     
-    ipa_blocks: 8
+    ipa_blocks: 0
     separate_ipa_blocks: false
-    frame_update: true
-    relpos_attn: true
-    relpos_values: true
+    frame_update: false
+    relpos_attn: false
+    relpos_values: false
     ipa_pair_values: false
     
     ipa_pair_bias: true
@@ -237,7 +237,7 @@ model: # custom args
 
 optimizer:
     type: AdamW
-    lr: 5e-4
+    lr: 1e-4
     scheduler: 
         total_steps: 1000000
         warmup_steps: 1000

@@ -1,6 +1,7 @@
 from .eval import OpenProtEval
 import foldcomp
 from ..utils import protein
+from ..utils.prot_utils import make_ca_prot, write_ca_traj
 from ..utils.geometry import compute_lddt, rmsdalign
 from ..utils import residue_constants as rc
 import numpy as np
@@ -83,37 +84,27 @@ class StructureGenerationEval(OpenProtEval):
             _, readout = model.forward(noisy_batch)
             return readout["trans"][-1]
 
-        samps = diffusion.inference(
-            model_func, cfg=self.cfg, mask=noisy_batch["pad_mask"], return_traj=True
+        samp_traj, pred_traj = diffusion.inference(
+            model_func, 
+            cfg=self.cfg,
+            mask=noisy_batch["pad_mask"], 
+            return_traj=True
         )
 
-        coords = samps[-1, -1]
-        L = batch["frame_trans"].shape[1]
-        atom37 = np.zeros((L, 37, 3))
-        prot = protein.Protein(
-            atom_positions=np.zeros((L, 37, 3)),
-            aatype=batch["aatype"].cpu().numpy()[0],
-            atom_mask=np.zeros((L, 37)),
-            residue_index=np.arange(L) + 1,
-            b_factors=np.zeros((L, 37)),
-            chain_index=np.zeros(L, dtype=int),
+        prot = make_ca_prot(
+            samp_traj[-1,-1].cpu().numpy(),
+            batch["aatype"].cpu().numpy()[0],
+            batch["frame_mask"].cpu().numpy()[0]
         )
-
-        prot.atom_mask[..., 1] = batch["frame_mask"].cpu().numpy()
-
-        prot.atom_positions[..., 1, :] = coords.cpu().numpy()
+        
         ref_str = protein.to_pdb(prot)
-
         name = batch["name"][0]
         with open(f"{savedir}/{name}.pdb", "w") as f:
             f.write(ref_str)
 
-        strs = []
-        for coords in samps.squeeze(1):
-            prot.atom_positions[..., 1, :] = coords.cpu().numpy()
-            str_ = protein.to_pdb(prot)
-            str_ = "\n".join(str_.split("\n")[1:-3])
-            strs.append(str_)
-
         with open(f"{savedir}/{name}_traj.pdb", "w") as f:
-            f.write("\nENDMDL\nMODEL\n".join(strs))
+            f.write(write_ca_traj(prot, samp_traj[:,0].cpu().numpy()))
+
+        with open(f"{savedir}/{name}_pred_traj.pdb", "w") as f:
+            f.write(write_ca_traj(prot, pred_traj[:,0].cpu().numpy()))
+        

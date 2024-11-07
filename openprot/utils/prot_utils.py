@@ -7,6 +7,15 @@ import numpy as np
 def seqres_to_aatype(seq):
     return [rc.restype_order.get(c, rc.unk_restype_index) for c in seq]
 
+def write_ca_traj(prot, traj):
+    strs = []
+    for coords in traj:
+        prot.atom_positions[..., 1, :] = coords
+        str_ = protein.to_pdb(prot)
+        str_ = "\n".join(str_.split("\n")[1:-3])
+        strs.append(str_)
+    return "\nENDMDL\nMODEL\n".join(strs)
+
 def make_ca_prot(coords, aatype, mask=None):
     L = len(coords)
     if type(aatype) is str:

@@ -1,9 +1,9 @@
-ckpt: null # 
-pretrained: null # workdir/trimul-vanilla-disto/last.ckpt # workdir/nodiff-relpos-pade/last.ckpt # load weights from here first
-validate: false # if true, only validate the model, don't train
+ckpt: "workdir/struct-gen-trimul/step=35000.ckpt" # 
+pretrained: null # workdir/nodiff-relpos-pade/last.ckpt # load weights from here first
+validate: true # if true, only validate the model, don't train
 logger:
     # set to true to log to neptune.ai
-    neptune: true
+    neptune: false
     run_id: null  
     # please change "test" to something unique to your task
     project: openprot/diffusion
@@ -112,17 +112,17 @@ evals:
     #     augmented: false
     #     align: false
     #     demean: true
-    struct_gen_ode:
-        type: StructureGenerationEval
-        num_samples: 100
-        sample_length: 128
-        nsteps: 200
-        sde_weight: 0.0
-        sched_type: 'log'
-        temp_factor: 0.3
-        sde_cutoff_time: 0.0
-        sde_cutoff_width: 0.00001
-        run_designability: true
+    # struct_gen_ode:
+    #     type: StructureGenerationEval
+    #     num_samples: 100
+    #     sample_length: 128
+    #     nsteps: 200
+    #     sde_weight: 0.0
+    #     sched_type: 'log'
+    #     temp_factor: 0.3
+    #     sde_cutoff_time: 0.0
+    #     sde_cutoff_width: 0.00001
+    #     run_designability: true
     struct_gen_sde_0.5:
         type: StructureGenerationEval
         num_samples: 100
@@ -134,17 +134,17 @@ evals:
         sde_cutoff_time: 0.0
         sde_cutoff_width: 0.00001
         run_designability: true
-    struct_gen_sde_0.7:
-        type: StructureGenerationEval
-        num_samples: 100
-        sample_length: 128
-        nsteps: 200
-        sched_type: 'log'
-        sde_weight: 10.0
-        temp_factor: 0.7
-        sde_cutoff_time: 0.0
-        sde_cutoff_width: 0.00001
-        run_designability: true
+    # struct_gen_sde_0.7:
+    #     type: StructureGenerationEval
+    #     num_samples: 100
+    #     sample_length: 128
+    #     nsteps: 200
+    #     sched_type: 'log'
+    #     sde_weight: 10.0
+    #     temp_factor: 0.7
+    #     sde_cutoff_time: 0.0
+    #     sde_cutoff_width: 0.00001
+    #     run_designability: true
     
 
 tracks:
@@ -203,7 +203,7 @@ model: # custom args
     pairwise_heads: 4
     blocks: 12
     pair_block_interval: 1
-    ipa_block_interval: 100
+    ipa_block_interval: 1
     pairwise_pos_emb: true
     
     ff_expand: 4

@@ -80,6 +80,7 @@ class GaussianFM(Diffusion):
             sched = np.logspace(0, -2, cfg.nsteps + 1)
             sched = (sched - sched.min()) / (sched.max() - sched.min())
 
+        preds = []
         for t2, t1 in zip(sched[:-1], sched[1:]):
             dt = t2 - t1
 
@@ -92,6 +93,8 @@ class GaussianFM(Diffusion):
                     x0 = rmsdalign(x, x0, mask)
                     
                 v = (x0 - x) / t2
+
+            preds.append(x + v * t2)
 
             # score = ((1-t)x0 - x_t) / t^2 * sigma^2
 
@@ -115,7 +118,7 @@ class GaussianFM(Diffusion):
             out.append(x)
 
         if return_traj:
-            return torch.stack(out)
+            return torch.stack(out), torch.stack(preds)
         else:
             return x
 
