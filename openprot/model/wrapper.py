@@ -6,6 +6,7 @@ from abc import abstractmethod
 from ..utils.misc_utils import autoimport
 import os
 from ..tracks.manager import OpenProtTrackManager
+
 # from ..evals.manager import OpenProtEvalManager
 
 
@@ -135,7 +136,7 @@ class OpenProtWrapper(Wrapper):
         return loss
 
     def on_validation_epoch_end(self):
-        savedir=f'{os.environ["MODEL_DIR"]}/eval_step{self.trainer.global_step}'
+        savedir = f'{os.environ["MODEL_DIR"]}/eval_step{self.trainer.global_step}'
         for name, eval_ in self.evals.items():
             eval_.compute_metrics(
                 rank=self.trainer.global_rank,

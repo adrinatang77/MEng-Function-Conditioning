@@ -244,7 +244,7 @@ class OpenProtTransformerBlock(nn.Module):
             else:
                 vec = self.linear_frame_update(x)
                 if update_coeff is not None:
-                    vec = vec * update_coeff[...,None]
+                    vec = vec * update_coeff[..., None]
                 trans = trans + vec
 
         if self.readout_rots:
@@ -258,8 +258,9 @@ class OpenProtTransformerBlock(nn.Module):
             x = x_in
         return x, z, rots, trans
 
+
 class StructureModule(nn.Module):
-    
+
     def __init__(self, cfg):
         super().__init__()
         self.cfg = cfg
@@ -283,14 +284,13 @@ class StructureModule(nn.Module):
         elif self.cfg.ipa_blocks > 0:
             self.ipa_block = block_fn()
 
-
     def forward(self, x, z, rots, trans, mask, x_cond):
         if self.cfg.zero_frames_before_ipa:
             trans = torch.zeros_like(trans)
             rots = torch.zeros_like(rots) + torch.eye(
                 3, device=rots.device, dtype=rots.dtype
             )
-        
+
         all_rots = []
         all_trans = []
         for i in range(self.cfg.ipa_blocks):
@@ -308,11 +308,9 @@ class StructureModule(nn.Module):
             if self.cfg.detach_trans:
                 trans = trans.detach()
 
-        return {
-            'x': x,
-            'trans': torch.stack(all_trans),
-            'rots': torch.stack(all_rots)
-        }
+        return {"x": x, "trans": torch.stack(all_trans), "rots": torch.stack(all_rots)}
+
+
 class OpenProtModel(nn.Module):
     def __init__(self, cfg):
         super().__init__()
@@ -329,16 +327,14 @@ class OpenProtModel(nn.Module):
             pair_ff_expand=cfg.pair_ff_expand,
             tri_mul=cfg.tri_mul,
         )
-                    
+
         self.blocks = nn.ModuleList()
-        pair_block_idx = list(range(
-            cfg.pair_blocks.start,
-            cfg.pair_blocks.end,
-            cfg.pair_blocks.interval
-        ))
-      
+        pair_block_idx = list(
+            range(cfg.pair_blocks.start, cfg.pair_blocks.end, cfg.pair_blocks.interval)
+        )
+
         for i in range(cfg.blocks):
-            
+
             self.blocks.append(
                 OpenProtTransformerBlock(
                     dim=cfg.dim,
@@ -355,8 +351,6 @@ class OpenProtModel(nn.Module):
 
         self.structure_module = StructureModule(cfg)
 
-
-
     def forward(self, inp):
 
         x = inp["x"]
@@ -372,23 +366,18 @@ class OpenProtModel(nn.Module):
         x_cond = inp.get("x_cond", None)
 
         for i, block in enumerate(self.blocks):
-            
+
             if block.pair_updates and self.cfg.checkpoint:
                 x, z, rots, trans = torch.utils.checkpoint.checkpoint(
                     block, x, z, rots, trans, mask, x_cond, use_reentrant=False
                 )
             else:
                 x, z, rots, trans = block(x, z, rots, trans, mask, x_cond)
-            
-            if i+1 == self.cfg.sm_block_idx:
-                sm_out = self.structure_module(x, z, rots, trans, mask, x_cond)
-                
-        return {
-            "x": x,
-            "z": z,
-            "sm": sm_out
-        }
 
+            if i + 1 == self.cfg.sm_block_idx:
+                sm_out = self.structure_module(x, z, rots, trans, mask, x_cond)
+
+        return {"x": x, "z": z, "sm": sm_out}
 
         # if self.cfg.augment_before_ipa:
         #     R, B, L, D = x.shape
@@ -396,7 +385,7 @@ class OpenProtModel(nn.Module):
         #     x_cond = x_cond[None].expand(R, -1, -1, -1).reshape(R * B, L, D)
         #     mask = mask[None].expand(R, -1, -1).reshape(R * B, L)
         #     z_ = z[None].expand(R, -1, -1, -1, -1).reshape(R * B, L, L, -1)
-        
+
         # if self.cfg.augment_before_ipa:
         #     x = x.reshape(R, B, L, D)
         # else:

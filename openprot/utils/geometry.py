@@ -9,14 +9,13 @@ from .tensor_utils import batched_gather
 def compute_rmsd(a, b, weights=None):
     B = a.shape[:-2]
     N = a.shape[-2]
-    
+
     if weights is None:
         weights = a.new_ones(*B, N)
-    
+
     b = rmsdalign(a, b, weights)
-    return torch.sqrt(
-        (torch.square(a - b).sum(-1) * weights).sum(-1) / weights.sum(-1)
-    )
+    return torch.sqrt((torch.square(a - b).sum(-1) * weights).sum(-1) / weights.sum(-1))
+
 
 # https://github.com/scipy/scipy/blob/main/scipy/spatial/transform/_rotation.pyx
 def rmsdalign(

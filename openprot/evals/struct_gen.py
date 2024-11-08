@@ -33,32 +33,35 @@ class StructureGenerationEval(OpenProtEval):
         )
         return data
 
-    def compute_metrics(self, rank=0, world_size=1, device=None, savedir='.', logger=None):
+    def compute_metrics(
+        self, rank=0, world_size=1, device=None, savedir=".", logger=None
+    ):
 
         if self.cfg.run_designability:
-            torch.cuda.empty_cache() 
-            
+            torch.cuda.empty_cache()
+
             ## distributed designability
             count = math.ceil(self.cfg.num_samples / world_size)
             start = rank * count
             end = min((rank + 1) * count, self.cfg.num_samples)
-    
+
             cmd = [
-                'bash',
-                'scripts/run_genie_pipeline.sh',
+                "bash",
+                "scripts/run_genie_pipeline.sh",
                 savedir,
                 str(start),
-                str(end-1),
+                str(end - 1),
             ]
-            subprocess.run(cmd) # env=os.environ | {"CUDA_VISIBLE_DEVICES")
-    
-            df = pd.read_csv(f"{savedir}/eval{start}_{end-1}/info.csv", index_col='domain')
-            df['designable'] = df['scRMSD'] < 2
+            subprocess.run(cmd)  # env=os.environ | {"CUDA_VISIBLE_DEVICES")
+
+            df = pd.read_csv(
+                f"{savedir}/eval{start}_{end-1}/info.csv", index_col="domain"
+            )
+            df["designable"] = df["scRMSD"] < 2
             if logger is not None:
                 for col in df.columns:
                     for val in df[col].tolist():
                         logger.log(f"{self.cfg.name}/{col}", val)
-                
 
             # os.makedirs(f"{savedir}/designable", exist_ok=True)
             # for name in df[df.scRMSD < 100].index:
@@ -66,8 +69,8 @@ class StructureGenerationEval(OpenProtEval):
             #         'cp',
             #         f"{savedir}/eval{start}_{end-1}/designs/{name}.pdb",
             #         f"{savedir}/designable"
-            #     ])          
-        
+            #     ])
+
     def run_batch(self, model, batch: dict, savedir=".", device=None, logger=None):
 
         os.makedirs(savedir, exist_ok=True)
@@ -85,26 +88,22 @@ class StructureGenerationEval(OpenProtEval):
             return readout["trans"][-1]
 
         samp_traj, pred_traj = diffusion.inference(
-            model_func, 
-            cfg=self.cfg,
-            mask=noisy_batch["pad_mask"], 
-            return_traj=True
+            model_func, cfg=self.cfg, mask=noisy_batch["pad_mask"], return_traj=True
         )
 
         prot = make_ca_prot(
-            samp_traj[-1,-1].cpu().numpy(),
+            samp_traj[-1, -1].cpu().numpy(),
             batch["aatype"].cpu().numpy()[0],
-            batch["frame_mask"].cpu().numpy()[0]
+            batch["frame_mask"].cpu().numpy()[0],
         )
-        
+
         ref_str = protein.to_pdb(prot)
         name = batch["name"][0]
         with open(f"{savedir}/{name}.pdb", "w") as f:
             f.write(ref_str)
 
         with open(f"{savedir}/{name}_traj.pdb", "w") as f:
-            f.write(write_ca_traj(prot, samp_traj[:,0].cpu().numpy()))
+            f.write(write_ca_traj(prot, samp_traj[:, 0].cpu().numpy()))
 
         with open(f"{savedir}/{name}_pred_traj.pdb", "w") as f:
-            f.write(write_ca_traj(prot, pred_traj[:,0].cpu().numpy()))
-        
+            f.write(write_ca_traj(prot, pred_traj[:, 0].cpu().numpy()))

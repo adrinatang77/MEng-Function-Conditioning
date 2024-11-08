@@ -33,11 +33,11 @@ class StructurePredictionEval(OpenProtEval):
             atom37=prot["all_atom_positions"].astype(np.float32),
             atom37_mask=prot["all_atom_mask"].astype(np.float32),
         )
-        
+
         L = len(seqres)
         data["trans_noise"] = np.ones(L, dtype=np.float32) * 1.0
         data["rots_noise"] = np.ones(L, dtype=np.float32) * 1.0
-        
+
         return data
 
     def run_batch(self, model, batch: dict, savedir=".", device=None, logger=None):
@@ -53,13 +53,11 @@ class StructurePredictionEval(OpenProtEval):
         aatype = batch["aatype"].cpu().numpy()[0]
         coords = readout["trans"][-1]
         coords = rmsdalign(batch["frame_trans"], coords, batch["frame_mask"])
-        
-        lddt = compute_lddt(
-            coords, batch["frame_trans"], batch["frame_mask"]
-        )
-        
-        tmscore = compute_tmscore( # second is reference
-            coords1=coords.cpu().numpy()[0], 
+
+        lddt = compute_lddt(coords, batch["frame_trans"], batch["frame_mask"])
+
+        tmscore = compute_tmscore(  # second is reference
+            coords1=coords.cpu().numpy()[0],
             coords2=batch["frame_trans"].cpu().numpy()[0],
             seq1=aatype,
             seq2=aatype,
@@ -67,19 +65,19 @@ class StructurePredictionEval(OpenProtEval):
             mask2=batch["frame_mask"].cpu().numpy()[0],
         )
 
-        rmsd = compute_rmsd(batch['frame_trans'], coords, batch["frame_mask"])
+        rmsd = compute_rmsd(batch["frame_trans"], coords, batch["frame_mask"])
         if logger:
             logger.log("struct/lddt", lddt)
-            logger.log("struct/tm", tmscore['tm'])
-            logger.log("struct/rmsd", tmscore['rmsd'])
-            logger.log("struct/gdt_ts", tmscore['gdt_ts'])
-            logger.log("struct/gdt_ha", tmscore['gdt_ha'])
+            logger.log("struct/tm", tmscore["tm"])
+            logger.log("struct/rmsd", tmscore["rmsd"])
+            logger.log("struct/gdt_ts", tmscore["gdt_ts"])
+            logger.log("struct/gdt_ha", tmscore["gdt_ha"])
             logger.log("struct/rmsd2", rmsd)
-                              
+
         prot = make_ca_prot(
             coords=batch["frame_trans"].cpu().numpy()[0],
             aatype=aatype,
-            mask=batch["frame_mask"].cpu().numpy()[0]
+            mask=batch["frame_mask"].cpu().numpy()[0],
         )
         ref_str = protein.to_pdb(prot)
 
