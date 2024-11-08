@@ -258,44 +258,11 @@ class OpenProtTransformerBlock(nn.Module):
             x = x_in
         return x, z, rots, trans
 
-
-class OpenProtModel(nn.Module):
+class StructureModule(nn.Module):
+    
     def __init__(self, cfg):
         super().__init__()
         self.cfg = cfg
-
-        if cfg.pairwise_pos_emb:
-            self.pairwise_positional_embedding = RelativePosition(
-                cfg.position_bins, cfg.pairwise_dim
-            )
-
-        ipa_args = dict(
-            relpos_attn=cfg.relpos_attn,
-            relpos_values=cfg.relpos_values,
-            update_x=cfg.update_x,
-        )
-        self.blocks = nn.ModuleList()
-        for i in range(cfg.blocks):
-            is_pair = (i + 1) % cfg.pair_block_interval == 0
-            is_ipa = (i + 1) % cfg.ipa_block_interval == 0
-            self.blocks.append(
-                OpenProtTransformerBlock(
-                    dim=cfg.dim,
-                    heads=cfg.heads,
-                    ff_expand=cfg.ff_expand,
-                    pairwise_dim=cfg.pairwise_dim,
-                    pairwise_heads=cfg.pairwise_heads,
-                    rope=cfg.rope,
-                    pair_bias=is_pair,
-                    pair_updates=is_pair,
-                    pair_values=is_pair and cfg.pair_values,
-                    pair_ffn=is_pair and cfg.pair_ffn,
-                    pair_ff_expand=cfg.pair_ff_expand,
-                    tri_mul=is_pair and cfg.tri_mul,
-                    adaLN=cfg.trunk_adaLN,
-                    **(ipa_args if is_ipa else {}),
-                )
-            )
 
         block_fn = lambda: OpenProtTransformerBlock(
             dim=cfg.dim,
@@ -305,8 +272,9 @@ class OpenProtModel(nn.Module):
             pair_bias=cfg.ipa_pair_bias,
             pair_values=cfg.ipa_pair_values,
             adaLN=cfg.sm_adaLN,
-            frame_update=cfg.frame_update,
-            **ipa_args,
+            frame_update=True,
+            relpos_attn=True,
+            relpos_values=True,
         )
         if cfg.separate_ipa_blocks:
             self.ipa_blocks = nn.ModuleList()
@@ -315,62 +283,23 @@ class OpenProtModel(nn.Module):
         elif self.cfg.ipa_blocks > 0:
             self.ipa_block = block_fn()
 
-        # if cfg.embed_trans_before_ipa:
-        #     self.trans_in = nn.Linear(3, cfg.dim)
 
-    def forward(self, inp):
-
-        x = inp["x"]
-        B, L, _ = x.shape
-        residx = torch.arange(L, device=x.device)[None].expand(B, -1)
-        mask = inp["pad_mask"]
-        z = inp.get("z", 0) # this line needs to be fixed
-        if self.cfg.pairwise_pos_emb:
-            z = z + self.pairwise_positional_embedding(residx, mask=mask)
-
-        rots = inp.get("rots", None)
-        trans = inp.get("trans", None)
-        x_cond = inp.get("x_cond", None)
-        update_coeff = inp.get("update_coeff", None)
-
-        for block in self.blocks:
-            if block.pair_updates and self.cfg.checkpoint:
-                x, z, rots, trans = torch.utils.checkpoint.checkpoint(
-                    block, x, z, rots, trans, mask, x_cond, use_reentrant=False
-                )
-            else:
-                x, z, rots, trans = block(x, z, rots, trans, mask, x_cond)
-
-        # if self.cfg.detach_before_ipa:
-        #     x = x.detach()
-
-        # if self.cfg.embed_trans_before_ipa:
-        #     x = x + self.trans_in(trans)
-
-        if self.cfg.augment_before_ipa:
-            R, B, L, D = x.shape
-            x = x.reshape(R * B, L, D)
-            x_cond = x_cond[None].expand(R, -1, -1, -1).reshape(R * B, L, D)
-            mask = mask[None].expand(R, -1, -1).reshape(R * B, L)
-            z_ = z[None].expand(R, -1, -1, -1, -1).reshape(R * B, L, L, -1)
-        else:
-            z_ = z
-
+    def forward(self, x, z, rots, trans, mask, x_cond):
         if self.cfg.zero_frames_before_ipa:
             trans = torch.zeros_like(trans)
             rots = torch.zeros_like(rots) + torch.eye(
                 3, device=rots.device, dtype=rots.dtype
             )
-
-        all_rots = [rots]
-        all_trans = [trans]
+        
+        all_rots = []
+        all_trans = []
         for i in range(self.cfg.ipa_blocks):
             if self.cfg.separate_ipa_blocks:
                 block = self.ipa_blocks[i]
             else:
                 block = self.ipa_block
 
-            x, z_, rots, trans = block(x, z_, rots, trans, mask, x_cond, update_coeff)
+            x, z, rots, trans = block(x, z, rots, trans, mask, x_cond)
             all_rots.append(rots)
             all_trans.append(trans)
 
@@ -379,11 +308,96 @@ class OpenProtModel(nn.Module):
             if self.cfg.detach_trans:
                 trans = trans.detach()
 
-        if self.cfg.augment_before_ipa:
-            x = x.reshape(R, B, L, D)
+        return {
+            'x': x,
+            'trans': torch.stack(all_trans),
+            'rots': torch.stack(all_rots)
+        }
+class OpenProtModel(nn.Module):
+    def __init__(self, cfg):
+        super().__init__()
+        self.cfg = cfg
+
+        if cfg.pairwise_pos_emb:
+            self.pairwise_positional_embedding = RelativePosition(
+                cfg.position_bins, cfg.pairwise_dim
+            )
+        pair_args = dict(
+            pair_updates=True,
+            pairwise_heads=cfg.pairwise_heads,
+            pair_ffn=cfg.pair_ffn,
+            pair_ff_expand=cfg.pair_ff_expand,
+            tri_mul=cfg.tri_mul,
+        )
+                    
+        self.blocks = nn.ModuleList()
+        pair_block_idx = list(range(
+            cfg.pair_blocks.start,
+            cfg.pair_blocks.end,
+            cfg.pair_blocks.interval
+        ))
+      
+        for i in range(cfg.blocks):
+            
+            self.blocks.append(
+                OpenProtTransformerBlock(
+                    dim=cfg.dim,
+                    heads=cfg.heads,
+                    ff_expand=cfg.ff_expand,
+                    pairwise_dim=cfg.pairwise_dim,
+                    pair_bias=cfg.pair_bias,
+                    pair_values=cfg.pair_values,
+                    rope=cfg.rope,
+                    adaLN=cfg.trunk_adaLN,
+                    **(pair_args if i in pair_block_idx else {}),
+                )
+            )
+
+        self.structure_module = StructureModule(cfg)
+
+
+
+    def forward(self, inp):
+
+        x = inp["x"]
+        B, L, _ = x.shape
+        residx = torch.arange(L, device=x.device)[None].expand(B, -1)
+        mask = inp["pad_mask"]
+        z = inp.get("z", x.new_zeros(B, L, L, self.cfg.pairwise_dim))
+        if self.cfg.pairwise_pos_emb:
+            z = z + self.pairwise_positional_embedding(residx, mask=mask)
+
+        rots = inp.get("rots", None)
+        trans = inp.get("trans", None)
+        x_cond = inp.get("x_cond", None)
+
+        for i, block in enumerate(self.blocks):
+            
+            if block.pair_updates and self.cfg.checkpoint:
+                x, z, rots, trans = torch.utils.checkpoint.checkpoint(
+                    block, x, z, rots, trans, mask, x_cond, use_reentrant=False
+                )
+            else:
+                x, z, rots, trans = block(x, z, rots, trans, mask, x_cond)
+            
+            if i+1 == self.cfg.sm_block_idx:
+                sm_out = self.structure_module(x, z, rots, trans, mask, x_cond)
+                
         return {
             "x": x,
             "z": z,
-            "rots": torch.stack(all_rots) if rots is not None else None,
-            "trans": torch.stack(all_trans),
+            "sm": sm_out
         }
+
+
+        # if self.cfg.augment_before_ipa:
+        #     R, B, L, D = x.shape
+        #     x = x.reshape(R * B, L, D)
+        #     x_cond = x_cond[None].expand(R, -1, -1, -1).reshape(R * B, L, D)
+        #     mask = mask[None].expand(R, -1, -1).reshape(R * B, L)
+        #     z_ = z[None].expand(R, -1, -1, -1, -1).reshape(R * B, L, L, -1)
+        
+        # if self.cfg.augment_before_ipa:
+        #     x = x.reshape(R, B, L, D)
+        # else:
+        #     z_ = z

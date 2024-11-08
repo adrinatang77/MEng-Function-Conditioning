@@ -8,14 +8,14 @@ logger:
     # please change "test" to something unique to your task
     project: openprot/diffusion
     # will log to workdir and neptune.ai with this name
-    name: struct-gen-notri-vanilla-velocity
+    name: struct-gen-velocity-notri2
     # if not null, will duplicate stdout and stderr to workdir/{name}/{logfile}
     logfile: std.out
     # if null, will log every epoch, otherwise every this number of steps
     train_log_freq: 10
     val_log_freq: null 
-    ckpt_freq: 5000
-    save_freq: 1000000000
+    ckpt_freq: 10000000
+    save_freq: 5000
 trainer:
     accelerator: auto
     devices: 1
@@ -112,17 +112,17 @@ evals:
     #     augmented: false
     #     align: false
     #     demean: true
-    struct_gen_ode:
-        type: StructureGenerationEval
-        num_samples: 100
-        sample_length: 128
-        nsteps: 200
-        sde_weight: 0.0
-        sched_type: 'log'
-        temp_factor: 0.3
-        sde_cutoff_time: 0.0
-        sde_cutoff_width: 0.00001
-        run_designability: true
+    # struct_gen_ode:
+    #     type: StructureGenerationEval
+    #     num_samples: 100
+    #     sample_length: 128
+    #     nsteps: 200
+    #     sde_weight: 0.0
+    #     sched_type: 'log'
+    #     temp_factor: 0.3
+    #     sde_cutoff_time: 0.0
+    #     sde_cutoff_width: 0.00001
+    #     run_designability: true
     struct_gen_sde_0.5:
         type: StructureGenerationEval
         num_samples: 100
@@ -135,6 +135,17 @@ evals:
         sde_cutoff_width: 0.00001
         run_designability: true
     struct_gen_sde_0.7:
+        type: StructureGenerationEval
+        num_samples: 100
+        sample_length: 128
+        nsteps: 200
+        sched_type: 'log'
+        sde_weight: 10.0
+        temp_factor: 0.7
+        sde_cutoff_time: 0.0
+        sde_cutoff_width: 0.00001
+        run_designability: true
+    struct_gen_sde_1.0:
         type: StructureGenerationEval
         num_samples: 100
         sample_length: 128
@@ -184,7 +195,7 @@ tracks:
         diffusion:
             type: GaussianFM
             prior_sigma: 15.0
-            center_noise: false
+            center_noise: true
             center_pos: true
             train_align: false
             inf_align: false
@@ -196,7 +207,7 @@ tracks:
         loss_weight: 0.0
 
 model: # custom args
-    checkpoint: true
+    checkpoint: false
     dim: 1024
     pairwise_dim: 128
     heads: 16
@@ -211,7 +222,7 @@ model: # custom args
     pair_ffn: true
     pair_values: false
     pair_ff_expand: 4
-    tri_mul: true
+    tri_mul: false
     rope: true
 
     ### ipa args
@@ -220,7 +231,7 @@ model: # custom args
     zero_frames_before_ipa: false
     
     ipa_blocks: 0
-    separate_ipa_blocks: false
+    separate_ipa_blocks: true
     frame_update: false
     relpos_attn: false
     relpos_values: false

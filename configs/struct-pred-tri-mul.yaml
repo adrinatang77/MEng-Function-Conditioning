@@ -135,15 +135,11 @@ tracks:
     # register tracks here
     StructureTrack: 
         loss_weight: 1.0
-        embed_rots: false
-        readout_rots: false
-        readout_rots_type: 'quat'
         readout_pairwise: true
         
         embed_trans: false
-        readout_trans: false
-        intermediate_loss: true
-        int_loss_weight: 1.0
+        readout_trans: true
+        int_loss_weight: 0.5
         
         rot_augment: 1
         embed_pairwise: false
@@ -157,14 +153,13 @@ tracks:
         weighted_mse: false
         soft_weighted_mse: false
         
-        update_coeff: false
         losses:
             pade: 0.1
-            # fape: 0.0
             lddt: 1.0
             distogram: 0.3
             mse: 0.001
-            # nape: 0.0
+            nape: 0.0
+            diffusion: 0.0
         diffusion:
             type: GaussianFM
             prior_sigma: 15.0
@@ -186,35 +181,35 @@ model: # custom args
     heads: 16
     pairwise_heads: 4
     blocks: 12
-    pair_block_interval: 1
-    ipa_block_interval: 1000
+    
+    
+    # topology of the network
+    pair_blocks:
+        start: 0
+        end: 12
+        interval: 1
+    sm_block_idx: 12
+    
     pairwise_pos_emb: true
     
     ff_expand: 4
     position_bins: 32
     pair_ffn: true
+    pair_bias: true
     pair_values: false
     pair_ff_expand: 4
     tri_mul: true
     rope: true
 
     ### ipa args
-
-    augment_before_ipa: false
-    zero_frames_before_ipa: true
     
+    zero_frames_before_ipa: true
     ipa_blocks: 8
     separate_ipa_blocks: false
-    frame_update: true
-    relpos_attn: true
-    relpos_values: true
     ipa_pair_values: false
-    
     ipa_pair_bias: true
-    
     detach_rots: true
     detach_trans: true
-    update_x: true
     trunk_adaLN: false
     sm_adaLN: false
 

@@ -26,7 +26,7 @@ def sigmoid(x):
 
 def masked_center(x, mask=None):
     if mask is None:
-        return x
+        return x - x.mean(-2, keepdims=True)
     mask = mask[..., None]
     com = (x * mask).sum(-2, keepdims=True) / (eps + mask.sum(-2, keepdims=True))
     return torch.where(mask, x - com, x)
@@ -51,8 +51,10 @@ class GaussianFM(Diffusion):
         elif self.cfg.prediction == "target":
             target = pos
 
-        # print((t * noise).square().sum(-1) / (t.squeeze(-1)**2 * 15**2))
         return noisy, target
+
+    def compute_loss(self, pred, target, t):
+        return torch.square(pred - target).sum(-1)
 
     def inference(
         self,

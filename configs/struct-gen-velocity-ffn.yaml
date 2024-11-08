@@ -1,21 +1,21 @@
-ckpt: "workdir/struct-gen-trimul/step=35000.ckpt" # 
-pretrained: null # workdir/nodiff-relpos-pade/last.ckpt # load weights from here first
-validate: true # if true, only validate the model, don't train
+ckpt: null # 
+pretrained: null # workdir/trimul-vanilla-disto/last.ckpt # workdir/nodiff-relpos-pade/last.ckpt # load weights from here first
+validate: false # if true, only validate the model, don't train
 logger:
     # set to true to log to neptune.ai
-    neptune: false
+    neptune: true
     run_id: null  
     # please change "test" to something unique to your task
     project: openprot/diffusion
     # will log to workdir and neptune.ai with this name
-    name: struct-gen-trimul
+    name: struct-gen-velocity-ffn-u0.1
     # if not null, will duplicate stdout and stderr to workdir/{name}/{logfile}
     logfile: std.out
     # if null, will log every epoch, otherwise every this number of steps
     train_log_freq: 10
     val_log_freq: null 
-    ckpt_freq: 5000
-    save_freq: 1000000000
+    ckpt_freq: 10000000
+    save_freq: 5000
 trainer:
     accelerator: auto
     devices: 1
@@ -26,7 +26,7 @@ trainer:
     limit_val_batches: 1.0
     num_sanity_val_steps: 0
     gradient_clip_val: 1.0
-    accumulate_grad_batches: 1
+    accumulate_grad_batches: 2
     val_check_interval: 5000
     check_val_every_n_epoch: 1
     logger: false
@@ -34,7 +34,7 @@ trainer:
 # custom args to OpenProtDataset and elsewhere
 data: 
     num_workers: 16
-    batch: 8
+    batch: 16
     crop: 256
     seed: 137
 
@@ -134,17 +134,28 @@ evals:
         sde_cutoff_time: 0.0
         sde_cutoff_width: 0.00001
         run_designability: true
-    # struct_gen_sde_0.7:
-    #     type: StructureGenerationEval
-    #     num_samples: 100
-    #     sample_length: 128
-    #     nsteps: 200
-    #     sched_type: 'log'
-    #     sde_weight: 10.0
-    #     temp_factor: 0.7
-    #     sde_cutoff_time: 0.0
-    #     sde_cutoff_width: 0.00001
-    #     run_designability: true
+    struct_gen_sde_0.7:
+        type: StructureGenerationEval
+        num_samples: 100
+        sample_length: 128
+        nsteps: 200
+        sched_type: 'log'
+        sde_weight: 10.0
+        temp_factor: 0.7
+        sde_cutoff_time: 0.0
+        sde_cutoff_width: 0.00001
+        run_designability: true
+    struct_gen_sde_1.0:
+        type: StructureGenerationEval
+        num_samples: 100
+        sample_length: 128
+        nsteps: 200
+        sched_type: 'log'
+        sde_weight: 10.0
+        temp_factor: 0.7
+        sde_cutoff_time: 0.0
+        sde_cutoff_width: 0.00001
+        run_designability: true
     
 
 tracks:
@@ -154,41 +165,41 @@ tracks:
         embed_rots: false
         readout_rots: false
         readout_rots_type: 'quat'
-        readout_pairwise: true
+        readout_pairwise: false
         
-        embed_trans: false
-        readout_trans: false
-        intermediate_loss: true
-        int_loss_weight: 0.5
+        embed_trans: true
+        readout_trans: true
+        intermediate_loss: false
+        int_loss_weight: 0.0
         
         rot_augment: 1
         embed_pairwise: false
         
-        aligned_mse: true
+        aligned_mse: false
         demean: true
         clamp_pade: false
         clamp_nape: true
         clamp_mse: false
         nape_cutoff: 15
-        weighted_mse: true
+        weighted_mse: false
         soft_weighted_mse: false
         
         update_coeff: false
         losses:
-            pade: 0.1
+            # pade: 0.1
             # fape: 0.0
-            lddt: 1.0
-            distogram: 0.3
+            # lddt: 1.0
+            # distogram: 0.3
             mse: 1.0
             # nape: 0.0
         diffusion:
             type: GaussianFM
             prior_sigma: 15.0
-            center_noise: false
+            center_noise: true
             center_pos: true
-            train_align: true
-            inf_align: true
-            prediction: "target"
+            train_align: false
+            inf_align: false
+            prediction: "velocity"
     SequenceTrack:
         esm: null # esm2_3B # esm2_650M # esm2_8M_270K
         corrupt: mask
@@ -196,14 +207,14 @@ tracks:
         loss_weight: 0.0
 
 model: # custom args
-    checkpoint: true
+    checkpoint: false
     dim: 1024
     pairwise_dim: 128
     heads: 16
     pairwise_heads: 4
     blocks: 12
     pair_block_interval: 1
-    ipa_block_interval: 1
+    ipa_block_interval: 100
     pairwise_pos_emb: true
     
     ff_expand: 4
@@ -211,7 +222,7 @@ model: # custom args
     pair_ffn: true
     pair_values: false
     pair_ff_expand: 4
-    tri_mul: true
+    tri_mul: false
     rope: true
 
     ### ipa args
@@ -220,10 +231,10 @@ model: # custom args
     zero_frames_before_ipa: false
     
     ipa_blocks: 8
-    separate_ipa_blocks: false
-    frame_update: true
-    relpos_attn: true
-    relpos_values: true
+    separate_ipa_blocks: true
+    frame_update: false
+    relpos_attn: false
+    relpos_values: false
     ipa_pair_values: false
     
     ipa_pair_bias: true
@@ -237,7 +248,7 @@ model: # custom args
 
 optimizer:
     type: AdamW
-    lr: 5e-4
+    lr: 1e-4
     scheduler: 
         total_steps: 1000000
         warmup_steps: 1000
