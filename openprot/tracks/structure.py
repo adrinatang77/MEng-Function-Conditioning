@@ -289,16 +289,10 @@ class StructureTrack(OpenProtTrack):
         t = target["trans_noise"]
 
         def compute_mse(pred, gt, mask, clamp=None):
-            if self.cfg.aligned_mse:
-                gt = rmsdalign(pred.detach(), gt, mask, demean=self.cfg.demean)
-                gt = torch.nan_to_num(gt, 0.0)
+            gt = rmsdalign(pred.detach(), gt, mask)
+            gt = torch.nan_to_num(gt, 0.0)
             mse = torch.square(pred - gt).sum(-1)
 
-            if self.cfg.weighted_mse:
-                if self.cfg.soft_weighted_mse:
-                    mse = mse / (1 + self.cfg.diffusion.prior_sigma**2 * t**2)
-                else:
-                    mse = mse / (eps + self.cfg.diffusion.prior_sigma**2 * t**2)
             if clamp is not None:
                 mse = torch.clamp(mse, max=clamp)
             return mse

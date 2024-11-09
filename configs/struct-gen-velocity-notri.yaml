@@ -3,19 +3,19 @@ pretrained: null # workdir/trimul-vanilla-disto/last.ckpt # workdir/nodiff-relpo
 validate: false # if true, only validate the model, don't train
 logger:
     # set to true to log to neptune.ai
-    neptune: true
+    neptune: false
     run_id: null  
     # please change "test" to something unique to your task
     project: openprot/diffusion
     # will log to workdir and neptune.ai with this name
-    name: struct-gen-velocity-notri
+    name: struct-gen-velocity-notri2
     # if not null, will duplicate stdout and stderr to workdir/{name}/{logfile}
     logfile: std.out
     # if null, will log every epoch, otherwise every this number of steps
     train_log_freq: 10
     val_log_freq: null 
-    ckpt_freq: 5000
-    save_freq: 1000000000
+    ckpt_freq: 10000000
+    save_freq: 5000
 trainer:
     accelerator: auto
     devices: 1
@@ -112,17 +112,17 @@ evals:
     #     augmented: false
     #     align: false
     #     demean: true
-    struct_gen_ode:
-        type: StructureGenerationEval
-        num_samples: 100
-        sample_length: 128
-        nsteps: 200
-        sde_weight: 0.0
-        sched_type: 'log'
-        temp_factor: 0.3
-        sde_cutoff_time: 0.0
-        sde_cutoff_width: 0.00001
-        run_designability: true
+    # struct_gen_ode:
+    #     type: StructureGenerationEval
+    #     num_samples: 100
+    #     sample_length: 128
+    #     nsteps: 200
+    #     sde_weight: 0.0
+    #     sched_type: 'log'
+    #     temp_factor: 0.3
+    #     sde_cutoff_time: 0.0
+    #     sde_cutoff_width: 0.00001
+    #     run_designability: true
     struct_gen_sde_0.5:
         type: StructureGenerationEval
         num_samples: 100
@@ -145,46 +145,47 @@ evals:
         sde_cutoff_time: 0.0
         sde_cutoff_width: 0.00001
         run_designability: true
+    struct_gen_sde_1.0:
+        type: StructureGenerationEval
+        num_samples: 100
+        sample_length: 128
+        nsteps: 200
+        sched_type: 'log'
+        sde_weight: 10.0
+        temp_factor: 1.0
+        sde_cutoff_time: 0.0
+        sde_cutoff_width: 0.00001
+        run_designability: true
     
 
 tracks:
     # register tracks here
     StructureTrack: 
         loss_weight: 1.0
-        embed_rots: false
-        readout_rots: false
-        readout_rots_type: 'quat'
         readout_pairwise: false
         
         embed_trans: true
         readout_trans: true
-        intermediate_loss: false
         int_loss_weight: 0.0
         
         rot_augment: 1
         embed_pairwise: false
         
-        aligned_mse: false
-        demean: true
         clamp_pade: false
         clamp_nape: true
         clamp_mse: false
         nape_cutoff: 15
-        weighted_mse: false
-        soft_weighted_mse: false
-        
-        update_coeff: false
         losses:
-            # pade: 0.1
-            # fape: 0.0
-            # lddt: 1.0
-            # distogram: 0.3
-            mse: 1.0
+            pade: 0.0
+            lddt: 0.0
+            # distogram: 0.0
+            # mse: 0.0
             # nape: 0.0
+            diffusion: 1.0
         diffusion:
             type: GaussianFM
             prior_sigma: 15.0
-            center_noise: false
+            center_noise: true
             center_pos: true
             train_align: false
             inf_align: false
@@ -196,41 +197,41 @@ tracks:
         loss_weight: 0.0
 
 model: # custom args
-    checkpoint: true
+    checkpoint: false
     dim: 1024
     pairwise_dim: 128
     heads: 16
     pairwise_heads: 4
     blocks: 12
-    pair_block_interval: 100
-    ipa_block_interval: 100
+    
+    # topology of the network
+    pair_blocks:
+        start: 0
+        end: 0
+        interval: 1
+    sm_block_idx: 12
+    
     pairwise_pos_emb: false
     
     ff_expand: 4
     position_bins: 32
     pair_ffn: true
     pair_values: false
+    pair_bias: true
     pair_ff_expand: 4
-    tri_mul: true
+    tri_mul: false
     rope: true
 
     ### ipa args
 
-    augment_before_ipa: false
     zero_frames_before_ipa: false
     
-    ipa_blocks: 0
+    ipa_blocks: 8
     separate_ipa_blocks: false
-    frame_update: false
-    relpos_attn: false
-    relpos_values: false
     ipa_pair_values: false
-    
     ipa_pair_bias: true
-    
     detach_rots: true
     detach_trans: true
-    update_x: true
     trunk_adaLN: true
     sm_adaLN: true
 
