@@ -127,7 +127,9 @@ class StructureTrack(OpenProtTrack):
 
         # add noise
         noisy, target_tensor = self.diffusion.add_noise(
-            batch["frame_trans"], batch["trans_noise"]
+            batch["frame_trans"], 
+            batch["trans_noise"], 
+            batch["frame_mask"].bool()
         )
         noisy_batch["frame_trans"] = noisy
 
@@ -190,7 +192,8 @@ class StructureTrack(OpenProtTrack):
     def predict(self, model, out, readout):
         if self.cfg.readout_trans:
             readout["trans"] = model.trans_out(out["x"])
-        readout["pos"] = out["sm"]["trans"]
+        if self.cfg.struct_module:
+            readout["pos"] = out["sm"]["trans"]
 
         if self.cfg.readout_pairwise:
             readout["pairwise"] = model.pairwise_out(out["z"])
@@ -235,9 +238,12 @@ class StructureTrack(OpenProtTrack):
                 readout, target, logger=logger
             )
 
-        lddt = compute_lddt(
-            readout["pos"][-1], target["frame_pos"], target["struct_supervise"]
-        )
+        if self.cfg.struct_module:
+            lddt = compute_lddt(
+                readout["pos"][-1], target["frame_pos"], target["struct_supervise"]
+            )
+            if logger:
+                logger.log("struct/lddt", lddt)
 
         # compute dmat lddt
         if self.cfg.readout_pairwise:
@@ -259,7 +265,7 @@ class StructureTrack(OpenProtTrack):
         if logger:
             logger.log("struct/toks_sup", mask.sum())
             logger.log("struct/loss", loss, mask=mask)
-            logger.log("struct/lddt", lddt)
+            
 
         loss = (loss * mask).sum() / target["pad_mask"].sum()
 
@@ -406,4 +412,4 @@ class StructureTrack(OpenProtTrack):
         if logger:
             logger.log("struct/diffusion_loss", loss, mask=target["struct_supervise"])
 
-        return loss
+        return loss * target["struct_supervise"]

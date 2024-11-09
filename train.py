@@ -45,7 +45,7 @@ trainer = pl.Trainer(
             filename="last",
             enable_version_counter=False,
         ),
-        ModelSummary(max_depth=2),
+        ModelSummary(max_depth=4),
     ],
     num_nodes=int(os.environ.get("SLURM_NNODES", 1)),
 )

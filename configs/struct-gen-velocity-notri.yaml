@@ -170,14 +170,15 @@ tracks:
         
         rot_augment: 1
         embed_pairwise: false
+        struct_module: false
         
         clamp_pade: false
         clamp_nape: true
         clamp_mse: false
         nape_cutoff: 15
         losses:
-            pade: 0.0
-            lddt: 0.0
+            # pade: 0.0
+            # lddt: 0.0
             # distogram: 0.0
             # mse: 0.0
             # nape: 0.0
@@ -209,6 +210,7 @@ model: # custom args
         start: 0
         end: 0
         interval: 1
+    struct_module: false
     sm_block_idx: 12
     
     pairwise_pos_emb: false
@@ -226,7 +228,7 @@ model: # custom args
 
     zero_frames_before_ipa: false
     
-    ipa_blocks: 1
+    ipa_blocks: 8
     separate_ipa_blocks: false
     ipa_pair_values: false
     ipa_pair_bias: true

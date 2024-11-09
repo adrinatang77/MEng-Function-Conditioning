@@ -322,6 +322,9 @@ class OpenProtModel(nn.Module):
             )
         pair_args = dict(
             pair_updates=True,
+            pairwise_dim=cfg.pairwise_dim,
+            pair_bias=cfg.pair_bias,
+            pair_values=cfg.pair_values,
             pairwise_heads=cfg.pairwise_heads,
             pair_ffn=cfg.pair_ffn,
             pair_ff_expand=cfg.pair_ff_expand,
@@ -340,16 +343,13 @@ class OpenProtModel(nn.Module):
                     dim=cfg.dim,
                     heads=cfg.heads,
                     ff_expand=cfg.ff_expand,
-                    pairwise_dim=cfg.pairwise_dim,
-                    pair_bias=cfg.pair_bias,
-                    pair_values=cfg.pair_values,
                     rope=cfg.rope,
                     adaLN=cfg.trunk_adaLN,
                     **(pair_args if i in pair_block_idx else {}),
                 )
             )
-
-        self.structure_module = StructureModule(cfg)
+        if self.cfg.struct_module:
+            self.structure_module = StructureModule(cfg)
 
     def forward(self, inp):
 
@@ -365,6 +365,7 @@ class OpenProtModel(nn.Module):
         trans = inp.get("trans", None)
         x_cond = inp.get("x_cond", None)
 
+        sm_out = None
         for i, block in enumerate(self.blocks):
 
             if block.pair_updates and self.cfg.checkpoint:
@@ -374,9 +375,9 @@ class OpenProtModel(nn.Module):
             else:
                 x, z, rots, trans = block(x, z, rots, trans, mask, x_cond)
 
-            if i + 1 == self.cfg.sm_block_idx:
+            if self.cfg.struct_module and i + 1 == self.cfg.sm_block_idx:
                 sm_out = self.structure_module(x, z, rots, trans, mask, x_cond)
-
+        
         return {"x": x, "z": z, "sm": sm_out}
 
         # if self.cfg.augment_before_ipa:

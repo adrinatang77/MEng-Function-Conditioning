@@ -27,7 +27,7 @@ def sigmoid(x):
     return 1 / (1 + np.exp(-x))
 
 
-def masked_center(x, mask=None):
+def masked_center(x, mask=None, eps=1e-5):
     if mask is None:
         return x - x.mean(-2, keepdims=True)
     mask = mask[..., None]
