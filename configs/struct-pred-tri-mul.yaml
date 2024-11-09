@@ -1,6 +1,6 @@
-ckpt: null # 
+ckpt: workdir/struct-pred-trimul/last.ckpt # 
 pretrained: null # workdir/trimul-vanilla-disto/last.ckpt # workdir/nodiff-relpos-pade/last.ckpt # load weights from here first
-validate: false # if true, only validate the model, don't train
+validate: true # if true, only validate the model, don't train
 logger:
     # set to true to log to neptune.ai
     neptune: false
@@ -153,7 +153,6 @@ tracks:
             lddt: 1.0
             distogram: 0.3
             mse: 0.001
-            nape: 0.0
             diffusion: 0.0
         diffusion:
             type: GaussianFM

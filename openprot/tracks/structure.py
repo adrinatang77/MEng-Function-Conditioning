@@ -189,7 +189,7 @@ class StructureTrack(OpenProtTrack):
 
     def predict(self, model, out, readout):
         if self.cfg.readout_trans:
-            readout["trans"] = model.trans_out(out["x"])[None]
+            readout["trans"] = model.trans_out(out["x"])
         readout["pos"] = out["sm"]["trans"]
 
         if self.cfg.readout_pairwise:
@@ -397,6 +397,7 @@ class StructureTrack(OpenProtTrack):
         return (loss * mask).sum(-1) / (eps + mask.sum(-1))
 
     def compute_diffusion_loss(self, readout, target, logger=None, eps=1e-6):
+
         loss = self.diffusion.compute_loss(
             pred=readout["trans"],
             target=target["frame_trans"],

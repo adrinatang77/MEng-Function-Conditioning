@@ -51,7 +51,7 @@ class StructurePredictionEval(OpenProtEval):
 
         L = batch["frame_trans"].shape[1]
         aatype = batch["aatype"].cpu().numpy()[0]
-        coords = readout["trans"][-1]
+        coords = readout["pos"][-1]
         coords = rmsdalign(batch["frame_trans"], coords, batch["frame_mask"])
 
         lddt = compute_lddt(coords, batch["frame_trans"], batch["frame_mask"])
