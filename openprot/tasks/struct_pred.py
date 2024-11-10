@@ -4,6 +4,10 @@ from ..utils import residue_constants as rc
 
 
 class StructurePrediction(OpenProtTask):
+
+    def register_loss_masks(self):
+        return ['/struct_pred']
+        
     def prep_data(self, data, crop=None, eps=1e-6):
 
         if crop is not None:
@@ -30,4 +34,6 @@ class StructurePrediction(OpenProtTask):
         com = (pos * mask).sum(-2) / (mask.sum(-2) + eps)
         data["atom37"] -= com
 
+        data['/struct_pred'] = np.ones((), dtype=np.float32)
+        
         return data

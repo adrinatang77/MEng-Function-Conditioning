@@ -5,6 +5,10 @@ from scipy.spatial.transform import Rotation as R
 
 
 class StructureGeneration(OpenProtTask):
+
+    def register_loss_masks(self):
+        return ['/struct_gen']
+        
     def prep_data(self, data, crop=None, eps=1e-6):
 
         if crop is not None:
@@ -37,4 +41,6 @@ class StructureGeneration(OpenProtTask):
             randrot = R.random().as_matrix()
             data["atom37"] @= randrot.T
 
+        data['/struct_gen'] = np.ones((), dtype=np.float32)
+        
         return data

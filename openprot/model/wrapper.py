@@ -118,7 +118,8 @@ class OpenProtWrapper(Wrapper):
 
     def general_step(self, batch):
 
-        self._logger.log("toks", batch["pad_mask"].sum())
+        self._logger.register_masks(batch)
+        self._logger.masked_log("toks", batch["pad_mask"], sum=True)
 
         ## corrupt all the tracks
         noisy_batch, target = self.tracks.corrupt(batch, logger=self._logger)
@@ -129,11 +130,12 @@ class OpenProtWrapper(Wrapper):
         loss = self.tracks.compute_loss(readout, target, logger=self._logger)
 
         ## log some metrics
-        self._logger.log("loss", loss)
+        self._logger.masked_log("loss", loss, batch["pad_mask"])
         self._logger.log("lr", self.get_lr())
-        # self._logger.log("act_norm", torch.square(out).mean(-1), batch["pad_mask"])
 
-        return loss
+        self._logger.clear_masks()
+        
+        return (loss * batch["pad_mask"]).sum() / batch['pad_mask'].sum()
 
     def on_validation_epoch_end(self):
         savedir = f'{os.environ["MODEL_DIR"]}/eval_step{self.trainer.global_step}'

@@ -113,7 +113,7 @@ class SequenceTrack(OpenProtTrack):
         target["aatype"] = batch["aatype"]
 
         if logger:
-            logger.log("seq/toks", batch["seq_mask"].sum())
+            logger.masked_log("seq/toks", batch["seq_mask"], sum=True)
 
     def embed(self, model, batch, inp):
 
@@ -147,7 +147,7 @@ class SequenceTrack(OpenProtTrack):
 
         mask = target["seq_supervise"]
         if logger:
-            logger.log("seq/loss", loss, mask=mask)
-            logger.log("seq/perplexity", loss, mask=mask, post=np.exp)
-            logger.log("seq/toks_sup", mask.sum().item())
-        return (loss * mask).sum() / target["pad_mask"].sum()
+            logger.masked_log("seq/loss", loss, mask=mask)
+            logger.masked_log("seq/perplexity", loss, mask=mask, post=np.exp)
+            logger.masked_log("seq/toks_sup", mask, sum=True)
+        return loss * mask

@@ -57,17 +57,26 @@ features:
     # torsion_noise: [-1]
 
 datasets:
-    PDBDataset: 
+    pdb:
+        type: PDBDataset
         path: /scratch/projects/cgai/openprot/data/pdb_npz
         cutoff: 2018-05-01
         clusters: /scratch/projects/cgai/openprot/data/pdb_clusters
         blacklist: /scratch/projects/cgai/openprot/cameo_pdb_blacklist.tsv
-    AFDBDataset:
+    afdb_genie:
+        type: AFDBDataset
         path: /scratch/projects/cgai/openprot/data/afdb_rep_v4/afdb_rep_v4
         annotations: /scratch/projects/cgai/openprot/data/afdb_rep_v4.pkl.gz
-        blacklist: null # /scratch/projects/cgai/openprot/cameo_afdb_blacklist.tsv
-        plddt_thresh: null # 70
+        blacklist: null 
+        plddt_thresh: null 
         index: /scratch/projects/cgai/openprot/afdbreps_l-256_plddt_80.txt
+    afdb:
+        type: AFDBDataset
+        path: /scratch/projects/cgai/openprot/data/afdb_rep_v4/afdb_rep_v4
+        annotations: /scratch/projects/cgai/openprot/data/afdb_rep_v4.pkl.gz
+        blacklist: /scratch/projects/cgai/openprot/cameo_afdb_blacklist.tsv
+        plddt_thresh: 70
+        index: null
         
     # UnirefDataset:
     #     #path: /data/cb/scratch/datasets/uniref50.fasta
@@ -85,33 +94,45 @@ tasks:
     #             fraction: 1.0
     #             start: 0
     #             seed: 137
+    StructurePrediction:
+        fraction: 0.5
+        # beta: [1, 2]
+        # uniform_prob: 1.0
+        max_noise_prob: 1.0
+        seed: 137
+        # random_rot: true
+        datasets:
+            afdb:
+                fraction: 0.75
+                start: 0
+                seed: 142
+            pdb:
+                fraction: 0.25
+                start: 0
+                seed: 142
     StructureGeneration:
     # StructurePrediction:
-        fraction: 1.0
+        fraction: 0.5
         beta: [1, 2]
         uniform_prob: 1.0
         max_noise_prob: 0.0
         seed: 137
         random_rot: true
         datasets:
-            AFDBDataset:
-                fraction: 0.75
-                start: 0
-                seed: 142
-            PDBDataset:
-                fraction: 0.25
+            afdb_genie:
+                fraction: 1.0
                 start: 0
                 seed: 142
             
 evals: 
-    # cameo22:
-    #     type: StructurePredictionEval
-    #     path: /scratch/projects/cgai/openprot/data/pdb_npz
-    #     split: splits/cameo2022.csv
-    #     diffusion: false
-    #     augmented: false
-    #     align: false
-    #     demean: true
+    cameo22:
+        type: StructurePredictionEval
+        path: /scratch/projects/cgai/openprot/data/pdb_npz
+        split: splits/cameo2022.csv
+        diffusion: false
+        augmented: false
+        align: false
+        demean: true
     # struct_gen_ode:
     #     type: StructureGenerationEval
     #     num_samples: 100
@@ -162,7 +183,7 @@ tracks:
     # register tracks here
     StructureTrack: 
         loss_weight: 1.0
-        readout_pairwise: false
+        readout_pairwise: true
         
         embed_trans: true
         readout_trans: true
@@ -170,17 +191,17 @@ tracks:
         
         rot_augment: 1
         embed_pairwise: false
-        struct_module: false
+        struct_module: true
         
         clamp_pade: false
         clamp_nape: true
         clamp_mse: false
         nape_cutoff: 15
         losses:
-            # pade: 0.0
-            # lddt: 0.0
-            # distogram: 0.0
-            # mse: 0.0
+            pade: 0.1
+            lddt: 1.0
+            distogram: 0.3
+            mse: 0.001
             # nape: 0.0
             diffusion: 1.0
         diffusion:
@@ -198,19 +219,19 @@ tracks:
         loss_weight: 0.0
 
 model: # custom args
-    checkpoint: false
+    checkpoint: true
     dim: 1024
     pairwise_dim: 128
     heads: 16
     pairwise_heads: 4
-    blocks: 12
+    blocks: 20
     
     # topology of the network
     pair_blocks:
         start: 0
-        end: 0
+        end: 12
         interval: 1
-    struct_module: false
+    struct_module: true
     sm_block_idx: 12
     
     pairwise_pos_emb: false

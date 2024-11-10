@@ -158,7 +158,7 @@ class StructureTrack(OpenProtTrack):
         )
 
         if logger:
-            logger.log("struct/toks", batch["frame_mask"].sum())
+            logger.masked_log("struct/toks", batch["frame_mask"], sum=True)
 
     def embed(self, model, batch, inp):
 
@@ -243,7 +243,7 @@ class StructureTrack(OpenProtTrack):
                 readout["pos"][-1], target["frame_pos"], target["struct_supervise"]
             )
             if logger:
-                logger.log("struct/lddt", lddt)
+                logger.masked_log("struct/lddt", lddt, dims=0)
 
         # compute dmat lddt
         if self.cfg.readout_pairwise:
@@ -259,15 +259,15 @@ class StructureTrack(OpenProtTrack):
                 pred_is_dmat=True,
             )
             if logger:
-                logger.log("struct/dmat_lddt", dmat_lddt)
+                logger.masked_log("struct/dmat_lddt", dmat_lddt, dims=0)
 
         mask = target["struct_supervise"]
         if logger:
-            logger.log("struct/toks_sup", mask.sum())
-            logger.log("struct/loss", loss, mask=mask)
+            logger.masked_log("struct/toks_sup", mask, sum=True)
+            logger.masked_log("struct/loss", loss, mask=mask)
             
 
-        loss = (loss * mask).sum() / target["pad_mask"].sum()
+        loss = loss * mask
 
         return loss
 
@@ -281,8 +281,8 @@ class StructureTrack(OpenProtTrack):
         soft_lddt_loss = 1 - soft_lddt  # [9, B, L]
 
         if logger:
-            logger.log("struct/lddt_loss", soft_lddt_loss[-1], mask=mask)
-            logger.log("struct/lddt_loss_aux", soft_lddt_loss.mean(0), mask=mask)
+            logger.masked_log("struct/lddt_loss", soft_lddt_loss[-1], mask=mask)
+            logger.masked_log("struct/lddt_loss_aux", soft_lddt_loss.mean(0), mask=mask)
 
         w = self.cfg.int_loss_weight
         return w * soft_lddt_loss.mean(0) + (1 - w) * soft_lddt_loss[-1]
@@ -311,8 +311,8 @@ class StructureTrack(OpenProtTrack):
             mse = compute_mse(pred, gt, mask)
 
         if logger:
-            logger.log("struct/mse_loss", mse[-1], mask=mask)
-            logger.log("struct/mse_loss_aux", mse.mean(0), mask=mask)
+            logger.masked_log("struct/mse_loss", mse[-1], mask=mask)
+            logger.masked_log("struct/mse_loss_aux", mse.mean(0), mask=mask)
 
         w = self.cfg.int_loss_weight
         return w * mse.mean(0) + (1 - w) * mse[-1]
@@ -330,8 +330,8 @@ class StructureTrack(OpenProtTrack):
             pade = compute_pade(pred, gt, mask)
 
         if logger:
-            logger.log("struct/pade_loss", pade[-1], mask=mask)
-            logger.log("struct/pade_loss_aux", pade.mean(0), mask=mask)
+            logger.masked_log("struct/pade_loss", pade[-1], mask=mask)
+            logger.masked_log("struct/pade_loss_aux", pade.mean(0), mask=mask)
         w = self.cfg.int_loss_weight
         return w * pade.mean(0) + (1 - w) * pade[-1]
 
@@ -376,7 +376,7 @@ class StructureTrack(OpenProtTrack):
             nape = nape.mean(0)
 
         if logger:
-            logger.log("struct/nape_loss", nape, mask=mask)
+            logger.masked_log("struct/nape_loss", nape, mask=mask)
 
         return nape
 
@@ -397,8 +397,8 @@ class StructureTrack(OpenProtTrack):
         mask = target["struct_supervise"] * target["beta_mask"]
         mask = mask[:, None] * mask[:, :, None]
         if logger:
-            logger.log("struct/distogram", loss, mask)
-            # logger.log("struct/distogram2", (loss * mask).sum((-1,-2)) / mask.sum((-1,-2)))
+            logger.masked_log("struct/distogram", loss, mask, dims=2)
+            
 
         return (loss * mask).sum(-1) / (eps + mask.sum(-1))
 
@@ -410,6 +410,6 @@ class StructureTrack(OpenProtTrack):
             t=target["trans_noise"],
         )
         if logger:
-            logger.log("struct/diffusion_loss", loss, mask=target["struct_supervise"])
+            logger.masked_log("struct/diffusion_loss", loss, mask=target["struct_supervise"])
 
         return loss * target["struct_supervise"]
