@@ -18,6 +18,12 @@ class Diffusion:
     def inference(self, model, seed=None, mask=None):
         NotImplemented
 
+    def precondition(self, inp, t):
+        return inp
+
+    def postcondition(self, inp, out, t):
+        return out
+    
     @abstractmethod
     def compute_loss(self, pred, gt, t, mask=None):
         NotImplemented
@@ -33,7 +39,6 @@ def masked_center(x, mask=None, eps=1e-5):
     mask = mask[..., None]
     com = (x * mask).sum(-2, keepdims=True) / (eps + mask.sum(-2, keepdims=True))
     return torch.where(mask, x - com, x)
-
 
 class GaussianFM(Diffusion):
     def add_noise(self, pos, t, mask=None):
@@ -56,8 +61,14 @@ class GaussianFM(Diffusion):
 
         return noisy, target
 
+    def precondition(self, inp, t):
+        return inp / self.cfg.prior_sigma
+        
+    def postcondition(self, inp, out, t):
+        return out * self.cfg.prior_sigma
+        
     def compute_loss(self, pred, target, t):
-        return torch.square(pred - target).sum(-1)
+        return torch.square(pred - target).sum(-1) / self.cfg.prior_sigma**2
 
     def inference(
         self,
@@ -129,4 +140,83 @@ class GaussianFM(Diffusion):
 
 
 class EDMDiffusion(Diffusion):
-    NotImplemented
+
+    def get_sigma(self, t):
+        p = self.cfg.sched_p
+        return (t * self.cfg.sigma_max ** (1/p)) ** p
+        
+    def add_noise(self, pos, t, mask=None):
+
+        sigma = self.get_sigma(t)[...,None]
+        noise = torch.randn_like(pos) * sigma
+        pos = masked_center(pos, mask)
+        
+        noisy = pos + noise
+        target = pos
+
+        return noisy, target
+
+    def precondition(self, inp, t):
+        sigma = self.get_sigma(t)[...,None]
+        return inp / (self.cfg.data_sigma**2 + sigma**2) ** 0.5
+        
+    def postcondition(self, inp, out, t):
+        sigma = self.get_sigma(t)[...,None]
+        cskip = self.cfg.data_sigma ** 2 / (self.cfg.data_sigma**2 + sigma**2)
+        cout = sigma * self.cfg.data_sigma / (self.cfg.data_sigma**2 + sigma**2)**0.5
+
+        return cskip * inp + cout * out
+        
+    def compute_loss(self, pred, target, t, eps=1e-6):
+        sigma = self.get_sigma(t)
+        num = (sigma**2 + self.cfg.data_sigma**2)
+        denom = (sigma * self.cfg.data_sigma) ** 2
+        weight = num / (denom + eps)
+        return weight * torch.square(pred - target).sum(-1)
+
+    def inference(
+        self,
+        model,
+        cfg=None,
+        seed=None,
+        mask=None,
+        shape=None,
+        device=None,
+        return_traj=False,
+    ):
+
+        if seed is not None:
+            x = seed
+        else:
+            if mask is not None:
+                shape = list(mask.shape) + [3]
+                device = mask.device
+            x = torch.randn(shape, device=device) * self.cfg.sigma_max
+
+        out = [x]
+        sched = self.get_sigma(np.linspace(1, 0, cfg.nsteps + 1))
+
+        # dx = g(t) dw with g(t) = \sqrt{ (d/dt) sigma^2 } = \sqrt{ 2\dot\sigma \sigma}
+        # with t = \sigma this is just \sqrt{2t}
+        # hence the backward coefficient on the score should be g^2 = 2t
+        preds = []
+        for t2, t1 in zip(sched[:-1], sched[1:]):
+            dt = t2 - t1
+            g = np.sqrt(2 * t2)
+            
+            x0 = model(x, t2)
+            preds.append(x0)
+            s = (x0 - x) / t2**2 # score
+            
+            noise = torch.randn_like(x)
+            gamma = cfg.temp_factor
+            
+            dx = g**2 * s * dt + g * np.sqrt(gamma * dt) * noise
+            x = x + dx
+            out.append(x)
+
+        if return_traj:
+            return torch.stack(out), torch.stack(preds)
+        else:
+            return x
+

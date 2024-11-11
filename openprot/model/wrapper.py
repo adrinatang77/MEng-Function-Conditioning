@@ -112,7 +112,7 @@ class OpenProtWrapper(Wrapper):
         out = self.model(inp)
 
         ## place the readouts in a dict
-        readout = self.tracks.readout(self.model, out)
+        readout = self.tracks.readout(self.model, inp, out)
 
         return out, readout
 

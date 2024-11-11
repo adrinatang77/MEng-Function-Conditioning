@@ -137,7 +137,7 @@ class SequenceTrack(OpenProtTrack):
 
         inp["x"] += model.seq_embed(batch["aatype"])
 
-    def predict(self, model, out, readout):
+    def predict(self, model, inp, out, readout):
         readout["aatype"] = model.seq_out(out["x"])
 
     def compute_loss(self, readout, target, logger=None, eps=1e-6):

@@ -100,10 +100,12 @@ class StructureTrack(OpenProtTrack):
         model.frame_mask = nn.Parameter(torch.zeros(model.cfg.dim))
         if self.cfg.readout_pairwise:
             model.pairwise_out = nn.Linear(model.cfg.pairwise_dim, 64)
-        if self.cfg.embed_trans:
+        if self.cfg.embed_trans == 'sinusoidal':
             model.trans_in = nn.Linear(6 * (model.cfg.dim // 6), model.cfg.dim)
             torch.nn.init.zeros_(model.trans_in.weight)
             torch.nn.init.zeros_(model.trans_in.bias)
+        elif self.cfg.embed_trans == 'edm':
+            model.trans_in = nn.Linear(3, model.cfg.dim)
         if self.cfg.embed_pairwise:
             model.pairwise_in = nn.Linear(
                 model.cfg.pairwise_dim, model.cfg.pairwise_dim
@@ -167,13 +169,17 @@ class StructureTrack(OpenProtTrack):
         B, L = batch["trans_noise"].shape
         dev = batch["frame_trans"].device
 
+        # currently zerod out before they are used
         inp["trans"] = batch["frame_trans"]
         inp["rots"] = batch["frame_rots"]
 
-        if self.cfg.embed_trans:
+        if self.cfg.embed_trans == 'sinusoidal':
             emb = sinusoidal_embedding(inp["trans"], model.cfg.dim // 6, 100, 1)
             inp["x"] += model.trans_in(emb.view(*emb.shape[:-2], -1))
-
+        elif self.cfg.embed_trans == 'edm':
+            precond = self.diffusion.precondition(inp['trans'], batch['trans_noise'])
+            inp["x"] += model.trans_in(precond)
+                
         # tell the model which frames were not present
         inp["x"] += torch.where(
             batch["frame_mask"].bool()[..., None],
@@ -184,6 +190,7 @@ class StructureTrack(OpenProtTrack):
         inp["x_cond"] += sinusoidal_embedding(
             batch["trans_noise"], model.cfg.dim // 2, 1, 0.01
         ).float()
+        inp['trans_noise'] = batch['trans_noise'] # need this for the postconditioning
 
         if self.cfg.embed_pairwise:
             dmat = inp["trans"][..., None, :, :] - inp["trans"][..., None, :]
@@ -192,9 +199,12 @@ class StructureTrack(OpenProtTrack):
                 sinusoidal_embedding(dmat, model.cfg.pairwise_dim // 2, 100, 1)
             )
 
-    def predict(self, model, out, readout):
+    def predict(self, model, inp, out, readout):
         if self.cfg.readout_trans:
-            readout["trans"] = self.cfg.multiply_out * model.trans_out(out["x"])
+            readout["trans"] = self.diffusion.postcondition(
+                inp['trans'], model.trans_out(out["x"]), inp['trans_noise']
+            )
+            
         if self.cfg.struct_module:
             readout["pos"] = out["sm"]["trans"]
 

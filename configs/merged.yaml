@@ -3,14 +3,14 @@ pretrained: null # workdir/trimul-vanilla-disto/last.ckpt # workdir/nodiff-relpo
 validate: false # if true, only validate the model, don't train
 logger:
     # set to true to log to neptune.ai
-    neptune: true
+    neptune: false
     run_id: null  
     # please change "test" to something unique to your task
     project: openprot/struct-merge
     # will log to workdir and neptune.ai with this name
-    name: merge-struct-pred
+    name: esm-test
     # if not null, will duplicate stdout and stderr to workdir/{name}/{logfile}
-    logfile: std.out
+    logfile: null # std.out
     # if null, will log every epoch, otherwise every this number of steps
     train_log_freq: 10
     val_log_freq: null 
@@ -95,7 +95,7 @@ tasks:
     #             start: 0
     #             seed: 137
     StructurePrediction:
-        fraction: 1.0
+        fraction: 0.0
         # beta: [1, 2]
         uniform_prob: 0.0
         max_noise_prob: 1.0
@@ -111,11 +111,10 @@ tasks:
                 start: 0
                 seed: 142
     StructureGeneration:
-    # StructurePrediction:
-        fraction: 0.0
+        fraction: 1.0
         beta: [1, 2]
         uniform_prob: 0.5
-        max_noise_prob: 0.5
+        max_noise_prob: 0.0
         seed: 137
         random_rot: true
         datasets:
@@ -185,7 +184,7 @@ tracks:
         loss_weight: 1.0
         readout_pairwise: true
         
-        embed_trans: true
+        embed_trans: edm
         readout_trans: true
         int_loss_weight: 0.5
         multiply_out: 15.0
@@ -204,15 +203,19 @@ tracks:
             distogram: 0.3
             mse: 0.001
             # nape: 0.0
-            diffusion: 0.001
+            diffusion: 1.0
         diffusion:
-            type: GaussianFM
-            prior_sigma: 15.0
-            center_noise: true
-            center_pos: true
-            train_align: false
-            inf_align: false
-            prediction: "velocity"
+            # type: GaussianFM
+            # prior_sigma: 15.0
+            # center_noise: true
+            # center_pos: true
+            # train_align: false
+            # inf_align: false
+            # prediction: "velocity"
+            type: EDMDiffusion
+            sched_p: 7
+            data_sigma: 15
+            sigma_max: 160
     SequenceTrack:
         esm: esm2_3B # esm2_650M # esm2_8M_270K
         corrupt: mask
