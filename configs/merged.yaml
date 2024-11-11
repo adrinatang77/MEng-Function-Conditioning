@@ -3,14 +3,14 @@ pretrained: null # workdir/trimul-vanilla-disto/last.ckpt # workdir/nodiff-relpo
 validate: false # if true, only validate the model, don't train
 logger:
     # set to true to log to neptune.ai
-    neptune: false
+    neptune: true
     run_id: null  
     # please change "test" to something unique to your task
-    project: openprot/diffusion
+    project: openprot/struct-merge
     # will log to workdir and neptune.ai with this name
-    name: default # struct-gen-velocity-notri-u1.0
+    name: merge-struct-pred
     # if not null, will duplicate stdout and stderr to workdir/{name}/{logfile}
-    logfile: null # std.out
+    logfile: std.out
     # if null, will log every epoch, otherwise every this number of steps
     train_log_freq: 10
     val_log_freq: null 
@@ -33,8 +33,8 @@ trainer:
 
 # custom args to OpenProtDataset and elsewhere
 data: 
-    num_workers: 0
-    batch: 32
+    num_workers: 32
+    batch: 8
     crop: 256
     seed: 137
 
@@ -95,12 +95,12 @@ tasks:
     #             start: 0
     #             seed: 137
     StructurePrediction:
-        fraction: 0.5
+        fraction: 1.0
         # beta: [1, 2]
-        # uniform_prob: 1.0
+        uniform_prob: 0.0
         max_noise_prob: 1.0
         seed: 137
-        # random_rot: true
+        random_rot: true
         datasets:
             afdb:
                 fraction: 0.75
@@ -112,10 +112,10 @@ tasks:
                 seed: 142
     StructureGeneration:
     # StructurePrediction:
-        fraction: 0.5
+        fraction: 0.0
         beta: [1, 2]
-        uniform_prob: 1.0
-        max_noise_prob: 0.0
+        uniform_prob: 0.5
+        max_noise_prob: 0.5
         seed: 137
         random_rot: true
         datasets:
@@ -187,7 +187,8 @@ tracks:
         
         embed_trans: true
         readout_trans: true
-        int_loss_weight: 0.0
+        int_loss_weight: 0.5
+        multiply_out: 15.0
         
         rot_augment: 1
         embed_pairwise: false
@@ -203,7 +204,7 @@ tracks:
             distogram: 0.3
             mse: 0.001
             # nape: 0.0
-            diffusion: 1.0
+            diffusion: 0.001
         diffusion:
             type: GaussianFM
             prior_sigma: 15.0
@@ -213,7 +214,7 @@ tracks:
             inf_align: false
             prediction: "velocity"
     SequenceTrack:
-        esm: null # esm2_3B # esm2_650M # esm2_8M_270K
+        esm: esm2_3B # esm2_650M # esm2_8M_270K
         corrupt: mask
         mask_rate: 0.0
         loss_weight: 0.0
@@ -234,7 +235,7 @@ model: # custom args
     struct_module: true
     sm_block_idx: 12
     
-    pairwise_pos_emb: false
+    pairwise_pos_emb: true
     
     ff_expand: 4
     position_bins: 32
@@ -242,12 +243,12 @@ model: # custom args
     pair_values: false
     pair_bias: true
     pair_ff_expand: 4
-    tri_mul: false
+    tri_mul: true
     rope: true
 
     ### ipa args
 
-    zero_frames_before_ipa: false
+    zero_frames_before_ipa: true
     
     ipa_blocks: 8
     separate_ipa_blocks: false
@@ -261,7 +262,7 @@ model: # custom args
 
 optimizer:
     type: AdamW
-    lr: 1e-4
+    lr: 5e-4
     scheduler: 
         total_steps: 1000000
         warmup_steps: 1000

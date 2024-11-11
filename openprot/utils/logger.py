@@ -105,7 +105,7 @@ class Logger:
                 new_mask = mask * sub_mask
             else:
                 new_mask = sub_mask
-            self.log(sub_key[1:] + '/' + key, data, sub_mask, post, sum)
+            self.log(sub_key[1:] + '/' + key, data, new_mask, post, sum)
                      
     def log(self, key, data, mask=None, post=None, sum=False):
         if isinstance(data, torch.Tensor):
@@ -113,10 +113,7 @@ class Logger:
                 if sum:
                     data = (data * mask).sum() 
                 else:
-                    try:
-                        data = (data * mask).sum() / mask.expand(data.shape).sum()
-                    except:
-                        breakpoint()
+                    data = (data * mask).sum() / mask.expand(data.shape).sum()
             else:
                 if sum: data = data.sum()
                 else: data = data.mean()

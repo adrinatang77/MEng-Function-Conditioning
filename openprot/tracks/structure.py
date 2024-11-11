@@ -101,7 +101,9 @@ class StructureTrack(OpenProtTrack):
         if self.cfg.readout_pairwise:
             model.pairwise_out = nn.Linear(model.cfg.pairwise_dim, 64)
         if self.cfg.embed_trans:
-            model.trans_in = nn.Linear(3, model.cfg.dim)
+            model.trans_in = nn.Linear(6 * (model.cfg.dim // 6), model.cfg.dim)
+            torch.nn.init.zeros_(model.trans_in.weight)
+            torch.nn.init.zeros_(model.trans_in.bias)
         if self.cfg.embed_pairwise:
             model.pairwise_in = nn.Linear(
                 model.cfg.pairwise_dim, model.cfg.pairwise_dim
@@ -169,7 +171,8 @@ class StructureTrack(OpenProtTrack):
         inp["rots"] = batch["frame_rots"]
 
         if self.cfg.embed_trans:
-            inp["x"] += model.trans_in(inp["trans"])
+            emb = sinusoidal_embedding(inp["trans"], model.cfg.dim // 6, 100, 1)
+            inp["x"] += model.trans_in(emb.view(*emb.shape[:-2], -1))
 
         # tell the model which frames were not present
         inp["x"] += torch.where(
@@ -191,7 +194,7 @@ class StructureTrack(OpenProtTrack):
 
     def predict(self, model, out, readout):
         if self.cfg.readout_trans:
-            readout["trans"] = model.trans_out(out["x"])
+            readout["trans"] = self.cfg.multiply_out * model.trans_out(out["x"])
         if self.cfg.struct_module:
             readout["pos"] = out["sm"]["trans"]
 
@@ -254,7 +257,7 @@ class StructureTrack(OpenProtTrack):
 
             dmat_lddt = compute_lddt(
                 distmat,
-                target["frame_trans"],
+                target["frame_pos"],
                 target["struct_supervise"],
                 pred_is_dmat=True,
             )
@@ -410,6 +413,10 @@ class StructureTrack(OpenProtTrack):
             t=target["trans_noise"],
         )
         if logger:
-            logger.masked_log("struct/diffusion_loss", loss, mask=target["struct_supervise"])
+            logger.masked_log(
+                "struct/diffusion_loss", 
+                loss,
+                mask=target["struct_supervise"]
+            )
 
-        return loss * target["struct_supervise"]
+        return loss 
