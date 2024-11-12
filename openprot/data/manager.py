@@ -19,7 +19,8 @@ class OpenProtDatasetManager(torch.utils.data.IterableDataset):
 
         self.datasets = {}
         for name in cfg.datasets:  # autoload the datasets
-            ds = autoimport(f"openprot.data.{name}")(cfg.datasets[name], cfg.features)
+            type_ = cfg.datasets[name].type
+            ds = autoimport(f"openprot.data.{type_}")(cfg.datasets[name], cfg.features)
             self.datasets[name] = ds
 
         self.tasks = {}
@@ -28,12 +29,20 @@ class OpenProtDatasetManager(torch.utils.data.IterableDataset):
             self.tasks[name] = task
 
         self.task_probs = np.array([cfg.tasks[name].fraction for name in cfg.tasks])
-        assert self.task_probs.sum() == 1
 
         self.tracks = tracks
 
     def process(self, data: OpenProtData):
 
+        
+        loss_keys = []
+        for task in self.tasks.values():
+            loss_keys.extend(task.register_loss_masks())
+            
+        for key in loss_keys:
+            if key not in data:
+                data[key] = np.zeros((), dtype=np.float32)
+                                    
         data.pad(self.cfg.data.crop)
 
         self.tracks.tokenize(data)
@@ -51,11 +60,12 @@ class OpenProtDatasetManager(torch.utils.data.IterableDataset):
             rank = self.rank * worker_info.num_workers + worker_info.id
 
         rng = np.random.default_rng(seed=self.cfg.data.seed)
+        assert self.task_probs.sum() == 1
 
         i = 0
         while True:
             task = rng.choice(self.cfg.tasks, p=self.task_probs)
-            task = self.tasks[task.split(".")[-1]]
+            task = self.tasks[task]
             if i % world_size == rank:
                 yield self.process(task.yield_data(crop=self.cfg.data.crop))
             task.advance()

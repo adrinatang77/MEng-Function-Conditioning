@@ -4,10 +4,11 @@ from abc import abstractmethod
 
 
 class OpenProtDataset(torch.utils.data.Dataset):
-    def __init__(self, cfg, feats=None):
+    def __init__(self, cfg, feats=None, tracks=None):
         super().__init__()
         self.cfg = cfg
         self.feats = feats
+        self.tracks = tracks
         self.setup()
 
     @abstractmethod
@@ -70,8 +71,12 @@ class OpenProtData(dict):
                 elif type(self[key]) not in [torch.Tensor, np.ndarray]:
                     pass
 
+                # global attribute
+                elif key[0] == '/':
+                    pass
+                    
                 # pairwise attribute
-                elif key[-1] == "_":
+                elif key[0] == "_":
                     self[key] = self[key][start:end, start:end]
 
                 # regular attribute
@@ -93,8 +98,12 @@ class OpenProtData(dict):
                 elif type(self[key]) not in [torch.Tensor, np.ndarray]:
                     pass
 
+                # global attribute
+                elif key[0] == '/':
+                    pass
+
                 # pairwise attribute
-                elif key[-1] == "_":
+                elif key[0] == "_":
                     shape = self[key].shape
                     dtype = self[key].dtype
                     padded = np.zeros((pad_len, pad_len, *shape[2:]), dtype=dtype)
@@ -124,11 +133,13 @@ class OpenProtData(dict):
             except:
                 raise Exception(f"Key {key} not present in all batch elements.")
         for key in key_union:
-            if type(batch[key][0]) is np.ndarray:
-                batch[key] = torch.from_numpy(np.stack(batch[key]))
-            elif type(batch[key][0]) is torch.Tensor:
-                batch[key] = torch.stack(batch[key])
-
+            try:
+                if type(batch[key][0]) is np.ndarray:
+                    batch[key] = torch.from_numpy(np.stack(batch[key]))
+                elif type(batch[key][0]) is torch.Tensor:
+                    batch[key] = torch.stack(batch[key])
+            except Exception as e:
+                raise Exception(f"Key {key} exception: {e}")
         return batch
 
     def to(self, device):

@@ -3,6 +3,7 @@ from typing import List
 from functools import partial
 import torch
 
+
 def batched_gather(data, inds, dim=0, no_batch_dims=0, np=np):
     ranges = []
     for i, s in enumerate(data.shape[:no_batch_dims]):
@@ -16,19 +17,20 @@ def batched_gather(data, inds, dim=0, no_batch_dims=0, np=np):
     return data[tuple(ranges)]
 
 
-
 def permute_final_dims(tensor: torch.Tensor, inds: List[int]):
     zero_index = -1 * len(inds)
     first_inds = list(range(len(tensor.shape[:zero_index])))
     return tensor.permute(first_inds + [zero_index + i for i in inds])
 
+
 def flatten_final_dims(t: torch.Tensor, no_dims: int):
     return t.reshape(t.shape[:-no_dims] + (-1,))
+
 
 def add(m1, m2, inplace):
     # The first operation in a checkpoint can't be in-place, but it's
     # nice to have in-place addition during inference. Thus...
-    if(not inplace):
+    if not inplace:
         m1 = m1 + m2
     else:
         m1 += m2

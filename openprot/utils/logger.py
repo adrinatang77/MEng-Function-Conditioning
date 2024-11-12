@@ -21,7 +21,7 @@ def setup_logging(cfg):
     if not cfg.logfile:
         return
     tee = subprocess.Popen(
-        ["tee", f"workdir/{cfg.name}/{cfg.logfile}"], stdin=subprocess.PIPE
+        ["tee", "-a", f"workdir/{cfg.name}/{cfg.logfile}"], stdin=subprocess.PIPE
     )
     # Cause tee's stdin to get a copy of our stdin/stdout (as well as that
     # of any child processes we spawn)
@@ -72,6 +72,7 @@ class Logger:
         self.last_log_time = time.time()
         self.iter_step = defaultdict(int)
         self.prefix = None
+        self.masks = {}
         if cfg.neptune:
             self.neptune_init()
 
@@ -86,11 +87,37 @@ class Logger:
         if interval is not None and self.iter_step[prefix] % interval == 0:
             self.print_log(trainer, prefix)
 
-    def log(self, key, data, mask=None, post=None):
+    def register_masks(self, batch):
+        for key in batch:
+            if key[0] == '/':
+                self.masks[key] = batch[key]
+        
+    def clear_masks(self):
+        self.masks = {}
+
+    # logs with every masked combination
+    def masked_log(self, key, data, mask=None, post=None, sum=False, dims=1):
+        self.log(key, data, mask, post, sum)
+        for sub_key, sub_mask in self.masks.items():
+            for i in range(dims):
+                sub_mask = sub_mask.unsqueeze(-1)
+            if mask is not None:
+                new_mask = mask * sub_mask
+            else:
+                new_mask = sub_mask
+            self.log(sub_key[1:] + '/' + key, data, new_mask, post, sum)
+                     
+    def log(self, key, data, mask=None, post=None, sum=False):
         if isinstance(data, torch.Tensor):
             if mask is not None:  # we want this to be NaN if the mask is all zeros!
-                data = (data * mask).sum() / mask.expand(data.shape).sum()
-            data = data.mean().item()
+                if sum:
+                    data = (data * mask).sum() 
+                else:
+                    data = (data * mask).sum() / mask.expand(data.shape).sum()
+            else:
+                if sum: data = data.sum()
+                else: data = data.mean()
+            data = data.item()
             if post is not None:
                 data = post(data)
         self._log[self.prefix + "/" + key].append(data)
@@ -138,8 +165,9 @@ class Logger:
     def neptune_init(self):
         self.run = neptune.init_run(
             project=self.cfg.project,
+            with_id=self.cfg.run_id,
             name=os.environ["MODEL_DIR"].split("/")[1],
-            source_files=["config.yaml"],
+            source_files=[os.environ["CONFIG"]],
         )
 
     @rank_zero_only

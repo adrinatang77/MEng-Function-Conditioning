@@ -7,6 +7,8 @@ from ..utils.misc_utils import autoimport
 import os
 from ..tracks.manager import OpenProtTrackManager
 
+# from ..evals.manager import OpenProtEvalManager
+
 
 class Wrapper(pl.LightningModule):
     def __init__(self, cfg):
@@ -45,10 +47,11 @@ class Wrapper(pl.LightningModule):
         quit = False
         for name, p in self.model.named_parameters():
             if p.requires_grad and p.grad is None:
-                print(name, 'has no grad')
+                print(name, "has no grad")
                 quit = True
-        
-        if quit: exit()
+
+        if quit:
+            exit()
 
     def configure_optimizers(self):
         cls = getattr(torch.optim, self.cfg.optimizer.type)
@@ -109,13 +112,14 @@ class OpenProtWrapper(Wrapper):
         out = self.model(inp)
 
         ## place the readouts in a dict
-        readout = self.tracks.readout(self.model, out)
+        readout = self.tracks.readout(self.model, inp, out)
 
         return out, readout
 
     def general_step(self, batch):
 
-        self._logger.log("toks", batch["pad_mask"].sum())
+        self._logger.register_masks(batch)
+        self._logger.masked_log("toks", batch["pad_mask"], sum=True)
 
         ## corrupt all the tracks
         noisy_batch, target = self.tracks.corrupt(batch, logger=self._logger)
@@ -126,11 +130,24 @@ class OpenProtWrapper(Wrapper):
         loss = self.tracks.compute_loss(readout, target, logger=self._logger)
 
         ## log some metrics
-        self._logger.log("loss", loss)
+        self._logger.masked_log("loss", loss, batch["pad_mask"])
         self._logger.log("lr", self.get_lr())
-        # self._logger.log("act_norm", torch.square(out).mean(-1), batch["pad_mask"])
 
-        return loss
+        self._logger.clear_masks()
+        
+        return (loss * batch["pad_mask"]).sum() / batch['pad_mask'].sum()
+
+    def on_validation_epoch_end(self):
+        savedir = f'{os.environ["MODEL_DIR"]}/eval_step{self.trainer.global_step}'
+        for name, eval_ in self.evals.items():
+            eval_.compute_metrics(
+                rank=self.trainer.global_rank,
+                world_size=self.trainer.world_size,
+                device=self.device,
+                savedir=f"{savedir}/{name}",
+                logger=self._logger,
+            )
+        super().on_validation_epoch_end()
 
     def validation_step_extra(self, batch, batch_idx):
         name = batch["eval"][0]

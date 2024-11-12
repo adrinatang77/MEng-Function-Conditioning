@@ -7,6 +7,7 @@ args = parser.parse_args()
 from omegaconf import OmegaConf
 
 cfg = OmegaConf.load(args.config)
+os.environ["CONFIG"] = args.config
 
 os.environ["MODEL_DIR"] = model_dir = os.path.join("workdir", cfg.logger.name)
 os.makedirs(model_dir, exist_ok=True)
@@ -38,7 +39,13 @@ trainer = pl.Trainer(
             every_n_train_steps=cfg.logger.ckpt_freq,
             filename="{step}",
         ),
-        ModelSummary(max_depth=2),
+        ModelCheckpoint(
+            dirpath=model_dir,
+            every_n_train_steps=cfg.logger.save_freq,
+            filename="last",
+            enable_version_counter=False,
+        ),
+        ModelSummary(max_depth=4),
     ],
     num_nodes=int(os.environ.get("SLURM_NNODES", 1)),
 )
@@ -60,6 +67,9 @@ eval_loader = torch.utils.data.DataLoader(
     evals, batch_size=1, num_workers=0, shuffle=False, collate_fn=OpenProtData.batch
 )
 model = OpenProtWrapper(cfg, tracks, evals.evals)
+if cfg.pretrained is not None:
+    ckpt = torch.load(cfg.pretrained)
+    model.load_state_dict(ckpt["state_dict"], strict=False)
 
 if cfg.validate:
     trainer.validate(model, eval_loader, ckpt_path=cfg.ckpt)

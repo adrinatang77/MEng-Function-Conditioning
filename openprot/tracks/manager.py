@@ -21,14 +21,15 @@ class OpenProtTrackManager(dict):
     def embed(self, model: OpenProtModel, batch: dict):
         inp = batch.copy("name", "pad_mask")
         inp["x"] = 0
+        inp["x_cond"] = 0
         for track in self.values():
             track.embed(model, batch, inp)
         return inp
 
-    def readout(self, model: OpenProtModel, out: torch.Tensor):
+    def readout(self, model: OpenProtModel, inp: dict, out: torch.Tensor):
         readout = {}
         for track in self.values():
-            track.predict(model, out, readout)
+            track.predict(model, inp, out, readout)
         return readout
 
     def corrupt(self, batch: dict, logger=None):

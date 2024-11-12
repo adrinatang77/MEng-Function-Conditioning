@@ -4,9 +4,9 @@ import numpy as np
 from typing import override
 from .track import OpenProtTrack
 from ..utils import residue_constants as rc
+from ..utils.prot_utils import seqres_to_aatype
 from functools import partial
 
-MASK_IDX = 21
 
 import esm
 from esm import Alphabet
@@ -30,9 +30,7 @@ esm_registry = {
 class SequenceTrack(OpenProtTrack):
 
     def tokenize(self, data):
-        data["aatype"] = np.array(
-            [rc.restype_order.get(c, rc.unk_restype_index) for c in data["seqres"]]
-        )
+        data["aatype"] = np.array(seqres_to_aatype(data["seqres"]))
 
     @staticmethod
     def _af2_to_esm(d: Alphabet):
@@ -90,13 +88,15 @@ class SequenceTrack(OpenProtTrack):
         return esm_s, esm_z
 
     def corrupt(self, batch, noisy_batch, target, logger=None):
+        MASK_IDX = 20  # not ideal but whatever
+
         if self.cfg.corrupt == "mask":
             tokens = batch["aatype"]
 
             mask = batch["seq_noise"].bool()
 
             rand = torch.rand(tokens.shape, device=tokens.device)
-            randaa = torch.randint(0, 21, tokens.shape, device=tokens.device)
+            randaa = torch.randint(0, 20, tokens.shape, device=tokens.device)
 
             inp = tokens
             inp = torch.where((rand < 0.8) & mask, MASK_IDX, inp)
@@ -113,7 +113,7 @@ class SequenceTrack(OpenProtTrack):
         target["aatype"] = batch["aatype"]
 
         if logger:
-            logger.log("seq/toks", batch["seq_mask"].sum())
+            logger.masked_log("seq/toks", batch["seq_mask"], sum=True)
 
     def embed(self, model, batch, inp):
 
@@ -122,6 +122,7 @@ class SequenceTrack(OpenProtTrack):
             return model.af2_to_esm[aa]
 
         if self.cfg.esm is not None:
+
             esmaa = _af2_idx_to_esm_idx(batch["aatype"], batch["pad_mask"])
             res = model.esm(esmaa, repr_layers=range(model.esm.num_layers + 1))
             esm_s = torch.stack(
@@ -136,7 +137,7 @@ class SequenceTrack(OpenProtTrack):
 
         inp["x"] += model.seq_embed(batch["aatype"])
 
-    def predict(self, model, out, readout):
+    def predict(self, model, inp, out, readout):
         readout["aatype"] = model.seq_out(out["x"])
 
     def compute_loss(self, readout, target, logger=None, eps=1e-6):
@@ -146,7 +147,7 @@ class SequenceTrack(OpenProtTrack):
 
         mask = target["seq_supervise"]
         if logger:
-            logger.log("seq/loss", loss, mask=mask)
-            logger.log("seq/perplexity", loss, mask=mask, post=np.exp)
-            logger.log("seq/toks_sup", mask.sum().item())
-        return (loss * mask).sum() / target["pad_mask"].sum()
+            logger.masked_log("seq/loss", loss, mask=mask)
+            logger.masked_log("seq/perplexity", loss, mask=mask, post=np.exp)
+            logger.masked_log("seq/toks_sup", mask, sum=True)
+        return loss * mask

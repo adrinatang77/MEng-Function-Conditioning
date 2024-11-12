@@ -14,6 +14,9 @@ class OpenProtTask:
         self.rng = np.random.default_rng(seed=cfg.seed)
         self.shuffle_datasets()
 
+    def register_loss_masks(self):
+        return []
+
     def shuffle_datasets(self):
         self.shuffled_idx = {}
         self.counter = {}

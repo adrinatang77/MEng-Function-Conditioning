@@ -3,20 +3,22 @@ import numpy as np
 from ..utils import residue_constants as rc
 from scipy.spatial.transform import Rotation as R
 
-class StructurePrediction(OpenProtTask):
+
+class StructureGeneration(OpenProtTask):
 
     def register_loss_masks(self):
-        return ['/struct_pred', '/struct_pred/t1']
+        return ['/struct_gen']
         
     def prep_data(self, data, crop=None, eps=1e-6):
 
         if crop is not None:
             data.crop(crop)
 
-        rand = np.random.rand()
-        if rand < self.cfg.max_noise_prob:
-            noise_level = 1.0    
-        elif rand < self.cfg.max_noise_prob + self.cfg.uniform_prob:
+        ## noise EVERYTHING
+
+        if np.random.rand() < self.cfg.max_noise_prob:
+            noise_level = 1.0
+        elif np.random.rand() < self.cfg.uniform_prob:
             noise_level = np.random.rand()
         else:
             noise_level = np.random.beta(*self.cfg.beta)
@@ -24,6 +26,8 @@ class StructurePrediction(OpenProtTask):
         L = len(data["seqres"])
         data["trans_noise"] = np.ones(L, dtype=np.float32) * noise_level
         data["rots_noise"] = np.ones(L, dtype=np.float32) * noise_level
+
+        data["seq_noise"] = np.ones(L, dtype=np.float32)
 
         # data["torsion_noise"] = np.ones(len(data["seqres"]))
 
@@ -37,10 +41,6 @@ class StructurePrediction(OpenProtTask):
             randrot = R.random().as_matrix()
             data["atom37"] @= randrot.T
 
-        data['/struct_pred'] = np.ones((), dtype=np.float32)
-        if noise_level == 1.0:
-            data['/struct_pred/t1'] = np.ones((), dtype=np.float32)
-        else:
-            data['/struct_pred/t1'] = np.zeros((), dtype=np.float32)
+        data['/struct_gen'] = np.ones((), dtype=np.float32)
         
         return data

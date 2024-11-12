@@ -14,7 +14,10 @@
 * black
 * neptune
 * pytest
+* einops
+* scipy==1.14.1
 * foldcomp (must install with `pip install git+https://github.com/steineggerlab/foldcomp@f868b95` repo, see https://github.com/steineggerlab/foldcomp/issues/52)
+* TMscore binary. Need to download and run `g++ -O3 -ffast-math -lm -o TMscore TMscore.cpp`. Will for now assume the binary is in the home dir.
 
 Install the dependencies with `mamba env create -f environment.yml` and activate the environment with `conda activate openprot`. (Note: this is Sam's workflow, Bowen recommends installing things manually)
 
