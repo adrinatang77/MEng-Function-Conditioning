@@ -62,13 +62,13 @@ class GaussianFM(Diffusion):
         return noisy, target
 
     def precondition(self, inp, t):
-        return inp / self.cfg.prior_sigma
+        return inp # / self.cfg.prior_sigma
         
     def postcondition(self, inp, out, t):
-        return out * self.cfg.prior_sigma
+        return out # * self.cfg.prior_sigma
         
     def compute_loss(self, pred, target, t):
-        return torch.square(pred - target).sum(-1) / self.cfg.prior_sigma**2
+        return torch.square(pred - target).sum(-1) # / self.cfg.prior_sigma**2
 
     def inference(
         self,
@@ -143,7 +143,16 @@ class EDMDiffusion(Diffusion):
 
     def get_sigma(self, t):
         p = self.cfg.sched_p
-        return (t * self.cfg.sigma_max ** (1/p)) ** p
+        return (
+            self.cfg.sigma_min ** (1/p) +
+            t * (self.cfg.sigma_max ** (1/p) - self.cfg.sigma_min ** (1/p))
+        ) ** p
+
+    def sigma_to_t(self, sigma):
+        p = self.cfg.sched_p
+        num = sigma ** (1/p) - self.cfg.sigma_min ** (1/p)
+        denom = self.cfg.sigma_max ** (1/p) - self.cfg.sigma_min ** (1/p)
+        return num / denom
         
     def add_noise(self, pos, t, mask=None):
 
@@ -167,7 +176,7 @@ class EDMDiffusion(Diffusion):
 
         return cskip * inp + cout * out
         
-    def compute_loss(self, pred, target, t, eps=1e-6):
+    def compute_loss(self, pred, target, t, eps=1e-12):
         sigma = self.get_sigma(t)
         num = (sigma**2 + self.cfg.data_sigma**2)
         denom = (sigma * self.cfg.data_sigma) ** 2
@@ -200,18 +209,20 @@ class EDMDiffusion(Diffusion):
         # with t = \sigma this is just \sqrt{2t}
         # hence the backward coefficient on the score should be g^2 = 2t
         preds = []
+        
         for t2, t1 in zip(sched[:-1], sched[1:]):
             dt = t2 - t1
             g = np.sqrt(2 * t2)
             
-            x0 = model(x, t2)
+            x0 = model(x, self.sigma_to_t(t2))
+
             preds.append(x0)
             s = (x0 - x) / t2**2 # score
             
             noise = torch.randn_like(x)
             gamma = cfg.temp_factor
             
-            dx = g**2 * s * dt + g * np.sqrt(gamma * dt) * noise
+            dx = g**2 * s * dt + g * gamma * np.sqrt(dt) * noise
             x = x + dx
             out.append(x)
 

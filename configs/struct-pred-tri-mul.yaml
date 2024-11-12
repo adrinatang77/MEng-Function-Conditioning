@@ -1,12 +1,12 @@
-ckpt: workdir/struct-pred-trimul/last.ckpt # 
+ckpt: null # workdir/struct-pred-trimul/last.ckpt # 
 pretrained: null # workdir/trimul-vanilla-disto/last.ckpt # workdir/nodiff-relpos-pade/last.ckpt # load weights from here first
-validate: true # if true, only validate the model, don't train
+validate: false # if true, only validate the model, don't train
 logger:
     # set to true to log to neptune.ai
-    neptune: false
+    neptune: true
     run_id: null  
     # please change "test" to something unique to your task
-    project: openprot/structure
+    project: openprot/struct-merge
     # will log to workdir and neptune.ai with this name
     name: struct-pred-trimul
     # if not null, will duplicate stdout and stderr to workdir/{name}/{logfile}
@@ -26,7 +26,7 @@ trainer:
     limit_val_batches: 1.0
     num_sanity_val_steps: 0
     gradient_clip_val: 1.0
-    accumulate_grad_batches: 2
+    accumulate_grad_batches: 1
     val_check_interval: 1250
     check_val_every_n_epoch: 1
     logger: false
@@ -57,35 +57,21 @@ features:
     # torsion_noise: [-1]
 
 datasets:
-    PDBDataset: 
+    pdb:
+        type: PDBDataset
         path: /scratch/projects/cgai/openprot/data/pdb_npz
         cutoff: 2018-05-01
         clusters: /scratch/projects/cgai/openprot/data/pdb_clusters
         blacklist: /scratch/projects/cgai/openprot/cameo_pdb_blacklist.tsv
-    AFDBDataset:
+    afdb:
+        type: AFDBDataset
         path: /scratch/projects/cgai/openprot/data/afdb_rep_v4/afdb_rep_v4
         annotations: /scratch/projects/cgai/openprot/data/afdb_rep_v4.pkl.gz
         blacklist: /scratch/projects/cgai/openprot/cameo_afdb_blacklist.tsv
         plddt_thresh: 70
         index: null # tmp/afdbreps_l-256_plddt_80.txt
         
-    # UnirefDataset:
-    #     #path: /data/cb/scratch/datasets/uniref50.fasta
-    #     #index: /data/cb/scratch/datasets/uniref50.index
-    #     path: /scratch/projects/cgai/openprot/data/uniref50.fasta
-    #     index: /scratch/projects/cgai/openprot/data/uniref50.index
-            
 tasks:
-    # SequenceGeneration:
-    #     fraction: 0.1
-    #     mask_rate: 0.15
-    #     seed: 137
-    #     datasets:
-    #         UnirefDataset: 
-    #             fraction: 1.0
-    #             start: 0
-    #             seed: 137
-    # StructureGeneration:
     StructurePrediction:
         fraction: 1.0
         beta: [1, 2]
@@ -94,11 +80,11 @@ tasks:
         seed: 137
         random_rot: true
         datasets:
-            AFDBDataset:
+            afdb:
                 fraction: 0.75
                 start: 0
                 seed: 142
-            PDBDataset:
+            pdb:
                 fraction: 0.25
                 start: 0
                 seed: 142
@@ -112,24 +98,6 @@ evals:
         augmented: false
         align: false
         demean: true
-    # struct_gen_ode:
-    #     type: StructureGenerationEval
-    #     num_samples: 10
-    #     sample_length: 256
-    #     nsteps: 200
-    #     sde_weight: 0.0
-    #     sched_type: 'log'
-    #     temp_factor: 0.3
-    # struct_gen_sde:
-    #     type: StructureGenerationEval
-    #     num_samples: 10
-    #     sample_length: 256
-    #     nsteps: 200
-    #     sched_type: 'log'
-    #     sde_weight: 10.0
-    #     temp_factor: 0.5
-        
-    
 
 tracks:
     # register tracks here
@@ -138,12 +106,12 @@ tracks:
         readout_pairwise: true
         
         embed_trans: false
-        readout_trans: true
+        readout_trans: false
         int_loss_weight: 0.5
         
         rot_augment: 1
         embed_pairwise: false
-        
+        struct_module: true
         clamp_pade: false
         clamp_nape: true
         clamp_mse: false
@@ -153,7 +121,6 @@ tracks:
             lddt: 1.0
             distogram: 0.3
             mse: 0.001
-            diffusion: 0.0
         diffusion:
             type: GaussianFM
             prior_sigma: 15.0
@@ -183,7 +150,7 @@ model: # custom args
         end: 12
         interval: 1
     sm_block_idx: 12
-    
+    struct_module: true
     pairwise_pos_emb: true
     
     ff_expand: 4
