@@ -176,7 +176,12 @@ class EDMDiffusion(Diffusion):
 
         return cskip * inp + cout * out
         
-    def compute_loss(self, pred, target, t, eps=1e-12):
+    def compute_loss(self, pred, target, t, mask, eps=1e-12):
+        
+        if self.cfg.aligned_loss:
+            target = rmsdalign(pred.detach(), target, mask)
+            target = torch.where(mask[...,None].bool(), target, 0.0)
+            
         sigma = self.get_sigma(t)
         num = (sigma**2 + self.cfg.data_sigma**2)
         denom = (sigma * self.cfg.data_sigma) ** 2

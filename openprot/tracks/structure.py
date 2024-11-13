@@ -201,12 +201,18 @@ class StructureTrack(OpenProtTrack):
 
     def predict(self, model, inp, out, readout):
         if self.cfg.readout_trans:
-            readout["trans"] = self.diffusion.postcondition(
-                inp['trans'], model.trans_out(out["x"]), inp['trans_noise']
-            )
+            
+            readout["trans"] = model.trans_out(out["x"])
+            if self.cfg.postcondition:
+                readout['trans'] = self.diffusion.postcondition(
+                    inp['trans'], readout['trans'], inp['trans_noise']
+                )
             
         if self.cfg.struct_module:
             readout["pos"] = out["sm"]["trans"]
+
+        if self.cfg.pos_as_trans:
+            readout["pos"] = readout["trans"][None]
 
         if self.cfg.readout_pairwise:
             readout["pairwise"] = model.pairwise_out(out["z"])
@@ -251,16 +257,29 @@ class StructureTrack(OpenProtTrack):
                 readout, target, logger=logger
             )
 
-        if self.cfg.struct_module:
+        if "diffusion_lddt" in self.cfg.losses:
+            loss = loss + self.cfg.losses["diffusion_lddt"] * self.compute_diffusion_lddt_loss(
+                readout, target, logger=logger
+            )
+
+
+        if 'pos' in readout:
             lddt = compute_lddt(
                 readout["pos"][-1], target["frame_pos"], target["struct_supervise"]
             )
             if logger:
                 logger.masked_log("struct/lddt", lddt, dims=0)
 
+        if 'trans' in readout:
+            lddt = compute_lddt(
+                readout["trans"], target["frame_pos"], target["struct_supervise"]
+            )
+            if logger:
+                logger.masked_log("struct/trans_lddt", lddt, dims=0)
+
         # compute dmat lddt
         if self.cfg.readout_pairwise:
-            bins = torch.linspace(2.3125, 22, 64, device=readout["pos"].device)
+            bins = torch.linspace(2.3125, 22, 64, device=readout["pairwise"].device)
             idx = readout["pairwise"].argmax(-1)
 
             distmat = bins[idx] - 0.3125
@@ -283,6 +302,20 @@ class StructureTrack(OpenProtTrack):
         loss = loss * mask
 
         return loss
+
+    def compute_diffusion_lddt_loss(self, readout, target, logger=None):
+
+        pred = readout["trans"]
+        gt = target["frame_pos"]
+        mask = target["struct_supervise"]
+        soft_lddt = compute_lddt(pred, gt, mask, soft=True, reduce=(-1,))
+
+        soft_lddt_loss = 1 - soft_lddt  # [9, B, L]
+
+        if logger:
+            logger.masked_log("struct/diffusion_lddt_loss", soft_lddt_loss, mask=mask)
+            
+        return soft_lddt_loss
 
     def compute_lddt_loss(self, readout, target, logger=None):
 
@@ -309,7 +342,7 @@ class StructureTrack(OpenProtTrack):
 
         def compute_mse(pred, gt, mask, clamp=None):
             gt = rmsdalign(pred.detach(), gt, mask)
-            gt = torch.nan_to_num(gt, 0.0)
+            gt = torch.where(mask[...,None].bool(), gt, 0.0)
             mse = torch.square(pred - gt).sum(-1)
 
             if clamp is not None:
@@ -421,6 +454,7 @@ class StructureTrack(OpenProtTrack):
             pred=readout["trans"],
             target=target["frame_trans"],
             t=target["trans_noise"],
+            mask=target["struct_supervise"], # not exactly right
         )
         if logger:
             logger.masked_log(

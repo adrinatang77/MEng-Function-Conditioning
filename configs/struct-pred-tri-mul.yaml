@@ -8,9 +8,9 @@ logger:
     # please change "test" to something unique to your task
     project: openprot/struct-merge
     # will log to workdir and neptune.ai with this name
-    name: struct-pred-trimul
+    name: struct-pred-trimul-readout
     # if not null, will duplicate stdout and stderr to workdir/{name}/{logfile}
-    logfile: std.out
+    logfile: null #std.out
     # if null, will log every epoch, otherwise every this number of steps
     train_log_freq: 10
     val_log_freq: null 
@@ -95,9 +95,15 @@ evals:
         path: /scratch/projects/cgai/openprot/data/pdb_npz
         split: splits/cameo2022.csv
         diffusion: false
-        augmented: false
-        align: false
-        demean: true
+        trans_as_pos: true
+    # cameo22_diff:
+    #     type: StructurePredictionEval
+    #     path: /scratch/projects/cgai/openprot/data/pdb_npz
+    #     split: splits/cameo2022.csv
+    #     diffusion: true
+    #     nsteps: 20
+    #     temp_factor: 0.5
+        
 
 tracks:
     # register tracks here
@@ -106,29 +112,37 @@ tracks:
         readout_pairwise: true
         
         embed_trans: false
-        readout_trans: false
+        readout_trans: true
+        pos_as_trans: true
+        postcondition: true
         int_loss_weight: 0.5
         
         rot_augment: 1
         embed_pairwise: false
-        struct_module: true
+        struct_module: false
         clamp_pade: false
-        clamp_nape: true
         clamp_mse: false
-        nape_cutoff: 15
         losses:
             pade: 0.1
             lddt: 1.0
             distogram: 0.3
             mse: 0.001
+            #diffusion: 0.225
+            #diffusion_lddt: 1.0
         diffusion:
-            type: GaussianFM
-            prior_sigma: 15.0
-            center_noise: false
-            center_pos: true
-            train_align: true
-            inf_align: true
-            prediction: "target"
+            # type: GaussianFM
+            # prior_sigma: 15.0
+            # center_noise: false
+            # center_pos: true
+            # train_align: true
+            # inf_align: true
+            # prediction: "target"
+            type: EDMDiffusion
+            sched_p: 7
+            data_sigma: 15
+            sigma_max: 2000
+            sigma_min: 0.05
+            aligned_loss: true
     SequenceTrack:
         esm: esm2_3B # esm2_650M # esm2_8M_270K
         corrupt: mask
@@ -143,14 +157,14 @@ model: # custom args
     pairwise_heads: 4
     blocks: 12
     
-    
+    block_pair_bias: true
     # topology of the network
     pair_blocks:
         start: 0
         end: 12
         interval: 1
     sm_block_idx: 12
-    struct_module: true
+    struct_module: false
     pairwise_pos_emb: true
     
     ff_expand: 4

@@ -322,8 +322,8 @@ class OpenProtModel(nn.Module):
             )
         pair_args = dict(
             pair_updates=True,
-            pairwise_dim=cfg.pairwise_dim,
-            pair_bias=cfg.pair_bias,
+            # pairwise_dim=cfg.pairwise_dim,
+            # pair_bias=cfg.pair_bias,
             pair_values=cfg.pair_values,
             pairwise_heads=cfg.pairwise_heads,
             pair_ffn=cfg.pair_ffn,
@@ -345,6 +345,8 @@ class OpenProtModel(nn.Module):
                     ff_expand=cfg.ff_expand,
                     rope=cfg.rope,
                     adaLN=cfg.trunk_adaLN,
+                    pairwise_dim=cfg.pairwise_dim,
+                    pair_bias=cfg.block_pair_bias,
                     **(pair_args if i in pair_block_idx else {}),
                 )
             )
