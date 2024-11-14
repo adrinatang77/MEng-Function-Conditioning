@@ -41,9 +41,9 @@ class OpenProtTrackManager(dict):
 
         return noisy_batch, target
 
-    def compute_loss(self, readout: dict, target: dict, logger=None):
+    def compute_loss(self, readout: dict, target: dict, logger=None, **kwargs):
         loss = 0
         for track in self.values():
-            loss_ = track.compute_loss(readout, target, logger=logger)
+            loss_ = track.compute_loss(readout, target, logger=logger, **kwargs)
             loss = loss + track.cfg.loss_weight * loss_
         return loss

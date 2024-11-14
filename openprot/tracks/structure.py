@@ -201,8 +201,10 @@ class StructureTrack(OpenProtTrack):
 
     def predict(self, model, inp, out, readout):
         if self.cfg.readout_trans:
-            
-            readout["trans"] = model.trans_out(out["x"])
+            if self.cfg.readout_trans_from_sm_x:
+                readout["trans"] = model.trans_out(out["sm"]["x"])
+            else:
+                readout["trans"] = model.trans_out(out["x"])
             if self.cfg.postcondition:
                 readout['trans'] = self.diffusion.postcondition(
                     inp['trans'], readout['trans'], inp['trans_noise']
@@ -212,7 +214,7 @@ class StructureTrack(OpenProtTrack):
             readout["pos"] = out["sm"]["trans"]
 
         if self.cfg.pos_as_trans:
-            readout["pos"] = readout["trans"][None]
+            readout["pos"] = readout["trans"]
 
         if self.cfg.readout_pairwise:
             readout["pairwise"] = model.pairwise_out(out["z"])
@@ -243,7 +245,18 @@ class StructureTrack(OpenProtTrack):
 
         return loss
 
-    def compute_loss(self, readout, target, logger=None):
+    def compute_loss(self, readout, target, logger=None, **kwargs):
+        step = kwargs['step']
+        
+        # diffusion loss factor
+        # if step < self.cfg.diffusion_loss_on:
+        #     dlf = 0
+        # elif step < self.cfg.diffusion_loss_plateau:
+        #     on = self.cfg.diffusion_loss_on
+        #     dlf = (step - on) / (self.cfg.diffusion_loss_plateau - on)
+        # else:
+        #     dlf = 1
+        
 
         loss = self.compute_sm_loss(readout, target, logger)
 

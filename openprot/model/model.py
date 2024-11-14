@@ -273,9 +273,9 @@ class StructureModule(nn.Module):
             pair_bias=cfg.ipa_pair_bias,
             pair_values=cfg.ipa_pair_values,
             adaLN=cfg.sm_adaLN,
-            frame_update=True,
-            relpos_attn=True,
-            relpos_values=True,
+            frame_update=cfg.ipa_frame_update,
+            relpos_attn=cfg.ipa_relpos,
+            relpos_values=cfg.ipa_relpos,
         )
         if cfg.separate_ipa_blocks:
             self.ipa_blocks = nn.ModuleList()
@@ -293,6 +293,7 @@ class StructureModule(nn.Module):
 
         all_rots = []
         all_trans = []
+        all_x = [x]
         for i in range(self.cfg.ipa_blocks):
             if self.cfg.separate_ipa_blocks:
                 block = self.ipa_blocks[i]
@@ -302,13 +303,20 @@ class StructureModule(nn.Module):
             x, z, rots, trans = block(x, z, rots, trans, mask, x_cond)
             all_rots.append(rots)
             all_trans.append(trans)
-
+            all_x.append(x)
+            
             if self.cfg.detach_rots:
                 rots = rots.detach()
             if self.cfg.detach_trans:
                 trans = trans.detach()
+            if self.cfg.detach_x:
+                x = x.detach()
 
-        return {"x": x, "trans": torch.stack(all_trans), "rots": torch.stack(all_rots)}
+        return {
+            "x": torch.stack(all_x),
+            "trans": torch.stack(all_trans),
+            "rots": torch.stack(all_rots)
+        }
 
 
 class OpenProtModel(nn.Module):
@@ -344,7 +352,7 @@ class OpenProtModel(nn.Module):
                     heads=cfg.heads,
                     ff_expand=cfg.ff_expand,
                     rope=cfg.rope,
-                    adaLN=cfg.trunk_adaLN,
+                    adaLN=cfg.trunk_adaLN and i >= cfg.trunk_adaLN_start_idx,
                     pairwise_dim=cfg.pairwise_dim,
                     pair_bias=cfg.block_pair_bias,
                     **(pair_args if i in pair_block_idx else {}),
@@ -352,6 +360,11 @@ class OpenProtModel(nn.Module):
             )
         if self.cfg.struct_module:
             self.structure_module = StructureModule(cfg)
+        if self.cfg.move_x_to_cond_idx is not None:
+            self.x_cond_linear = nn.Sequential(
+                nn.LayerNorm(cfg.dim),
+                nn.Linear(cfg.dim, cfg.dim)
+            )
 
     def forward(self, inp):
 
@@ -370,12 +383,17 @@ class OpenProtModel(nn.Module):
         sm_out = None
         for i, block in enumerate(self.blocks):
 
+            
             if block.pair_updates and self.cfg.checkpoint:
                 x, z, rots, trans = torch.utils.checkpoint.checkpoint(
                     block, x, z, rots, trans, mask, x_cond, use_reentrant=False
                 )
             else:
                 x, z, rots, trans = block(x, z, rots, trans, mask, x_cond)
+
+            if i == self.cfg.move_x_to_cond_idx - 1:
+                x_cond = x_cond + self.x_cond_linear(x)
+                # x = torch.zeros_like(x)
 
             if self.cfg.struct_module and i + 1 == self.cfg.sm_block_idx:
                 sm_out = self.structure_module(x, z, rots, trans, mask, x_cond)
