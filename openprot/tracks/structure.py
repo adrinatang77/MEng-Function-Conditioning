@@ -112,7 +112,7 @@ class StructureTrack(OpenProtTrack):
             )
             torch.nn.init.zeros_(model.pairwise_in.weight)
             torch.nn.init.zeros_(model.pairwise_in.bias)
-        if self.cfg.readout_trans:
+        if self.cfg.readout_trans in ['trunk', 'sm']:
             model.trans_out = nn.Sequential(
                 nn.LayerNorm(model.cfg.dim), nn.Linear(model.cfg.dim, 3)
             )
@@ -198,31 +198,33 @@ class StructureTrack(OpenProtTrack):
             inp["z"] = inp.get("z", 0) + model.pairwise_in(
                 sinusoidal_embedding(dmat, model.cfg.pairwise_dim // 2, 100, 1)
             )
+        if self.cfg.postcond_before_relpos:
+            inp['postcond_fn'] = lambda trans: self.diffusion.postcondition(
+                inp['trans'], trans, inp['trans_noise']
+            )
 
     def predict(self, model, inp, out, readout):
-        if self.cfg.readout_trans:
-            if self.cfg.readout_trans_from_sm_x:
-                readout["trans"] = model.trans_out(out["sm"]["x"])
+        if self.cfg.readout_trans == 'trunk':
+            readout["trans"] = model.trans_out(out["x"])[None]
+        elif self.cfg.readout_trans == 'sm':
+            if model.cfg.trunk_adaLN:
+                readout["trans"] = model.trans_out(out["sm"]["x"], inp['x_cond'])
             else:
-                readout["trans"] = model.trans_out(out["x"])
-            if self.cfg.postcondition:
-                readout['trans'] = self.diffusion.postcondition(
-                    inp['trans'], readout['trans'], inp['trans_noise']
-                )
-            
-        if self.cfg.struct_module:
-            readout["pos"] = out["sm"]["trans"]
-
-        if self.cfg.pos_as_trans:
-            readout["pos"] = readout["trans"]
-
+                readout["trans"] = model.trans_out(out["sm"]["x"])
+                
+        else:
+            readout['trans'] = out["sm"]["trans"]
+        if self.cfg.postcondition:
+            readout['trans'] = self.diffusion.postcondition(
+                inp['trans'], readout['trans'], inp['trans_noise']
+            )
         if self.cfg.readout_pairwise:
             readout["pairwise"] = model.pairwise_out(out["z"])
 
-    def compute_sm_loss(self, readout, target, logger=None):
+    def compute_loss(self, readout, target, logger=None, **kwargs):
 
         loss = 0
-
+        
         if "mse" in self.cfg.losses:
             loss = loss + self.cfg.losses["mse"] * self.compute_mse_loss(
                 readout, target, logger=logger
@@ -233,62 +235,16 @@ class StructureTrack(OpenProtTrack):
                 readout, target, logger=logger
             )
 
-        if "pade" in self.cfg.losses:
-            loss = loss + self.cfg.losses["pade"] * self.compute_pade_loss(
-                readout, target, logger=logger
-            )
-
-        if "nape" in self.cfg.losses:
-            loss = loss + self.cfg.losses["nape"] * self.compute_nape_loss(
-                readout, target, logger=logger
-            )
-
-        return loss
-
-    def compute_loss(self, readout, target, logger=None, **kwargs):
-        step = kwargs['step']
-        
-        # diffusion loss factor
-        # if step < self.cfg.diffusion_loss_on:
-        #     dlf = 0
-        # elif step < self.cfg.diffusion_loss_plateau:
-        #     on = self.cfg.diffusion_loss_on
-        #     dlf = (step - on) / (self.cfg.diffusion_loss_plateau - on)
-        # else:
-        #     dlf = 1
-        
-
-        loss = self.compute_sm_loss(readout, target, logger)
-
         if "distogram" in self.cfg.losses:
             loss = loss + self.cfg.losses["distogram"] * self.compute_distogram_loss(
                 readout, target, logger=logger
             )
 
-        if "diffusion" in self.cfg.losses:
-            loss = loss + self.cfg.losses["diffusion"] * self.compute_diffusion_loss(
-                readout, target, logger=logger
-            )
-
-        if "diffusion_lddt" in self.cfg.losses:
-            loss = loss + self.cfg.losses["diffusion_lddt"] * self.compute_diffusion_lddt_loss(
-                readout, target, logger=logger
-            )
-
-
-        if 'pos' in readout:
-            lddt = compute_lddt(
-                readout["pos"][-1], target["frame_pos"], target["struct_supervise"]
-            )
-            if logger:
-                logger.masked_log("struct/lddt", lddt, dims=0)
-
-        if 'trans' in readout:
-            lddt = compute_lddt(
-                readout["trans"], target["frame_pos"], target["struct_supervise"]
-            )
-            if logger:
-                logger.masked_log("struct/trans_lddt", lddt, dims=0)
+        lddt = compute_lddt(
+            readout["trans"][-1], target["frame_pos"], target["struct_supervise"]
+        )
+        if logger:
+            logger.masked_log("struct/lddt", lddt, dims=0)
 
         # compute dmat lddt
         if self.cfg.readout_pairwise:
@@ -316,23 +272,9 @@ class StructureTrack(OpenProtTrack):
 
         return loss
 
-    def compute_diffusion_lddt_loss(self, readout, target, logger=None):
-
-        pred = readout["trans"]
-        gt = target["frame_pos"]
-        mask = target["struct_supervise"]
-        soft_lddt = compute_lddt(pred, gt, mask, soft=True, reduce=(-1,))
-
-        soft_lddt_loss = 1 - soft_lddt  # [9, B, L]
-
-        if logger:
-            logger.masked_log("struct/diffusion_lddt_loss", soft_lddt_loss, mask=mask)
-            
-        return soft_lddt_loss
-
     def compute_lddt_loss(self, readout, target, logger=None):
 
-        pred = readout["pos"]
+        pred = readout["trans"]
         gt = target["frame_pos"]
         mask = target["struct_supervise"]
         soft_lddt = compute_lddt(pred, gt, mask, soft=True, reduce=(-1,))
@@ -348,26 +290,22 @@ class StructureTrack(OpenProtTrack):
 
     def compute_mse_loss(self, readout, target, logger=None, eps=1e-5):
 
-        pred = readout["pos"]
+        pred = readout["trans"]
         gt = target["frame_pos"]
         mask = target["struct_supervise"]
         t = target["trans_noise"]
 
-        def compute_mse(pred, gt, mask, clamp=None):
-            gt = rmsdalign(pred.detach(), gt, mask)
-            gt = torch.where(mask[...,None].bool(), gt, 0.0)
-            mse = torch.square(pred - gt).sum(-1)
+        # def compute_mse(pred, gt, mask, clamp=None):
+        #     gt = rmsdalign(pred.detach(), gt, mask)
+        #     gt = torch.where(mask[...,None].bool(), gt, 0.0)
+        #     mse = torch.square(pred - gt).sum(-1)
+        #     return mse
+        # mse = compute_mse(pred, gt, mask)
+        mse = self.diffusion.compute_loss(
+            pred=pred, target=gt, t=t, mask=mask, # not exactly right
+        )
 
-            if clamp is not None:
-                mse = torch.clamp(mse, max=clamp)
-            return mse
-
-        if self.cfg.clamp_mse:
-            mse = 0.9 * compute_mse(pred, gt, mask, clamp=100) + 0.1 * compute_mse(
-                pred, gt, mask
-            )
-        else:
-            mse = compute_mse(pred, gt, mask)
+        
 
         if logger:
             logger.masked_log("struct/mse_loss", mse[-1], mask=mask)
@@ -376,17 +314,52 @@ class StructureTrack(OpenProtTrack):
         w = self.cfg.int_loss_weight
         return w * mse.mean(0) + (1 - w) * mse[-1]
 
+    def compute_distogram_loss(self, readout, target, logger=None, eps=1e-6):
+
+        dev = readout["pairwise"].device
+        bins = torch.linspace(2.3125, 21.6875, 63, device=dev)
+
+        distmat = target["beta"][:, None] - target["beta"][:, :, None]
+        distmat = torch.sqrt(torch.square(distmat).sum(-1))
+        label = (distmat[..., None] > bins).sum(-1)
+
+        loss = torch.nn.functional.cross_entropy(
+            readout["pairwise"].permute(0, 3, 1, 2), label, reduction="none"
+        )
+
+        # some temporary stuff
+        mask = target["struct_supervise"] * target["beta_mask"]
+        mask = mask[:, None] * mask[:, :, None]
+        if logger:
+            logger.masked_log("struct/distogram", loss, mask, dims=2)
+            
+
+        return (loss * mask).sum(-1) / (eps + mask.sum(-1))
+
+    def compute_diffusion_loss(self, readout, target, logger=None, eps=1e-6):
+
+        loss = self.diffusion.compute_loss(
+            pred=readout["trans"],
+            target=target["frame_trans"],
+            t=target["trans_noise"],
+            mask=target["struct_supervise"], # not exactly right
+        )
+        if logger:
+            logger.masked_log(
+                "struct/diffusion_loss", 
+                loss,
+                mask=target["struct_supervise"]
+            )
+
+        return loss 
+    """
+    
     def compute_pade_loss(self, readout, target, logger=None):
         pred = readout["pos"]
         gt = target["frame_pos"]
         mask = target["struct_supervise"]  # this does not do exactly what we want
 
-        if self.cfg.clamp_pade:
-            pade = 0.9 * compute_pade(pred, gt, mask, clamp=10) + 0.1 * compute_pade(
-                pred, gt, mask
-            )
-        else:
-            pade = compute_pade(pred, gt, mask)
+        pade = compute_pade(pred, gt, mask)
 
         if logger:
             logger.masked_log("struct/pade_loss", pade[-1], mask=mask)
@@ -438,42 +411,4 @@ class StructureTrack(OpenProtTrack):
             logger.masked_log("struct/nape_loss", nape, mask=mask)
 
         return nape
-
-    def compute_distogram_loss(self, readout, target, logger=None, eps=1e-6):
-
-        dev = readout["pairwise"].device
-        bins = torch.linspace(2.3125, 21.6875, 63, device=dev)
-
-        distmat = target["beta"][:, None] - target["beta"][:, :, None]
-        distmat = torch.sqrt(torch.square(distmat).sum(-1))
-        label = (distmat[..., None] > bins).sum(-1)
-
-        loss = torch.nn.functional.cross_entropy(
-            readout["pairwise"].permute(0, 3, 1, 2), label, reduction="none"
-        )
-
-        # some temporary stuff
-        mask = target["struct_supervise"] * target["beta_mask"]
-        mask = mask[:, None] * mask[:, :, None]
-        if logger:
-            logger.masked_log("struct/distogram", loss, mask, dims=2)
-            
-
-        return (loss * mask).sum(-1) / (eps + mask.sum(-1))
-
-    def compute_diffusion_loss(self, readout, target, logger=None, eps=1e-6):
-
-        loss = self.diffusion.compute_loss(
-            pred=readout["trans"],
-            target=target["frame_trans"],
-            t=target["trans_noise"],
-            mask=target["struct_supervise"], # not exactly right
-        )
-        if logger:
-            logger.masked_log(
-                "struct/diffusion_loss", 
-                loss,
-                mask=target["struct_supervise"]
-            )
-
-        return loss 
+    """

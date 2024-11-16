@@ -78,10 +78,7 @@ class StructurePredictionEval(OpenProtEval):
             coords = self.run_diffusion(model, batch, noisy_batch, savedir)
         else:
             _, readout = model.forward(noisy_batch)
-            if self.cfg.trans_as_pos:
-                coords = readout["trans"]
-            else:
-                coords = readout["pos"][-1]
+            coords = readout["trans"][-1]
         
         
         L = batch["frame_trans"].shape[1]

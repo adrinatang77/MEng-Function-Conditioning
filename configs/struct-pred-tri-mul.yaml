@@ -8,9 +8,9 @@ logger:
     # please change "test" to something unique to your task
     project: openprot/struct-merge
     # will log to workdir and neptune.ai with this name
-    name: struct-pred-trimul-readout-weird2
+    name: struct-pred-trimul-postcond
     # if not null, will duplicate stdout and stderr to workdir/{name}/{logfile}
-    logfile: null #std.out
+    logfile: std.out
     # if null, will log every epoch, otherwise every this number of steps
     train_log_freq: 10
     val_log_freq: null 
@@ -75,8 +75,8 @@ tasks:
     StructurePrediction:
         fraction: 1.0
         beta: [1, 2]
-        uniform_prob: 0.0
-        max_noise_prob: 1.0
+        uniform_prob: 0.5
+        max_noise_prob: 0.5
         seed: 137
         random_rot: true
         datasets:
@@ -110,25 +110,17 @@ tracks:
     StructureTrack: 
         loss_weight: 1.0
         readout_pairwise: true
-        readout_trans_from_sm_x: true
-        embed_trans: false
-        readout_trans: true
-        pos_as_trans: true
+        embed_trans: edm
+        # trunk or sm
+        readout_trans: null
         postcondition: true
         int_loss_weight: 0.5
-        
-        rot_augment: 1
+        postcond_before_relpos: true
         embed_pairwise: false
-        struct_module: false
-        clamp_pade: false
-        clamp_mse: false
         losses:
-            # pade: 0.1
             lddt: 1.0
             distogram: 0.3
-            mse: 0.001
-            # diffusion: 0.225
-            # diffusion_lddt: 1.0
+            mse: 0.225
         diffusion:
             # type: GaussianFM
             # prior_sigma: 15.0
@@ -163,7 +155,6 @@ model: # custom args
         start: 0
         end: 12
         interval: 1
-    sm_block_idx: 12
     struct_module: true
     pairwise_pos_emb: true
     
@@ -178,21 +169,24 @@ model: # custom args
     rope: true
 
     ### ipa args
-    
+    # translation equivariant
+    move_x_to_xcond: true
+    readout_trans_before_sm: false
+    ipa_relpos: true
+    ipa_frame_update: true
     zero_frames_before_ipa: true
-    move_x_to_cond_idx: 12
+    zero_x_before_ipa: false
     
-    ipa_blocks: 8
+    ipa_blocks: 8    
     separate_ipa_blocks: false
-    ipa_frame_update: false
-    ipa_relpos: false
+    
+    embed_trans: false
     ipa_pair_values: false
     ipa_pair_bias: true
     detach_rots: true
     detach_trans: true
-    detach_x: true
-    trunk_adaLN: false
-    trunk_adaLN_start_idx: 12
+    detach_x: false
+    trunk_adaLN: true
     sm_adaLN: true
 
 

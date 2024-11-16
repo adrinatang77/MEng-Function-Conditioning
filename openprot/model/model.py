@@ -28,6 +28,27 @@ def gate(x, gate_):
         return x * gate_
     else:
         return x
+        
+class FinalLayer(nn.Module):
+    """
+    The final layer of DiT.
+    """
+    def __init__(self, dim, out):
+        super().__init__()
+        self.norm_final = nn.LayerNorm(dim, elementwise_affine=False, eps=1e-6)
+        self.linear = nn.Linear(dim, out, bias=True)
+        self.adaLN_modulation = nn.Sequential(
+            nn.SiLU(),
+            nn.Linear(dim, 2 * dim, bias=True)
+        )
+        nn.init.constant_(self.linear.weight, 0)
+        nn.init.constant_(self.linear.bias, 0)
+
+    def forward(self, x, c):
+        shift, scale = self.adaLN_modulation(c).chunk(2, dim=-1)
+        x = modulate(self.norm_final(x), shift, scale)
+        x = self.linear(x)
+        return x
 
 
 class RelativePosition(nn.Module):
@@ -105,6 +126,7 @@ class OpenProtTransformerBlock(nn.Module):
         relpos_attn=False,  # instead use trans relpos
         relpos_values=False,
         embed_rots=False,
+        embed_trans=False,
         no_qk_points=4,
         no_v_points=8,
         frame_update=False,
@@ -128,6 +150,7 @@ class OpenProtTransformerBlock(nn.Module):
             relpos_attn=relpos_attn,
             relpos_values=relpos_values,
             embed_rots=embed_rots,
+            embed_trans=embed_trans,
             no_qk_points=no_qk_points,
             no_v_points=no_v_points,
         )
@@ -151,17 +174,25 @@ class OpenProtTransformerBlock(nn.Module):
             nn.init.constant_(self.adaLN_modulation[-1].weight, 0)
             nn.init.constant_(self.adaLN_modulation[-1].bias, 0)
 
+            
         if pair_bias or pair_values:
             self.pair_norm = nn.LayerNorm(pairwise_dim)
 
         rot_dim = {"quat": 4, "vec": 3}[rots_type]
         if frame_update:
-            self.linear_frame_update = nn.Sequential(
-                nn.LayerNorm(dim),
-                nn.Linear(dim, 3 + rot_dim if update_rots else 3),
-            )
-            torch.nn.init.zeros_(self.linear_frame_update[-1].weight)
-            torch.nn.init.zeros_(self.linear_frame_update[-1].bias)
+            
+            if adaLN:
+                self.linear_frame_update = FinalLayer(
+                    dim, 3 + rot_dim if update_rots else 3,
+                )
+            else:
+                self.linear_frame_update = nn.Sequential(
+                    nn.LayerNorm(dim),
+                    nn.Linear(dim, 3 + rot_dim if update_rots else 3),
+                )
+            
+                torch.nn.init.zeros_(self.linear_frame_update[-1].weight)
+                torch.nn.init.zeros_(self.linear_frame_update[-1].bias)
 
         if readout_rots:
             self.linear_rots_out = nn.Sequential(
@@ -192,7 +223,7 @@ class OpenProtTransformerBlock(nn.Module):
             torch.nn.init.zeros_(self.sequence_to_pair.o_proj.weight)
             torch.nn.init.zeros_(self.sequence_to_pair.o_proj.bias)
 
-    def forward(self, x, z, rots, trans, mask, x_cond=None, update_coeff=None):
+    def forward(self, x, z, rots, trans, mask, x_cond=None, postcond_fn=None):
 
         ### no pair2sequence
 
@@ -204,12 +235,13 @@ class OpenProtTransformerBlock(nn.Module):
             shift_mha, scale_mha, gate_mha, shift_mlp, scale_mlp, gate_mlp = [None] * 6
 
         x_in = x
+        
         x = x + gate(
             self.mha(
                 x=modulate(self.mha_norm(x), shift_mha, scale_mha),
                 z=self.pair_norm(z) if hasattr(self, "pair_norm") else None,
                 mask=mask.bool(),
-                trans=trans,
+                trans=postcond_fn(trans) if postcond_fn is not None else trans,
                 rots=rots,
             ),
             gate_mha,
@@ -229,23 +261,11 @@ class OpenProtTransformerBlock(nn.Module):
                 z = z + self.mlp_pair(self.pair_ff_norm(z))
 
         if self.frame_update:
-
-            if self.update_rots:
-                update = self.linear_frame_update(x)
-                vec, rotvec = update[..., :3], update[..., 3:]
-                trans = trans + torch.einsum("blij,blj->bli", rots, vec)
-                if self.rots_type == "vec":
-                    rot_update = axis_angle_to_matrix(rotvec)
-                elif self.rots_type == "quat":
-                    rot_update = Rotation(
-                        quats=rotvec, normalize_quats=True
-                    ).get_rot_mats()
-                rots = rots @ rot_update.mT
+            if self.adaLN:
+                update = self.linear_frame_update(x, x_cond)
             else:
-                vec = self.linear_frame_update(x)
-                if update_coeff is not None:
-                    vec = vec * update_coeff[..., None]
-                trans = trans + vec
+                update = self.linear_frame_update(x)
+            trans = trans + update
 
         if self.readout_rots:
             rotvec = self.linear_rots_out(x)
@@ -276,6 +296,7 @@ class StructureModule(nn.Module):
             frame_update=cfg.ipa_frame_update,
             relpos_attn=cfg.ipa_relpos,
             relpos_values=cfg.ipa_relpos,
+            embed_trans=cfg.embed_trans,
         )
         if cfg.separate_ipa_blocks:
             self.ipa_blocks = nn.ModuleList()
@@ -283,34 +304,48 @@ class StructureModule(nn.Module):
                 self.ipa_blocks.append(block_fn())
         elif self.cfg.ipa_blocks > 0:
             self.ipa_block = block_fn()
+        if self.cfg.move_x_to_xcond:
+            self.x_cond_linear = nn.Sequential(
+                nn.LayerNorm(cfg.dim),
+                nn.Linear(cfg.dim, cfg.dim)
+            )
 
-    def forward(self, x, z, rots, trans, mask, x_cond):
+    def forward(self, x, z, rots, trans, mask, x_cond, postcond_fn):
         if self.cfg.zero_frames_before_ipa:
             trans = torch.zeros_like(trans)
             rots = torch.zeros_like(rots) + torch.eye(
                 3, device=rots.device, dtype=rots.dtype
             )
 
-        all_rots = []
-        all_trans = []
+        if self.cfg.move_x_to_xcond:
+            x_cond = x_cond + self.x_cond_linear(x)
+                
+        if self.cfg.zero_x_before_ipa:
+            x = torch.zeros_like(x)
+
+        all_rots = [rots]
+        all_trans = [trans]
         all_x = [x]
         for i in range(self.cfg.ipa_blocks):
-            if self.cfg.separate_ipa_blocks:
-                block = self.ipa_blocks[i]
-            else:
-                block = self.ipa_block
 
-            x, z, rots, trans = block(x, z, rots, trans, mask, x_cond)
-            all_rots.append(rots)
-            all_trans.append(trans)
-            all_x.append(x)
-            
             if self.cfg.detach_rots:
                 rots = rots.detach()
             if self.cfg.detach_trans:
                 trans = trans.detach()
             if self.cfg.detach_x:
                 x = x.detach()
+                
+            if self.cfg.separate_ipa_blocks:
+                block = self.ipa_blocks[i]
+            else:
+                block = self.ipa_block
+
+            x, z, rots, trans = block(x, z, rots, trans, mask, x_cond, postcond_fn)
+            all_rots.append(rots)
+            all_trans.append(trans)
+            all_x.append(x)
+            
+ 
 
         return {
             "x": torch.stack(all_x),
@@ -352,19 +387,24 @@ class OpenProtModel(nn.Module):
                     heads=cfg.heads,
                     ff_expand=cfg.ff_expand,
                     rope=cfg.rope,
-                    adaLN=cfg.trunk_adaLN and i >= cfg.trunk_adaLN_start_idx,
+                    adaLN=cfg.trunk_adaLN,
                     pairwise_dim=cfg.pairwise_dim,
                     pair_bias=cfg.block_pair_bias,
                     **(pair_args if i in pair_block_idx else {}),
                 )
             )
-        if self.cfg.struct_module:
+
+        if cfg.readout_trans_before_sm:
+            if cfg.trunk_adaLN:
+                self.trans_readout = FinalLayer(cfg.dim, 3)
+            else:
+                self.trans_readout = nn.Sequential(
+                    nn.LayerNorm(cfg.dim),
+                    nn.Linear(cfg.dim, 3)
+                )
+        if cfg.struct_module:
             self.structure_module = StructureModule(cfg)
-        if self.cfg.move_x_to_cond_idx is not None:
-            self.x_cond_linear = nn.Sequential(
-                nn.LayerNorm(cfg.dim),
-                nn.Linear(cfg.dim, cfg.dim)
-            )
+        
 
     def forward(self, inp):
 
@@ -379,8 +419,8 @@ class OpenProtModel(nn.Module):
         rots = inp.get("rots", None)
         trans = inp.get("trans", None)
         x_cond = inp.get("x_cond", None)
+        postcond_fn = inp.get("postcond_fn", None)
 
-        sm_out = None
         for i, block in enumerate(self.blocks):
 
             
@@ -391,12 +431,16 @@ class OpenProtModel(nn.Module):
             else:
                 x, z, rots, trans = block(x, z, rots, trans, mask, x_cond)
 
-            if i == self.cfg.move_x_to_cond_idx - 1:
-                x_cond = x_cond + self.x_cond_linear(x)
-                # x = torch.zeros_like(x)
+        if self.cfg.readout_trans_before_sm:
+            if self.cfg.trunk_adaLN:
+                trans = self.trans_readout(x, x_cond)
+            else:
+                trans = self.trans_readout(x)
 
-            if self.cfg.struct_module and i + 1 == self.cfg.sm_block_idx:
-                sm_out = self.structure_module(x, z, rots, trans, mask, x_cond)
+        if self.cfg.struct_module:
+            sm_out = self.structure_module(x, z, rots, trans, mask, x_cond, postcond_fn)
+        else:
+            sm_out = None
         
         return {"x": x, "z": z, "sm": sm_out}
 

@@ -41,6 +41,7 @@ class GeometricMultiHeadAttention(nn.Module):
         relpos_attn=False,  # instead use trans relpos
         relpos_values=False,
         embed_rots=False,  # whether to embed rots into x at the top
+        embed_trans=False,
         no_qk_points=4,
         no_v_points=8,
     ):
@@ -56,6 +57,7 @@ class GeometricMultiHeadAttention(nn.Module):
         self.ipa_values = ipa_values
         self.ipa_frames = ipa_frames
         self.embed_rots = embed_rots
+        self.embed_trans = embed_trans
         self.no_qk_points = no_qk_points
         self.no_v_points = no_v_points
         self.relpos_values = relpos_values
@@ -70,6 +72,10 @@ class GeometricMultiHeadAttention(nn.Module):
         if embed_rots:
             self.linear_rots = nn.Sequential(
                 nn.Linear(9, dim), nn.ReLU(), nn.Linear(dim, dim)
+            )
+        if embed_trans:
+            self.linear_trans = nn.Sequential(
+                nn.Linear(3, dim), nn.ReLU(), nn.Linear(dim, dim)
             )
 
         if ipa_attn:
@@ -190,6 +196,12 @@ class GeometricMultiHeadAttention(nn.Module):
 
         if self.embed_rots:
             x = x + self.linear_rots(rots.view(B, L, -1))
+
+        if self.embed_trans:
+            # trans_emb = sinusoidal_embedding(
+            #     trans, n_freqs=32, max_period=5, min_period=0.05
+            # )
+            x = x + self.linear_trans(trans)
 
         query = self.w_q(x).view(B, L, self.heads, -1).transpose(1, 2)  # B H L D
         key = self.w_k(x).view(B, L, self.heads, -1).transpose(1, 2)
