@@ -3,12 +3,12 @@ pretrained: null # workdir/trimul-vanilla-disto/last.ckpt # workdir/nodiff-relpo
 validate: false # if true, only validate the model, don't train
 logger:
     # set to true to log to neptune.ai
-    neptune: true
+    neptune: false
     run_id: null  
     # please change "test" to something unique to your task
     project: openprot/diffusion
     # will log to workdir and neptune.ai with this name
-    name: struct-gen-notri-edm-align # struct-gen-notri-gaussianfm+pdb
+    name: struct-gen-notri-edm3 # struct-gen-notri-gaussianfm+pdb
     # if not null, will duplicate stdout and stderr to workdir/{name}/{logfile}
     logfile: std.out
     # if null, will log every epoch, otherwise every this number of steps
@@ -129,21 +129,21 @@ tracks:
     StructureTrack: 
         loss_weight: 1.0
         readout_pairwise: false
-        
         embed_trans: edm
-        readout_trans: true
-        int_loss_weight: 0.0
-        
-        rot_augment: 1
+        # trunk or sm
+        readout_trans: trunk
+        postcondition: true
+        int_loss_weight: 0.5
+        postcond_before_relpos: true
         embed_pairwise: false
-        struct_module: false
+        embed_t: false
         
         clamp_pade: false
         clamp_nape: true
         clamp_mse: false
         nape_cutoff: 15
         losses:
-            diffusion: 1.0
+            mse: 1.0
         diffusion:
             # type: GaussianFM
             # prior_sigma: 15.0
@@ -177,11 +177,10 @@ model: # custom args
         start: 0
         end: 0
         interval: 1
-    struct_module: false
-    sm_block_idx: 12
-    
+    struct_module: true
+    block_pair_bias: false
     pairwise_pos_emb: false
-    
+    structure_module: true
     ff_expand: 4
     position_bins: 32
     pair_ffn: true
@@ -192,17 +191,24 @@ model: # custom args
     rope: true
 
     ### ipa args
-
+    move_x_to_xcond: false
+    readout_trans_before_sm: false
+    ipa_relpos: true
+    ipa_frame_update: true
     zero_frames_before_ipa: false
+    zero_x_before_ipa: false
+    readout_adaLN: false
     
-    ipa_blocks: 8
+    ipa_blocks: 0
     separate_ipa_blocks: false
     ipa_pair_values: false
     ipa_pair_bias: true
+    embed_trans: false
     detach_rots: true
     detach_trans: true
+    detach_x: false
     trunk_adaLN: true
-    sm_adaLN: true
+    sm_adaLN: false
 
 
 optimizer:

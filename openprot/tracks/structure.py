@@ -116,6 +116,8 @@ class StructureTrack(OpenProtTrack):
             model.trans_out = nn.Sequential(
                 nn.LayerNorm(model.cfg.dim), nn.Linear(model.cfg.dim, 3)
             )
+        if self.cfg.embed_t:
+            model.linear_t = nn.Linear(model.cfg.dim, model.cfg.dim)
 
     def corrupt(self, batch, noisy_batch, target, logger=None):
 
@@ -187,9 +189,13 @@ class StructureTrack(OpenProtTrack):
             model.frame_mask[None, None],
         )
 
-        inp["x_cond"] += sinusoidal_embedding(
+        t_emb = sinusoidal_embedding(
             batch["trans_noise"], model.cfg.dim // 2, 1, 0.01
         ).float()
+        inp["x_cond"] += t_emb
+        if self.cfg.embed_t:
+            inp['x'] = inp['x'] + model.linear_t(t_emb)
+        
         inp['trans_noise'] = batch['trans_noise'] # need this for the postconditioning
 
         if self.cfg.embed_pairwise:

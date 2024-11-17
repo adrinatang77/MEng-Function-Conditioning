@@ -134,6 +134,7 @@ class OpenProtTransformerBlock(nn.Module):
         readout_rots=False,
         update_x=True,
         adaLN=False,
+        readout_adaLN=False,
         rots_type="quat",
     ):
         super().__init__()
@@ -165,7 +166,7 @@ class OpenProtTransformerBlock(nn.Module):
         self.tri_mul = tri_mul
         self.update_x = update_x
         self.adaLN = adaLN
-
+        self.readout_adaLN = readout_adaLN
         self.mha_norm = nn.LayerNorm(dim, elementwise_affine=not adaLN)
         self.ff_norm = nn.LayerNorm(dim, elementwise_affine=not adaLN)
 
@@ -181,7 +182,7 @@ class OpenProtTransformerBlock(nn.Module):
         rot_dim = {"quat": 4, "vec": 3}[rots_type]
         if frame_update:
             
-            if adaLN:
+            if readout_adaLN:
                 self.linear_frame_update = FinalLayer(
                     dim, 3 + rot_dim if update_rots else 3,
                 )
@@ -261,7 +262,7 @@ class OpenProtTransformerBlock(nn.Module):
                 z = z + self.mlp_pair(self.pair_ff_norm(z))
 
         if self.frame_update:
-            if self.adaLN:
+            if self.readout_adaLN:
                 update = self.linear_frame_update(x, x_cond)
             else:
                 update = self.linear_frame_update(x)
@@ -293,6 +294,7 @@ class StructureModule(nn.Module):
             pair_bias=cfg.ipa_pair_bias,
             pair_values=cfg.ipa_pair_values,
             adaLN=cfg.sm_adaLN,
+            readout_adaLN=cfg.readout_adaLN,
             frame_update=cfg.ipa_frame_update,
             relpos_attn=cfg.ipa_relpos,
             relpos_values=cfg.ipa_relpos,
@@ -395,7 +397,7 @@ class OpenProtModel(nn.Module):
             )
 
         if cfg.readout_trans_before_sm:
-            if cfg.trunk_adaLN:
+            if cfg.readout_adaLN:
                 self.trans_readout = FinalLayer(cfg.dim, 3)
             else:
                 self.trans_readout = nn.Sequential(
@@ -432,7 +434,7 @@ class OpenProtModel(nn.Module):
                 x, z, rots, trans = block(x, z, rots, trans, mask, x_cond)
 
         if self.cfg.readout_trans_before_sm:
-            if self.cfg.trunk_adaLN:
+            if self.cfg.readout_adaLN:
                 trans = self.trans_readout(x, x_cond)
             else:
                 trans = self.trans_readout(x)
