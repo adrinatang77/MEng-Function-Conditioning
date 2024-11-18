@@ -72,9 +72,9 @@ class OpenProtData(dict):
                     pass
 
                 # global attribute
-                elif key[0] == '/':
+                elif key[0] == "/":
                     pass
-                    
+
                 # pairwise attribute
                 elif key[0] == "_":
                     self[key] = self[key][start:end, start:end]
@@ -99,7 +99,7 @@ class OpenProtData(dict):
                     pass
 
                 # global attribute
-                elif key[0] == '/':
+                elif key[0] == "/":
                     pass
 
                 # pairwise attribute

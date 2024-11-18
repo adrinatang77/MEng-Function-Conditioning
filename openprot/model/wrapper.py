@@ -143,8 +143,8 @@ class OpenProtWrapper(Wrapper):
         self._logger.log("lr", self.get_lr())
 
         self._logger.clear_masks()
-        
-        return (loss * batch["pad_mask"]).sum() / batch['pad_mask'].sum()
+
+        return (loss * batch["pad_mask"]).sum() / batch["pad_mask"].sum()
 
     def on_validation_epoch_end(self):
         savedir = f'{os.environ["MODEL_DIR"]}/eval_step{self.trainer.global_step}'

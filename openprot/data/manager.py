@@ -34,15 +34,14 @@ class OpenProtDatasetManager(torch.utils.data.IterableDataset):
 
     def process(self, data: OpenProtData):
 
-        
         loss_keys = []
         for task in self.tasks.values():
             loss_keys.extend(task.register_loss_masks())
-            
+
         for key in loss_keys:
             if key not in data:
                 data[key] = np.zeros((), dtype=np.float32)
-                                    
+
         data.pad(self.cfg.data.crop)
 
         self.tracks.tokenize(data)

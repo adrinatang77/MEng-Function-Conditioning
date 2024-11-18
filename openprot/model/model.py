@@ -28,18 +28,19 @@ def gate(x, gate_):
         return x * gate_
     else:
         return x
-        
+
+
 class FinalLayer(nn.Module):
     """
     The final layer of DiT.
     """
+
     def __init__(self, dim, out):
         super().__init__()
         self.norm_final = nn.LayerNorm(dim, elementwise_affine=False, eps=1e-6)
         self.linear = nn.Linear(dim, out, bias=True)
         self.adaLN_modulation = nn.Sequential(
-            nn.SiLU(),
-            nn.Linear(dim, 2 * dim, bias=True)
+            nn.SiLU(), nn.Linear(dim, 2 * dim, bias=True)
         )
         nn.init.constant_(self.linear.weight, 0)
         nn.init.constant_(self.linear.bias, 0)
@@ -177,23 +178,23 @@ class OpenProtTransformerBlock(nn.Module):
             nn.init.constant_(self.adaLN_modulation[-1].weight, 0)
             nn.init.constant_(self.adaLN_modulation[-1].bias, 0)
 
-            
         if pair_bias or pair_values:
             self.pair_norm = nn.LayerNorm(pairwise_dim)
 
         rot_dim = {"quat": 4, "vec": 3}[rots_type]
         if frame_update:
-            
+
             if readout_adaLN:
                 self.linear_frame_update = FinalLayer(
-                    dim, 3 + rot_dim if update_rots else 3,
+                    dim,
+                    3 + rot_dim if update_rots else 3,
                 )
             else:
                 self.linear_frame_update = nn.Sequential(
                     nn.LayerNorm(dim),
                     nn.Linear(dim, 3 + rot_dim if update_rots else 3),
                 )
-            
+
                 torch.nn.init.zeros_(self.linear_frame_update[-1].weight)
                 torch.nn.init.zeros_(self.linear_frame_update[-1].bias)
 
@@ -238,7 +239,7 @@ class OpenProtTransformerBlock(nn.Module):
             shift_mha, scale_mha, gate_mha, shift_mlp, scale_mlp, gate_mlp = [None] * 6
 
         x_in = x
-        
+
         x = x + gate(
             self.mha(
                 x=modulate(self.mha_norm(x), shift_mha, scale_mha),
@@ -313,8 +314,7 @@ class StructureModule(nn.Module):
             self.ipa_block = block_fn()
         if self.cfg.move_x_to_xcond:
             self.x_cond_linear = nn.Sequential(
-                nn.LayerNorm(cfg.dim),
-                nn.Linear(cfg.dim, cfg.dim)
+                nn.LayerNorm(cfg.dim), nn.Linear(cfg.dim, cfg.dim)
             )
 
     def forward(self, x, z, rots, trans, mask, x_cond, postcond_fn):
@@ -326,7 +326,7 @@ class StructureModule(nn.Module):
 
         if self.cfg.move_x_to_xcond:
             x_cond = x_cond + self.x_cond_linear(x)
-                
+
         if self.cfg.zero_x_before_ipa:
             x = torch.zeros_like(x)
 
@@ -341,7 +341,7 @@ class StructureModule(nn.Module):
                 trans = trans.detach()
             if self.cfg.detach_x:
                 x = x.detach()
-                
+
             if self.cfg.separate_ipa_blocks:
                 block = self.ipa_blocks[i]
             else:
@@ -351,13 +351,11 @@ class StructureModule(nn.Module):
             all_rots.append(rots)
             all_trans.append(trans)
             all_x.append(x)
-            
- 
 
         return {
             "x": torch.stack(all_x),
             "trans": torch.stack(all_trans),
-            "rots": torch.stack(all_rots)
+            "rots": torch.stack(all_rots),
         }
 
 
@@ -406,12 +404,10 @@ class OpenProtModel(nn.Module):
                 self.trans_readout = FinalLayer(cfg.dim, 3)
             else:
                 self.trans_readout = nn.Sequential(
-                    nn.LayerNorm(cfg.dim),
-                    nn.Linear(cfg.dim, 3)
+                    nn.LayerNorm(cfg.dim), nn.Linear(cfg.dim, 3)
                 )
         if cfg.struct_module:
             self.structure_module = StructureModule(cfg)
-        
 
     def forward(self, inp):
 
@@ -430,7 +426,6 @@ class OpenProtModel(nn.Module):
 
         for i, block in enumerate(self.blocks):
 
-            
             if block.pair_updates and self.cfg.checkpoint:
                 x, z, rots, trans = torch.utils.checkpoint.checkpoint(
                     block, x, z, rots, trans, mask, x_cond, use_reentrant=False
@@ -448,17 +443,5 @@ class OpenProtModel(nn.Module):
             sm_out = self.structure_module(x, z, rots, trans, mask, x_cond, postcond_fn)
         else:
             sm_out = None
-        
+
         return {"x": x, "z": z, "sm": sm_out}
-
-        # if self.cfg.augment_before_ipa:
-        #     R, B, L, D = x.shape
-        #     x = x.reshape(R * B, L, D)
-        #     x_cond = x_cond[None].expand(R, -1, -1, -1).reshape(R * B, L, D)
-        #     mask = mask[None].expand(R, -1, -1).reshape(R * B, L)
-        #     z_ = z[None].expand(R, -1, -1, -1, -1).reshape(R * B, L, L, -1)
-
-        # if self.cfg.augment_before_ipa:
-        #     x = x.reshape(R, B, L, D)
-        # else:
-        #     z_ = z

@@ -58,7 +58,7 @@ class StructurePredictionEval(OpenProtEval):
             batch["aatype"].cpu().numpy()[0],
             batch["frame_mask"].cpu().numpy()[0],
         )
-        name=batch["name"][0]
+        name = batch["name"][0]
         with open(f"{savedir}/{name}_traj.pdb", "w") as f:
             f.write(write_ca_traj(prot, samp_traj[:, 0].cpu().numpy()))
 
@@ -66,7 +66,7 @@ class StructurePredictionEval(OpenProtEval):
             f.write(write_ca_traj(prot, pred_traj[:, 0].cpu().numpy()))
 
         return samp_traj[-1]
-        
+
     def run_batch(self, model, batch: dict, savedir=".", device=None, logger=None):
         os.makedirs(savedir, exist_ok=True)
 
@@ -79,11 +79,10 @@ class StructurePredictionEval(OpenProtEval):
         else:
             _, readout = model.forward(noisy_batch)
             coords = readout["trans"][-1]
-        
-        
+
         L = batch["frame_trans"].shape[1]
         aatype = batch["aatype"].cpu().numpy()[0]
-        
+
         coords = rmsdalign(batch["frame_trans"], coords, batch["frame_mask"])
 
         lddt = compute_lddt(coords, batch["frame_trans"], batch["frame_mask"])
