@@ -124,6 +124,7 @@ class OpenProtTransformerBlock(nn.Module):
         ipa_values=False,
         ipa_frames=False,  # use frames in point attention
         relpos_attn=False,  # instead use trans relpos
+        relpos_rope=False,
         relpos_values=False,
         embed_rots=False,
         embed_trans=False,
@@ -149,6 +150,7 @@ class OpenProtTransformerBlock(nn.Module):
             ipa_values=ipa_values,
             ipa_frames=ipa_frames,
             relpos_attn=relpos_attn,
+            relpos_rope=relpos_rope,
             relpos_values=relpos_values,
             embed_rots=embed_rots,
             embed_trans=embed_trans,
@@ -296,8 +298,11 @@ class StructureModule(nn.Module):
             adaLN=cfg.sm_adaLN,
             readout_adaLN=cfg.readout_adaLN,
             frame_update=cfg.ipa_frame_update,
+            ipa_attn=cfg.ipa_nipa,
+            ipa_values=cfg.ipa_nipa,
             relpos_attn=cfg.ipa_relpos,
             relpos_values=cfg.ipa_relpos,
+            relpos_rope=cfg.ipa_rope,
             embed_trans=cfg.embed_trans,
         )
         if cfg.separate_ipa_blocks:

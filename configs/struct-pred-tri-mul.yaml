@@ -4,11 +4,11 @@ validate: false # if true, only validate the model, don't train
 logger:
     # set to true to log to neptune.ai
     neptune: true
-    run_id: null  
+    run_id: null
     # please change "test" to something unique to your task
     project: openprot/struct-merge
     # will log to workdir and neptune.ai with this name
-    name: struct-pred-no-tri
+    name: struct-pred-nipa
     # if not null, will duplicate stdout and stderr to workdir/{name}/{logfile}
     logfile: std.out
     # if null, will log every epoch, otherwise every this number of steps
@@ -111,6 +111,7 @@ tracks:
         loss_weight: 1.0
         readout_pairwise: true
         embed_trans: edm
+        embed_t: false
         # trunk or sm
         readout_trans: null
         postcondition: true
@@ -146,10 +147,10 @@ model: # custom args
     # topology of the network
     pair_blocks:
         start: 0
-        end: 0
+        end: 12
         interval: 1
     struct_module: true
-    pairwise_pos_emb: false
+    pairwise_pos_emb: true
     
     
     ff_expand: 4
@@ -165,7 +166,9 @@ model: # custom args
     # translation equivariant
     move_x_to_xcond: true
     readout_trans_before_sm: false
-    ipa_relpos: true
+    ipa_relpos: false
+    ipa_nipa: true
+    ipa_rope: false
     ipa_frame_update: true
     zero_frames_before_ipa: true
     zero_x_before_ipa: false
@@ -181,6 +184,7 @@ model: # custom args
     detach_x: false
     trunk_adaLN: true
     sm_adaLN: true
+    readout_adaLN: true
 
 
 optimizer:

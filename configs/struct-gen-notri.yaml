@@ -10,7 +10,7 @@ logger:
     # will log to workdir and neptune.ai with this name
     name: struct-gen-notri-edm3 # struct-gen-notri-gaussianfm+pdb
     # if not null, will duplicate stdout and stderr to workdir/{name}/{logfile}
-    logfile: std.out
+    logfile: null # std.out
     # if null, will log every epoch, otherwise every this number of steps
     train_log_freq: 10
     val_log_freq: null 
