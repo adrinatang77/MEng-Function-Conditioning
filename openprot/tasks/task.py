@@ -14,6 +14,9 @@ class OpenProtTask:
         self.rng = np.random.default_rng(seed=cfg.seed)
         self.shuffle_datasets()
 
+    def register_loss_masks(self):
+        return []
+
     def shuffle_datasets(self):
         self.shuffled_idx = {}
         self.counter = {}
@@ -28,7 +31,15 @@ class OpenProtTask:
         self.curr_ds = self.rng.choice(self.cfg.datasets, p=self.dataset_probs)
 
     @abstractmethod
-    def prep_data(self, data):
+    def prep_data(self, data, crop=None):
+        """
+        (1) Crops data, or otherwise ensures max length = crop
+        (2) Sets _noise features for tracks of interest
+            - does not need to take mask into account, strictly speaking
+            - (i.e., mask doesn't exist yet for structure track)
+        (3) any other relevant preprocessing (must be features in config.yaml)
+            - NUMPY ARRAYS ONLY
+        """
         NotImplemented
 
     def advance(self):
@@ -44,7 +55,11 @@ class OpenProtTask:
 
         # print(f"i={i} rank={rank} ds={name} idx={idx} actual={order[idx]}")
         data = ds[order[idx % len(order)]]
-        if crop is not None:
-            data.crop(crop)
 
-        return self.prep_data(data)
+        data = self.prep_data(data, crop=crop)
+        if crop is not None:
+            try:
+                assert len(data["seqres"]) <= crop
+            except:
+                raise Exception(f"{self.__class__}.prep_data failed to crop data.")
+        return data

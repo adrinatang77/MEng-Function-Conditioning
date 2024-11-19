@@ -19,25 +19,26 @@ class OpenProtTrackManager(dict):
             track.tokenize(data)
 
     def embed(self, model: OpenProtModel, batch: dict):
-        inp = 0
+        inp = batch.copy("name", "pad_mask")
+        inp["x"] = 0
+        inp["x_cond"] = 0
         for track in self.values():
-            x = track.embed(model, batch)
-            inp = inp + x
+            track.embed(model, batch, inp)
         return inp
 
-    def readout(self, model: OpenProtModel, out: torch.Tensor):
+    def readout(self, model: OpenProtModel, inp: dict, out: torch.Tensor):
         readout = {}
         for track in self.values():
-            track.predict(model, out, readout)
+            track.predict(model, inp, out, readout)
         return readout
 
     def corrupt(self, batch: dict, logger=None):
-        noisy_batch, target = {}, {}
+        noisy_batch = batch.copy("name", "pad_mask")
+        target = batch.copy("name", "pad_mask")
+
         for track in self.values():
             track.corrupt(batch, noisy_batch, target, logger=logger)
 
-        noisy_batch["pad_mask"] = batch["pad_mask"]
-        target["pad_mask"] = batch["pad_mask"]
         return noisy_batch, target
 
     def compute_loss(self, readout: dict, target: dict, logger=None):

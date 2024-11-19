@@ -4,10 +4,11 @@ from abc import abstractmethod
 
 
 class OpenProtDataset(torch.utils.data.Dataset):
-    def __init__(self, cfg, feats=None, logger=None):
+    def __init__(self, cfg, feats=None, tracks=None):
         super().__init__()
         self.cfg = cfg
         self.feats = feats
+        self.tracks = tracks
         self.setup()
 
     @abstractmethod
@@ -20,13 +21,19 @@ class OpenProtDataset(torch.utils.data.Dataset):
 
     @abstractmethod
     def __getitem__(self, idx: int):
+        """
+        Returns OpenProtData via self.make_data(...) with args
+        (1) name and seqres (required)
+        (2) any features that should be set to non-default values (np arrays only!)
+        """
         NotImplemented
 
     def make_data(self, **kwargs):
-        assert "seqres" in kwargs
         assert "name" in kwargs
-        
+        assert "seqres" in kwargs
+
         data = OpenProtData()
+
         data["name"] = kwargs["name"]
         data["seqres"] = kwargs["seqres"]
 
@@ -40,42 +47,84 @@ class OpenProtDataset(torch.utils.data.Dataset):
 
         return data
 
+
 class OpenProtData(dict):
-    def keys_to_crop(self):
-        return [key for key in self if key != "name"]
+    def copy(self, *keys):
+        data = OpenProtData()
+        for key in keys:
+            data[key] = self[key]
+        return data
 
     def crop(self, crop_len: int):
         L = len(self["seqres"])
 
+        ### todo support tensors!
         if L >= crop_len:  # needs crop
             start = np.random.randint(0, L - crop_len + 1)
             end = start + crop_len
-            for key in self.keys_to_crop():
-                self[key] = self[key][start:end]
+            for key in self.keys():
+                # special attribute
+                if key == "seqres":
+                    self[key] = self[key][start:end]
+
+                # non-array attribute
+                elif type(self[key]) not in [torch.Tensor, np.ndarray]:
+                    pass
+
+                # global attribute
+                elif key[0] == '/':
+                    pass
+                    
+                # pairwise attribute
+                elif key[0] == "_":
+                    self[key] = self[key][start:end, start:end]
+
+                # regular attribute
+                else:
+                    self[key] = self[key][start:end]
+
         return self
 
     def pad(self, pad_len: int):
         L = len(self["seqres"])
         if pad_len and L < pad_len:  # needs pad
             pad = pad_len - L
-            for key in self.keys_to_crop():
-                # unfortunately this is a string, unlike everything else
+            for key in self.keys():
+                # special attribute
                 if key == "seqres":
                     self[key] = self[key] + "X" * pad
+
+                # non-array attribute
+                elif type(self[key]) not in [torch.Tensor, np.ndarray]:
+                    pass
+
+                # global attribute
+                elif key[0] == '/':
+                    pass
+
+                # pairwise attribute
+                elif key[0] == "_":
+                    shape = self[key].shape
+                    dtype = self[key].dtype
+                    padded = np.zeros((pad_len, pad_len, *shape[2:]), dtype=dtype)
+                    padded[:L, :L] = self[key]
+                    self[key] = padded
+
+                # regular attribute
                 else:
                     shape = self[key].shape
                     dtype = self[key].dtype
-                    self[key] = np.concatenate(
-                        [self[key], np.zeros((pad, *shape[1:]), dtype=dtype)]
-                    )
+                    padded = np.zeros((pad_len, *shape[1:]), dtype=dtype)
+                    padded[:L] = self[key]
+                    self[key] = padded
 
         pad_len = pad_len or L
         pad_mask = np.zeros(pad_len, dtype=np.float32)
         pad_mask[: min(pad_len, L)] = 1.0
         self["pad_mask"] = pad_mask
         return self
-    
-    def batch(datas):
+
+      def batch(datas):
         batch = OpenProtData()
         key_union = list(set(sum([list(data.keys()) for data in datas], [])))
         for key in key_union:
@@ -84,9 +133,17 @@ class OpenProtData(dict):
             except:
                 raise Exception(f"Key {key} not present in all batch elements.")
         for key in key_union:
-            if type(batch[key][0]) is np.ndarray:
-                batch[key] = torch.from_numpy(np.stack(batch[key]))
-            elif type(batch[key][0]) is torch.Tensor:
-                batch[key] = torch.stack(batch[key])
-
+            try:
+                if type(batch[key][0]) is np.ndarray:
+                    batch[key] = torch.from_numpy(np.stack(batch[key]))
+                elif type(batch[key][0]) is torch.Tensor:
+                    batch[key] = torch.stack(batch[key])
+            except Exception as e:
+                raise Exception(f"Key {key} exception: {e}")
         return batch
+
+    def to(self, device):
+        for key in self.keys():
+            if isinstance(self[key], torch.Tensor):
+                self[key] = self[key].to(device)
+        return self
