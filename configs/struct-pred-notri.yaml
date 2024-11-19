@@ -176,7 +176,7 @@ model: # custom args
     zero_frames_before_ipa: true
     zero_x_before_ipa: false
     
-    ipa_blocks: 8    
+    ipa_blocks: 8
     separate_ipa_blocks: false
     
     embed_trans: false

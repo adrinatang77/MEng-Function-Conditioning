@@ -15,6 +15,5 @@ class SequenceDenoising(OpenProtTask):
         elif self.cfg.sampling == "beta":
             noise = np.random.beta(*self.cfg.sampling_args, seq_len).astype(np.float32)
         data["seq_noise"] = noise
-        data["seq_noise"] *= data["seq_mask"]
-
+        
         return data
