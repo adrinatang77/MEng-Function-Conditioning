@@ -180,8 +180,9 @@ tracks:
     SequenceTrack:
         esm: esm2_3B # esm2_650M # esm2_8M_270K
         corrupt: mask
-        mask_rate: 0.0
-        loss_weight: 0.0
+        mask_rate: 0.15
+        loss_weight: 1.0
+        rate_matrix_path: ./openprot/blosum62.csv
 
 model: # custom args
     checkpoint: true
