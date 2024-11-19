@@ -64,6 +64,12 @@ class SequenceTrack(OpenProtTrack):
             [rc.restype_order.get(c, rc.unk_restype_index) for c in data["seqres"]]
         )
     
+    @staticmethod
+    def _af2_to_esm(d: Alphabet):
+        # Remember that t is shifted from residue_constants by 1 (0 is padding).
+        esm_reorder = [d.padding_idx] + [d.get_idx(v) for v in rc.restypes_with_x]
+        return torch.tensor(esm_reorder)
+
     def noise_transform(self, t, tokens, start = 0):
         '''
         takes tokens and noise_levels t and returns new noised distribution of tokens, offset by starting noise
@@ -140,23 +146,7 @@ class SequenceTrack(OpenProtTrack):
 
         return new_tokens
 
-        if self.cfg.esm is not None:
-
-            model.esm, self.esm_dict = esm_registry.get(self.cfg.esm)()
-            model.esm.requires_grad_(False)
-            model.esm.half()
-            esm_dim = model.esm.layers[0].final_layer_norm.bias.shape[0]
-            # model.esm_in = nn.Linear(esm_dim, model.cfg.dim)
-            model.esm_s_combine = nn.Parameter(torch.zeros(model.esm.num_layers + 1))
-            model.esm_s_mlp = nn.Sequential(
-                nn.LayerNorm(esm_dim),
-                nn.Linear(esm_dim, model.cfg.dim),
-                nn.ReLU(),
-                nn.Linear(model.cfg.dim, model.cfg.dim),
-            )
-
-            model.register_buffer("af2_to_esm", self._af2_to_esm(self.esm_dict))
-
+        
         # model.seq_mask = nn.Parameter(torch.zeros(model.cfg.dim))
 
     def _compute_language_model_representations(self, esmaa):
@@ -205,6 +195,24 @@ class SequenceTrack(OpenProtTrack):
         self.steady_state = torch.linalg.lstsq(Q, b, rcond=None).solution
         self.steady_state = torch.cat((self.steady_state, torch.tensor([0])))
 
+        if self.cfg.esm is not None:
+
+            model.esm, self.esm_dict = esm_registry.get(self.cfg.esm)()
+            model.esm.requires_grad_(False)
+            model.esm.half()
+            esm_dim = model.esm.layers[0].final_layer_norm.bias.shape[0]
+            # model.esm_in = nn.Linear(esm_dim, model.cfg.dim)
+            model.esm_s_combine = nn.Parameter(torch.zeros(model.esm.num_layers + 1))
+            model.esm_s_mlp = nn.Sequential(
+                nn.LayerNorm(esm_dim),
+                nn.Linear(esm_dim, model.cfg.dim),
+                nn.ReLU(),
+                nn.Linear(model.cfg.dim, model.cfg.dim),
+            )
+
+            model.register_buffer("af2_to_esm", self._af2_to_esm(self.esm_dict))
+
+
         # model.seq_mask = nn.Parameter(torch.zeros(model.cfg.dim))
 
 
@@ -222,6 +230,7 @@ class SequenceTrack(OpenProtTrack):
             inp = torch.where((rand > 0.9) & mask, randaa, inp)
 
             noisy_batch["aatype"] = inp
+            noisy_batch['seq_noise'] = batch['seq_noise']    
             target["seq_supervise"] = (batch["seq_noise"] > 0) * batch["seq_mask"]
 
         elif self.cfg.corrupt == "discrete_fm":
@@ -297,9 +306,28 @@ class SequenceTrack(OpenProtTrack):
             logger.log("seq/toks", batch["seq_mask"].sum())
             
     def embed(self, model, batch, inp):
+        def _af2_idx_to_esm_idx(aa, mask):
+            aa = (aa + 1).masked_fill(mask != 1, 0)
+            return model.af2_to_esm[aa]
+
+        if self.cfg.esm is not None:
+
+            esmaa = _af2_idx_to_esm_idx(batch["aatype"], batch["pad_mask"])
+            res = model.esm(esmaa, repr_layers=range(model.esm.num_layers + 1))
+            esm_s = torch.stack(
+                [v for _, v in sorted(res["representations"].items())], dim=2
+            )
+            # rep = res['representations'][model.esm.num_layers]
+            esm_s = esm_s.detach().float()
+
+            # === preprocessing ===
+            esm_s = (model.esm_s_combine.softmax(0).unsqueeze(0) @ esm_s).squeeze(2)
+            inp["x"] += model.esm_s_mlp(esm_s)
+            
         inp["x"] += model.seq_embed(batch["aatype"])
-        noise_embed = sinusoidal_embedding(batch["seq_noise"], model.cfg.dim//2, 1, .01)
-        inp["x"] += noise_embed
+        if self.cfg.embed_t:
+            noise_embed = sinusoidal_embedding(batch["seq_noise"], model.cfg.dim//2, 1, .01)
+            inp["x"] += noise_embed
 
       
     def predict(self, model, inp, out, readout):

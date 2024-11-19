@@ -160,9 +160,11 @@ tracks:
             aligned_loss: true
     SequenceTrack:
         esm: null # esm2_3B # esm2_650M # esm2_8M_270K
-        corrupt: mask
+        corrupt: mask #  discrete_fm
         mask_rate: 0.0
-        loss_weight: 0.0
+        loss_weight: 0.0 
+        rate_matrix_path: ./openprot/blosum62.csv
+        noise_schedule: cos
 
 model: # custom args
     checkpoint: false

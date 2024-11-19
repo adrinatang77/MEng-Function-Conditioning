@@ -3,7 +3,7 @@ pretrained: null # workdir/trimul-vanilla-disto/last.ckpt # workdir/nodiff-relpo
 validate: false # if true, only validate the model, don't train
 logger:
     # set to true to log to neptune.ai
-    neptune: true
+    neptune: false
     run_id: null  
     # please change "test" to something unique to your task
     project: openprot/struct-merge
@@ -131,9 +131,12 @@ tracks:
             aligned_loss: true
     SequenceTrack:
         esm: esm2_3B # esm2_650M # esm2_8M_270K
-        corrupt: mask
+        corrupt: mask #  discrete_fm
         mask_rate: 0.0
-        loss_weight: 0.0
+        loss_weight: 0.0 
+        rate_matrix_path: ./openprot/blosum62.csv
+        noise_schedule: cos
+        embed_t: false
 
 model: # custom args
     checkpoint: true
@@ -166,8 +169,8 @@ model: # custom args
     # translation equivariant
     move_x_to_xcond: true
     readout_trans_before_sm: false
-    ipa_relpos: true
-    ipa_rope: false
+    ipa_relpos: false
+    ipa_rope: true
     ipa_nipa: false
     ipa_frame_update: true
     zero_frames_before_ipa: true
