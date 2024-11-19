@@ -105,12 +105,18 @@ class SequenceTrack(OpenProtTrack):
     def apply_flow(self, tokens, flow, noise_levels):
         num_tokens, seq_len = tokens.shape
 
+        # compute transition probability for each noise level
+        # new_token sampled from probability for that token i arising from ith column in transition probability
+        # compute transition probabilities for each token
         flow = flow.to(tokens.device)
         noise_levels = noise_levels.view(num_tokens, seq_len, 1, 1)
 
         tokens_one_hot = F.one_hot(tokens, num_classes = NUM_TOKENS).unsqueeze(-1).float()
         new_tokens_distribution = self.noise_transform(noise_levels, tokens_one_hot)
         new_tokens_distribution = new_tokens_distribution.squeeze(-1)
+
+        new_tokens = torch.multinomial(new_tokens_distribution.view(-1, 21), num_samples=1)
+        new_tokens = new_tokens.view(num_tokens, seq_len).squeeze(-1)
 
         return new_tokens
 
