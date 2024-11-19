@@ -23,21 +23,24 @@ class OpenProtDataset(torch.utils.data.Dataset):
         NotImplemented
 
     def make_data(self, **kwargs):
-        return OpenProtData(feats=self.feats, **kwargs)
-
-
-class OpenProtData(dict):
-    def __init__(self, *, feats, **kwargs):
         assert "seqres" in kwargs
         assert "name" in kwargs
-        self["name"] = kwargs["name"]
-        self["seqres"] = kwargs["seqres"]
-        for feat, shape in feats.items():
-            if feat in kwargs:
-                self[feat] = kwargs[feat]
-            else:
-                self[feat] = np.zeros((len(self["seqres"]), *shape), dtype=np.float32)
+        
+        data = OpenProtData()
+        data["name"] = kwargs["name"]
+        data["seqres"] = kwargs["seqres"]
 
+        L = len(data["seqres"])
+        for feat, shape in self.feats.items():
+            shape = [(n if n > 0 else L) for n in shape]
+            if feat in kwargs:
+                data[feat] = kwargs[feat]
+            else:
+                data[feat] = np.zeros(shape, dtype=np.float32)
+
+        return data
+
+class OpenProtData(dict):
     def keys_to_crop(self):
         return [key for key in self if key != "name"]
 
@@ -71,3 +74,19 @@ class OpenProtData(dict):
         pad_mask[: min(pad_len, L)] = 1.0
         self["pad_mask"] = pad_mask
         return self
+    
+    def batch(datas):
+        batch = OpenProtData()
+        key_union = list(set(sum([list(data.keys()) for data in datas], [])))
+        for key in key_union:
+            try:
+                batch[key] = [data[key] for data in datas]
+            except:
+                raise Exception(f"Key {key} not present in all batch elements.")
+        for key in key_union:
+            if type(batch[key][0]) is np.ndarray:
+                batch[key] = torch.from_numpy(np.stack(batch[key]))
+            elif type(batch[key][0]) is torch.Tensor:
+                batch[key] = torch.stack(batch[key])
+
+        return batch

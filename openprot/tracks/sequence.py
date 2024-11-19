@@ -6,6 +6,7 @@ import numpy as np
 from .track import OpenProtTrack
 from ..utils import residue_constants as rc
 import pandas as pd
+import math
 
 MASK_IDX = 21
 NUM_TOKENS = 21
@@ -22,12 +23,63 @@ def sample_p(pt):
     pt = pt.to(torch.float32)
     return torch.multinomial(pt, 1, replacement=True)
 
+def sinusoidal_embedding(pos, n_freqs, max_period, min_period):
+    periods = torch.exp(
+        torch.linspace(
+            math.log(min_period), math.log(max_period), n_freqs, device=pos.device
+        )
+    )
+    freqs = 2 * np.pi / periods
+    return torch.cat(
+        [torch.cos(pos[..., None] * freqs), torch.sin(pos[..., None] * freqs)], -1
+    )
+
 class SequenceTrack(OpenProtTrack):
 
     def tokenize(self, data):
         data["aatype"] = np.array(
             [rc.restype_order.get(c, rc.unk_restype_index) for c in data["seqres"]]
         )
+    
+    def noise_transform(self, t, tokens, start = 0):
+        '''
+        takes tokens and noise_levels t and returns new noised distribution of tokens, offset by starting noise
+        '''
+        batch_size, seq_len = tokens.shape[0], tokens.shape[1]
+        start = torch.full(t.shape, start, device=t.device)
+        device = t.device
+        tokens = tokens.to(device)
+        self.steady_state = self.steady_state.to(device)
+        noisy_state = self.steady_state.unsqueeze(0).unsqueeze(0).unsqueeze(-1).expand(*tokens.shape)
+
+        if self.cfg.noise_schedule == "tan":
+            t[t==1] = 1 - 1e-5
+            start = torch.tan(start * (torch.pi/2))
+            end = torch.tan(t * (torch.pi/2))
+            converted_noise = end - start
+            flows = self.flow.unsqueeze(0).repeat(batch_size, seq_len, 1, 1).to(device)
+            transition = torch.matrix_exp(converted_noise.repeat(1, 1, NUM_TOKENS, NUM_TOKENS) * flows)
+            return torch.matmul(transition, tokens)
+        
+        elif self.cfg.noise_schedule == "exp":
+            start = self.cfg.noise_min + (self.cfg.noise_max - self.cfg.noise_min) * (1- torch.exp(-self.cfg.noise_k * start))
+            end = self.cfg.noise_min + (self.cfg.noise_max - self.cfg.noise_min) * (1- torch.exp(-self.cfg.noise_k * t))
+            converted_noise = end - start
+            flows = self.flow.unsqueeze(0).repeat(batch_size, seq_len, 1, 1).to(t.device)
+            transition = torch.matrix_exp(converted_noise.repeat(1, 1, NUM_TOKENS, NUM_TOKENS) * flows)
+            return torch.matmul(transition, tokens)
+        
+        elif self.cfg.noise_schedule == "linear":
+            a = t - start
+            return ((1-a) * tokens) + (a * noisy_state)
+
+        elif self.cfg.noise_schedule == "cos":
+            start_a = torch.pow(torch.cos((start + 1e-2)/(1 + 1e-2) * torch.pi/2), 2)
+            end_a = torch.pow(torch.cos((t + 1e-2)/(1 + 1e-2) * torch.pi/2), 2)
+            a = start_a - end_a
+            return ((1-a) * tokens) + (a * noisy_state)
+
+        raise ValueError("Invalid noise schedule")
 
     def add_modules(self, model):
         model.seq_embed = nn.Embedding(21, model.cfg.dim)
@@ -35,38 +87,30 @@ class SequenceTrack(OpenProtTrack):
         
         rate_matrix = pd.read_csv(self.cfg.rate_matrix_path, index_col=0)
         self.flow = torch.tensor(rate_matrix.values, dtype=torch.float32)
+        
+        flow = self.flow[:-1, :-1]
 
-        Q = torch.zeros((NUM_TOKENS + 1, NUM_TOKENS))
-        Q[:-1, :] = self.flow
+        Q = torch.zeros((NUM_TOKENS, NUM_TOKENS-1))
+        Q[:-1, :] = flow
         Q[-1, :] = 1
 
-        b = torch.zeros(NUM_TOKENS + 1)
+        b = torch.zeros(NUM_TOKENS)
         b[-1] = 1
 
         self.steady_state = torch.linalg.lstsq(Q, b, rcond=None).solution
+        self.steady_state = torch.cat((self.steady_state, torch.tensor([0])))
 
         # model.seq_mask = nn.Parameter(torch.zeros(model.cfg.dim))
 
     def apply_flow(self, tokens, flow, noise_levels):
         num_tokens, seq_len = tokens.shape
 
-        # compute transition probability for each noise level
-        # new_token sampled from probability for that token i arising from ith column in transition probability
-        # compute transition probabilities for each token
-        flows = flow.unsqueeze(0).repeat(num_tokens, seq_len, 1, 1)
+        flow = flow.to(tokens.device)
         noise_levels = noise_levels.view(num_tokens, seq_len, 1, 1)
 
-        converted_noise = torch.tan(noise_levels * (3.14/2))
-        transition_probs = torch.matrix_exp(converted_noise * flows)
-
-        # transform tokens to one-hot vectors for each amino acid in a sequence
         tokens_one_hot = F.one_hot(tokens, num_classes = NUM_TOKENS).unsqueeze(-1).float()
-        
-        new_tokens_distribution = torch.matmul(transition_probs, tokens_one_hot)
+        new_tokens_distribution = self.noise_transform(noise_levels, tokens_one_hot)
         new_tokens_distribution = new_tokens_distribution.squeeze(-1)
-
-        new_tokens = torch.multinomial(new_tokens_distribution.view(-1, 21), num_samples=1)
-        new_tokens = new_tokens.view(num_tokens, seq_len).squeeze(-1)
 
         return new_tokens
 
@@ -94,6 +138,7 @@ class SequenceTrack(OpenProtTrack):
             
             # update noisy batch
             noisy_batch["aatype"] = flowed_tokens
+            noisy_batch["seq_noise"] = batch["seq_noise"]
             target["seq_supervise"] = torch.ones_like(tokens).float() * batch["seq_mask"] 
 
             target["aatype"] = batch["aatype"]  # original tokens as target
@@ -159,6 +204,8 @@ class SequenceTrack(OpenProtTrack):
 
     def embed(self, model, batch):
         x = model.seq_embed(batch["aatype"])
+        noise_embed = sinusoidal_embedding(batch["seq_noise"], model.cfg.dim//2, 1, .01)
+        x += noise_embed
         return x
 
     def predict(self, model, out, readout):
