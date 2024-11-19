@@ -1,14 +1,14 @@
-ckpt: null # 
+ckpt: workdir/struct-gen-notri-edm-sm---adaLN/last.ckpt
 pretrained: null # workdir/trimul-vanilla-disto/last.ckpt # workdir/nodiff-relpos-pade/last.ckpt # load weights from here first
 validate: false # if true, only validate the model, don't train
 logger:
     # set to true to log to neptune.ai
     neptune: true
-    run_id: null  
+    run_id: DIF-108  
     # please change "test" to something unique to your task
     project: openprot/diffusion
     # will log to workdir and neptune.ai with this name
-    name: struct-gen-velocity-ffn-u0.1
+    name: struct-gen-notri-edm-sm---adaLN # struct-gen-notri-gaussianfm+pdb
     # if not null, will duplicate stdout and stderr to workdir/{name}/{logfile}
     logfile: std.out
     # if null, will log every epoch, otherwise every this number of steps
@@ -26,15 +26,15 @@ trainer:
     limit_val_batches: 1.0
     num_sanity_val_steps: 0
     gradient_clip_val: 1.0
-    accumulate_grad_batches: 2
+    accumulate_grad_batches: 1
     val_check_interval: 5000
     check_val_every_n_epoch: 1
     logger: false
 
 # custom args to OpenProtDataset and elsewhere
 data: 
-    num_workers: 16
-    batch: 16
+    num_workers: 32
+    batch: 32
     crop: 256
     seed: 137
 
@@ -55,74 +55,40 @@ features:
     trans_noise: [-1]
     rots_noise: [-1]
     # torsion_noise: [-1]
-
 datasets:
-    PDBDataset: 
+    pdb:
+        type: PDBDataset
         path: /scratch/projects/cgai/openprot/data/pdb_npz
         cutoff: 2018-05-01
         clusters: /scratch/projects/cgai/openprot/data/pdb_clusters
         blacklist: /scratch/projects/cgai/openprot/cameo_pdb_blacklist.tsv
-    AFDBDataset:
+    afdb_genie:
+        type: AFDBDataset
         path: /scratch/projects/cgai/openprot/data/afdb_rep_v4/afdb_rep_v4
         annotations: /scratch/projects/cgai/openprot/data/afdb_rep_v4.pkl.gz
-        blacklist: null # /scratch/projects/cgai/openprot/cameo_afdb_blacklist.tsv
-        plddt_thresh: null # 70
+        blacklist: null 
+        plddt_thresh: null 
         index: /scratch/projects/cgai/openprot/afdbreps_l-256_plddt_80.txt
-        
-    # UnirefDataset:
-    #     #path: /data/cb/scratch/datasets/uniref50.fasta
-    #     #index: /data/cb/scratch/datasets/uniref50.index
-    #     path: /scratch/projects/cgai/openprot/data/uniref50.fasta
-    #     index: /scratch/projects/cgai/openprot/data/uniref50.index
+
             
 tasks:
-    # SequenceGeneration:
-    #     fraction: 0.1
-    #     mask_rate: 0.15
-    #     seed: 137
-    #     datasets:
-    #         UnirefDataset: 
-    #             fraction: 1.0
-    #             start: 0
-    #             seed: 137
     StructureGeneration:
-    # StructurePrediction:
         fraction: 1.0
         beta: [1, 2]
-        uniform_prob: 0.1
+        uniform_prob: 0.5
         max_noise_prob: 0.0
         seed: 137
         random_rot: true
         datasets:
-            AFDBDataset:
+            afdb_genie:
                 fraction: 0.75
                 start: 0
                 seed: 142
-            PDBDataset:
+            pdb:
                 fraction: 0.25
                 start: 0
                 seed: 142
-            
-evals: 
-    # cameo22:
-    #     type: StructurePredictionEval
-    #     path: /scratch/projects/cgai/openprot/data/pdb_npz
-    #     split: splits/cameo2022.csv
-    #     diffusion: false
-    #     augmented: false
-    #     align: false
-    #     demean: true
-    # struct_gen_ode:
-    #     type: StructureGenerationEval
-    #     num_samples: 100
-    #     sample_length: 128
-    #     nsteps: 200
-    #     sde_weight: 0.0
-    #     sched_type: 'log'
-    #     temp_factor: 0.3
-    #     sde_cutoff_time: 0.0
-    #     sde_cutoff_width: 0.00001
-    #     run_designability: true
+evals:
     struct_gen_sde_0.5:
         type: StructureGenerationEval
         num_samples: 100
@@ -152,7 +118,7 @@ evals:
         nsteps: 200
         sched_type: 'log'
         sde_weight: 10.0
-        temp_factor: 0.7
+        temp_factor: 1.0
         sde_cutoff_time: 0.0
         sde_cutoff_width: 0.00001
         run_designability: true
@@ -162,44 +128,36 @@ tracks:
     # register tracks here
     StructureTrack: 
         loss_weight: 1.0
-        embed_rots: false
-        readout_rots: false
-        readout_rots_type: 'quat'
         readout_pairwise: false
-        
-        embed_trans: true
-        readout_trans: true
-        intermediate_loss: false
-        int_loss_weight: 0.0
-        
-        rot_augment: 1
+        embed_trans: edm
+        # trunk or sm
+        readout_trans: null
+        embed_t: false
+        postcondition: true
+        int_loss_weight: 0.5
+        postcond_before_relpos: true
         embed_pairwise: false
         
-        aligned_mse: false
-        demean: true
         clamp_pade: false
         clamp_nape: true
         clamp_mse: false
         nape_cutoff: 15
-        weighted_mse: false
-        soft_weighted_mse: false
-        
-        update_coeff: false
         losses:
-            # pade: 0.1
-            # fape: 0.0
-            # lddt: 1.0
-            # distogram: 0.3
             mse: 1.0
-            # nape: 0.0
         diffusion:
-            type: GaussianFM
-            prior_sigma: 15.0
-            center_noise: true
-            center_pos: true
-            train_align: false
-            inf_align: false
-            prediction: "velocity"
+            # type: GaussianFM
+            # prior_sigma: 15.0
+            # center_noise: true
+            # center_pos: true
+            # train_align: false
+            # inf_align: false
+            # prediction: "velocity"
+            type: EDMDiffusion
+            sched_p: 7
+            data_sigma: 15
+            sigma_max: 160
+            sigma_min: 0.05
+            aligned_loss: true
     SequenceTrack:
         esm: null # esm2_3B # esm2_650M # esm2_8M_270K
         corrupt: mask
@@ -213,37 +171,46 @@ model: # custom args
     heads: 16
     pairwise_heads: 4
     blocks: 12
-    pair_block_interval: 1
-    ipa_block_interval: 100
-    pairwise_pos_emb: true
     
+    # topology of the network
+    pair_blocks:
+        start: 0
+        end: 0
+        interval: 1
+    struct_module: true
+    block_pair_bias: false
+    pairwise_pos_emb: false
+    structure_module: true
     ff_expand: 4
     position_bins: 32
     pair_ffn: true
     pair_values: false
+    pair_bias: true
     pair_ff_expand: 4
     tri_mul: false
     rope: true
 
     ### ipa args
-
-    augment_before_ipa: false
-    zero_frames_before_ipa: false
+    move_x_to_xcond: false
+    readout_trans_before_sm: false
+    ipa_relpos: false
+    ipa_nipa: false
+    ipa_rope: true
+    ipa_frame_update: true
+    zero_frames_before_ipa: true
+    zero_x_before_ipa: false
+    readout_adaLN: false
     
     ipa_blocks: 8
-    separate_ipa_blocks: true
-    frame_update: false
-    relpos_attn: false
-    relpos_values: false
+    separate_ipa_blocks: false
     ipa_pair_values: false
-    
     ipa_pair_bias: true
-    
+    embed_trans: false
     detach_rots: true
     detach_trans: true
-    update_x: true
+    detach_x: false
     trunk_adaLN: true
-    sm_adaLN: true
+    sm_adaLN: false
 
 
 optimizer:

@@ -85,7 +85,7 @@ class StructureGenerationEval(OpenProtEval):
             noisy_batch["trans_noise"] = torch.ones_like(noisy_batch["trans_noise"]) * t
             noisy_batch["frame_trans"] = pos
             _, readout = model.forward(noisy_batch)
-            return readout["trans"]
+            return readout["trans"][-1]
 
         samp_traj, pred_traj = diffusion.inference(
             model_func, cfg=self.cfg, mask=noisy_batch["pad_mask"], return_traj=True

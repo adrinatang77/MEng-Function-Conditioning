@@ -89,9 +89,9 @@ class Logger:
 
     def register_masks(self, batch):
         for key in batch:
-            if key[0] == '/':
+            if key[0] == "/":
                 self.masks[key] = batch[key]
-        
+
     def clear_masks(self):
         self.masks = {}
 
@@ -105,18 +105,20 @@ class Logger:
                 new_mask = mask * sub_mask
             else:
                 new_mask = sub_mask
-            self.log(sub_key[1:] + '/' + key, data, new_mask, post, sum)
-                     
+            self.log(sub_key[1:] + "/" + key, data, new_mask, post, sum)
+
     def log(self, key, data, mask=None, post=None, sum=False):
         if isinstance(data, torch.Tensor):
             if mask is not None:  # we want this to be NaN if the mask is all zeros!
                 if sum:
-                    data = (data * mask).sum() 
+                    data = (data * mask).sum()
                 else:
                     data = (data * mask).sum() / mask.expand(data.shape).sum()
             else:
-                if sum: data = data.sum()
-                else: data = data.mean()
+                if sum:
+                    data = data.sum()
+                else:
+                    data = data.mean()
             data = data.item()
             if post is not None:
                 data = post(data)

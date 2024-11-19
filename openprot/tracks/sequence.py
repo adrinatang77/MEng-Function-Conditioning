@@ -305,7 +305,7 @@ class SequenceTrack(OpenProtTrack):
     def predict(self, model, inp, out, readout):
         readout["aatype"] = model.seq_out(out["x"])
 
-    def compute_loss(self, readout, target, logger=None, eps=1e-6):
+    def compute_loss(self, readout, target, logger=None, eps=1e-6, **kwargs):
         loss = torch.nn.functional.cross_entropy(
             readout["aatype"].transpose(1, 2), target["aatype"], reduction="none"
         )

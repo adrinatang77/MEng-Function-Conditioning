@@ -55,8 +55,15 @@ class Wrapper(pl.LightningModule):
 
     def configure_optimizers(self):
         cls = getattr(torch.optim, self.cfg.optimizer.type)
+        all_params = filter(lambda p: p.requires_grad, self.model.parameters())
+        # TEMPORARY AND HACKY
+        post_params = self.model.blocks[12:].parameters()
         optimizer = cls(
-            filter(lambda p: p.requires_grad, self.model.parameters()),
+            # [
+            #     {"params": list(set(all_params) - set(post_params))},
+            #     {"params": post_params, "lr": self.cfg.optimizer.lr*8},
+            # ],
+            all_params,
             lr=self.cfg.optimizer.lr,
         )
 
@@ -127,15 +134,17 @@ class OpenProtWrapper(Wrapper):
         out, readout = self.forward(noisy_batch)
 
         ## compute the loss
-        loss = self.tracks.compute_loss(readout, target, logger=self._logger)
+        loss = self.tracks.compute_loss(
+            readout, target, logger=self._logger, step=self.trainer.global_step
+        )
 
         ## log some metrics
         self._logger.masked_log("loss", loss, batch["pad_mask"])
         self._logger.log("lr", self.get_lr())
 
         self._logger.clear_masks()
-        
-        return (loss * batch["pad_mask"]).sum() / batch['pad_mask'].sum()
+
+        return (loss * batch["pad_mask"]).sum() / batch["pad_mask"].sum()
 
     def on_validation_epoch_end(self):
         savedir = f'{os.environ["MODEL_DIR"]}/eval_step{self.trainer.global_step}'

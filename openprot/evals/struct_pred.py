@@ -3,7 +3,7 @@ import foldcomp
 from ..utils import protein
 from ..utils.geometry import compute_lddt, rmsdalign, compute_rmsd
 from ..utils import residue_constants as rc
-from ..utils.prot_utils import make_ca_prot, compute_tmscore
+from ..utils.prot_utils import make_ca_prot, compute_tmscore, write_ca_traj
 import numpy as np
 import torch
 import os, tqdm
@@ -40,6 +40,33 @@ class StructurePredictionEval(OpenProtEval):
 
         return data
 
+    def run_diffusion(self, model, batch, noisy_batch, savedir):
+        diffusion = self.tracks["StructureTrack"].diffusion
+
+        def model_func(pos, t):
+            noisy_batch["trans_noise"] = torch.ones_like(noisy_batch["trans_noise"]) * t
+            noisy_batch["frame_trans"] = pos
+            _, readout = model.forward(noisy_batch)
+            return readout["trans"]
+
+        samp_traj, pred_traj = diffusion.inference(
+            model_func, cfg=self.cfg, mask=noisy_batch["pad_mask"], return_traj=True
+        )
+
+        prot = make_ca_prot(
+            samp_traj[-1, -1].cpu().numpy(),
+            batch["aatype"].cpu().numpy()[0],
+            batch["frame_mask"].cpu().numpy()[0],
+        )
+        name = batch["name"][0]
+        with open(f"{savedir}/{name}_traj.pdb", "w") as f:
+            f.write(write_ca_traj(prot, samp_traj[:, 0].cpu().numpy()))
+
+        with open(f"{savedir}/{name}_pred_traj.pdb", "w") as f:
+            f.write(write_ca_traj(prot, pred_traj[:, 0].cpu().numpy()))
+
+        return samp_traj[-1]
+
     def run_batch(self, model, batch: dict, savedir=".", device=None, logger=None):
         os.makedirs(savedir, exist_ok=True)
 
@@ -47,11 +74,15 @@ class StructurePredictionEval(OpenProtEval):
         for track in model.tracks.values():
             track.corrupt(batch, noisy_batch, {})
 
-        _, readout = model.forward(noisy_batch)
+        if self.cfg.diffusion:
+            coords = self.run_diffusion(model, batch, noisy_batch, savedir)
+        else:
+            _, readout = model.forward(noisy_batch)
+            coords = readout["trans"][-1]
 
         L = batch["frame_trans"].shape[1]
         aatype = batch["aatype"].cpu().numpy()[0]
-        coords = readout["pos"][-1]
+
         coords = rmsdalign(batch["frame_trans"], coords, batch["frame_mask"])
 
         lddt = compute_lddt(coords, batch["frame_trans"], batch["frame_mask"])
@@ -69,10 +100,9 @@ class StructurePredictionEval(OpenProtEval):
         if logger:
             logger.log("struct/lddt", lddt)
             logger.log("struct/tm", tmscore["tm"])
-            logger.log("struct/rmsd", tmscore["rmsd"])
             logger.log("struct/gdt_ts", tmscore["gdt_ts"])
             logger.log("struct/gdt_ha", tmscore["gdt_ha"])
-            logger.log("struct/rmsd2", rmsd)
+            logger.log("struct/rmsd", rmsd)
 
         prot = make_ca_prot(
             coords=batch["frame_trans"].cpu().numpy()[0],
