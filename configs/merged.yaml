@@ -3,16 +3,16 @@ pretrained: null # workdir/trimul-vanilla-disto/last.ckpt # workdir/nodiff-relpo
 validate: false # if true, only validate the model, don't train
 logger:
     # set to true to log to neptune.ai
-    neptune: false
+    neptune: true
     run_id: null  
     # please change "test" to something unique to your task
     project: openprot/struct-merge
     # will log to workdir and neptune.ai with this name
-    name: esm-test
+    name: unmasking-test
     # if not null, will duplicate stdout and stderr to workdir/{name}/{logfile}
     logfile: null # std.out
     # if null, will log every epoch, otherwise every this number of steps
-    train_log_freq: 10
+    train_log_freq: 100
     val_log_freq: null 
     ckpt_freq: 10000000
     save_freq: 5000
@@ -21,7 +21,7 @@ trainer:
     devices: 1
     max_epochs: 1
     max_steps: 1000000
-    enable_progress_bar: true
+    enable_progress_bar: false
     limit_train_batches: 1.0
     limit_val_batches: 1.0
     num_sanity_val_steps: 0
@@ -33,9 +33,9 @@ trainer:
 
 # custom args to OpenProtDataset and elsewhere
 data: 
-    num_workers: 32
-    batch: 8
-    crop: 256
+    num_workers: 0
+    batch: 32
+    crop: 512
     seed: 137
 
 # These are the raw features which are expected to be supplied by the Datasets
@@ -93,43 +93,43 @@ tasks:
                 fraction: 1.0
                 start: 0
                 seed: 42
-    SequenceDenoising:
-        fraction: 0.0
-        seed: 137
-        datasets:
-            uniref:
-                fraction: 1.0
-                start: 0
-                seed: 137
-        sampling: beta
-        sampling_args: [1, 2]
-    StructurePrediction:
-        fraction: 0.0
-        beta: [1, 2]
-        uniform_prob: 0.0
-        max_noise_prob: 1.0
-        seed: 137
-        random_rot: true
-        datasets:
-            afdb:
-                fraction: 0.75
-                start: 0
-                seed: 142
-            pdb:
-                fraction: 0.25
-                start: 0
-                seed: 142
-    StructureGeneration:
-        fraction: 0.0
-        beta: [1, 2]
-        uniform_prob: 0.5
-        seed: 137
-        random_rot: true
-        datasets:
-            afdb_genie:
-                fraction: 1.0
-                start: 0
-                seed: 142
+    # SequenceDenoising:
+    #     fraction: 0.0
+    #     seed: 137
+    #     datasets:
+    #         uniref:
+    #             fraction: 1.0
+    #             start: 0
+    #             seed: 137
+    #     sampling: beta
+    #     sampling_args: [1, 2]
+    # StructurePrediction:
+    #     fraction: 0.0
+    #     beta: [1, 2]
+    #     uniform_prob: 0.0
+    #     max_noise_prob: 1.0
+    #     seed: 137
+    #     random_rot: true
+    #     datasets:
+    #         afdb:
+    #             fraction: 0.75
+    #             start: 0
+    #             seed: 142
+    #         pdb:
+    #             fraction: 0.25
+    #             start: 0
+    #             seed: 142
+    # StructureGeneration:
+    #     fraction: 0.0
+    #     beta: [1, 2]
+    #     uniform_prob: 0.5
+    #     seed: 137
+    #     random_rot: true
+    #     datasets:
+    #         afdb_genie:
+    #             fraction: 1.0
+    #             start: 0
+    #             seed: 142
             
 evals: 
     cameo22:
@@ -218,15 +218,15 @@ tracks:
         esm: null # esm2_3B # esm2_650M # esm2_8M_270K
         loss_weight: 1.0 
         rate_matrix_path: ./openprot/uniform.csv
-        embed_t: true
+        embed_t: false
 
 model: # custom args
     checkpoint: true
-    dim: 1024
+    dim: 512
     pairwise_dim: 128
-    heads: 16
+    heads: 8 # 16
     pairwise_heads: 4
-    blocks: 20
+    blocks: 12
     
     # topology of the network
     pair_blocks:
@@ -263,7 +263,7 @@ model: # custom args
 
 optimizer:
     type: AdamW
-    lr: 5e-4
+    lr: 3e-5
     scheduler: 
         total_steps: 1000000
         warmup_steps: 1000

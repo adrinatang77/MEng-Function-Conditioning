@@ -57,7 +57,6 @@ class OpenProtData(dict):
 
     def crop(self, crop_len: int):
         L = len(self["seqres"])
-
         ### todo support tensors!
         if L >= crop_len:  # needs crop
             start = np.random.randint(0, L - crop_len + 1)
@@ -86,6 +85,7 @@ class OpenProtData(dict):
         return self
 
     def pad(self, pad_len: int):
+        clone = {**self}
         L = len(self["seqres"])
         if pad_len and L < pad_len:  # needs pad
             pad = pad_len - L

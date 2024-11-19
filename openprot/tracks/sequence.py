@@ -226,6 +226,8 @@ class SequenceTrack(OpenProtTrack):
         loss = torch.nn.functional.cross_entropy(
             readout["aatype"].transpose(1, 2), target["aatype"], reduction="none"
         )
+        if torch.isnan(readout['aatype']).sum() > 0:
+            breakpoint()
         
 
         mask = target["seq_supervise"]
