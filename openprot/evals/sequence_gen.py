@@ -41,9 +41,10 @@ class SequenceGeneration(OpenProtEval):
         track.steady_state = track.steady_state.to(dev)  
         xt = torch.multinomial(track.steady_state, batch_size * seq_len, replacement=True)
         xt = xt.view(batch_size, seq_len)
-        noisy_batch = batch.copy()
+        noisy_batch = batch.copy("name", "pad_mask")
         noisy_batch['aatype'] = xt
-
+        noisy_batch['seq_noise'] = torch.ones_like(xt)
+        
         _, output = model.forward(noisy_batch)
         p_x0_g_xt = F.softmax(output['aatype'], dim=-1)
         predicted = torch.argmax(output['aatype'], dim=2)

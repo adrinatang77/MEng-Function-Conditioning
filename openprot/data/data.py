@@ -124,7 +124,7 @@ class OpenProtData(dict):
         self["pad_mask"] = pad_mask
         return self
 
-      def batch(datas):
+    def batch(datas):
         batch = OpenProtData()
         key_union = list(set(sum([list(data.keys()) for data in datas], [])))
         for key in key_union:

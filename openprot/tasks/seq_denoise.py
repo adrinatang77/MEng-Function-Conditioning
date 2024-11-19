@@ -2,7 +2,10 @@ from .task import OpenProtTask
 import numpy as np
 
 class SequenceDenoising(OpenProtTask):
-    def prep_data(self, data):
+    def prep_data(self, data, crop=None):
+
+        if crop is not None:
+            data.crop(crop)
         # random noise for each token, sampled from uniform distribution between 0 and 1
         seq_len = len(data["seqres"])
         if self.cfg.sampling == "uniform":

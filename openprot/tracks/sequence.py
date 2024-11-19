@@ -5,6 +5,7 @@ import numpy as np
 # from typing import override
 from .track import OpenProtTrack
 from ..utils import residue_constants as rc
+from functools import partial
 
 import pandas as pd
 import math
@@ -185,15 +186,122 @@ class SequenceTrack(OpenProtTrack):
         )
         return esm_s, esm_z
 
+    def add_modules(self, model):
+        model.seq_embed = nn.Embedding(21, model.cfg.dim)
+        model.seq_out = nn.Linear(model.cfg.dim, 21)
+        
+        rate_matrix = pd.read_csv(self.cfg.rate_matrix_path, index_col=0)
+        self.flow = torch.tensor(rate_matrix.values, dtype=torch.float32)
+        
+        flow = self.flow[:-1, :-1]
 
-    def embed(self, model, batch):
-        x = model.seq_embed(batch["aatype"])
+        Q = torch.zeros((NUM_TOKENS, NUM_TOKENS-1))
+        Q[:-1, :] = flow
+        Q[-1, :] = 1
+
+        b = torch.zeros(NUM_TOKENS)
+        b[-1] = 1
+
+        self.steady_state = torch.linalg.lstsq(Q, b, rcond=None).solution
+        self.steady_state = torch.cat((self.steady_state, torch.tensor([0])))
+
+        # model.seq_mask = nn.Parameter(torch.zeros(model.cfg.dim))
+
+
+    def corrupt(self, batch, noisy_batch, target, logger=None):
+        if self.cfg.corrupt == "mask":
+            tokens = batch["aatype"]
+
+            mask = batch["seq_noise"].bool()
+
+            rand = torch.rand(tokens.shape, device=tokens.device)
+            randaa = torch.randint(0, 21, tokens.shape, device=tokens.device)
+
+            inp = tokens
+            inp = torch.where((rand < 0.8) & mask, MASK_IDX, inp)
+            inp = torch.where((rand > 0.9) & mask, randaa, inp)
+
+            noisy_batch["aatype"] = inp
+            target["seq_supervise"] = (batch["seq_noise"] > 0) * batch["seq_mask"]
+
+        elif self.cfg.corrupt == "discrete_fm":
+            tokens = batch["aatype"]
+            
+            # apply flow matrix
+            flowed_tokens = self.apply_flow(tokens, self.flow, noise_levels=batch["seq_noise"])
+            
+            # update noisy batch
+            noisy_batch["aatype"] = flowed_tokens
+            noisy_batch["seq_noise"] = batch["seq_noise"]
+            target["seq_supervise"] = torch.ones_like(tokens).float() * batch["seq_mask"] 
+
+            target["aatype"] = batch["aatype"]  # original tokens as target
+
+            if logger:
+                logger.log("seq/toks", batch["seq_mask"].sum())
+
+        # elif self.cfg.corrupt == "discrete_uniform": 
+
+        #     tokens = batch["aatype"]
+
+        #     # compute noise level for current timestep
+        #     noise_level = scheduler('linear', timestep)
+
+        #     # apply noise; probability of corruption increases with the timestep
+        #     rand = torch.rand(tokens.shape, device=tokens.device)
+        #     rand_perturbation = torch.randint(0, 21, tokens.shape, device=tokens.device)
+
+        #     # mask indices for noisy tokens 
+        #     mask_tokens = torch.full(tokens.shape, MASK_IDX, device=tokens.device)
+
+        #     # apply corruption using a threshold based on the noise level
+        #     inp = torch.where(rand < noise_level, rand_perturbation, tokens)
+        #     # inp = torch.where(rand < noise_level * 0.8, mask_tokens, inp) # further mask some tokens
+
+        #     # update noisy batch and supervision target
+        #     noisy_batch["aatype"] = inp
+        #     target["seq_supervise"] = (rand < noise_level).float() * batch["seq_mask"]
+
+        #     target["aatype"] = batch["aatype"]
+
+        #     if logger:
+        #         logger.log("seq/timestep", timestep)
+        #         logger.log("seq/noise_level", noise_level)
+        #         logger.log("seq/toks", batch["seq_mask"].sum())
+
+        # # corrupt according to rate matrix transition probs
+        # elif self.cfg.corrupt == "discrete_rate_matrix": 
+
+        #     rate_matrix = np.ones((21, 21)) / 21 # uniform as a placeholder
+            
+        #     tokens = batch["aatype"]
+
+        #     # compute noise level for the current timestep
+        #     noise_level = scheduler(timestep)
+            
+        #     # determine which tokens to corrupt
+        #     rand = torch.rand(tokens.shape, device=tokens.device)
+        #     mask = rand < noise_level # tokens to be corrupted
+
+        #     # sample tokens based on rate matrix
+        #     num_tokens = rate_matrix.shape[0]
+
+        else:
+            raise Exception(
+                f"SequenceTrack corrupt type {self.cfg.corrupt} not implemented"
+            )
+
+        target["aatype"] = batch["aatype"]
+
+        if logger:
+            logger.log("seq/toks", batch["seq_mask"].sum())
+            
+    def embed(self, model, batch, inp):
+        inp["x"] += model.seq_embed(batch["aatype"])
         noise_embed = sinusoidal_embedding(batch["seq_noise"], model.cfg.dim//2, 1, .01)
-        x += noise_embed
-        return x
+        inp["x"] += noise_embed
 
-      inp["x"] += model.seq_embed(batch["aatype"])
-
+      
     def predict(self, model, inp, out, readout):
         readout["aatype"] = model.seq_out(out["x"])
 
