@@ -3,7 +3,7 @@ pretrained: null # workdir/trimul-vanilla-disto/last.ckpt # workdir/nodiff-relpo
 validate: false # if true, only validate the model, don't train
 logger:
     # set to true to log to neptune.ai
-    neptune: true
+    neptune: false
     run_id: null  
     # please change "test" to something unique to your task
     project: openprot/struct-merge
@@ -33,7 +33,7 @@ trainer:
 
 # custom args to OpenProtDataset and elsewhere
 data: 
-    num_workers: 0
+    num_workers: 8
     batch: 32
     crop: 512
     seed: 137
@@ -86,7 +86,7 @@ tasks:
     SequenceUnmasking:
         fraction: 1.0
         beta: [1, 2]
-        uniform_prob: 1.0
+        uniform_prob: 0.0
         seed: 137
         datasets:
             uniref:
@@ -132,47 +132,54 @@ tasks:
     #             seed: 142
             
 evals: 
-    cameo22:
-        type: StructurePredictionEval
-        path: /scratch/projects/cgai/openprot/data/pdb_npz
-        split: splits/cameo2022.csv
-        diffusion: false
-        augmented: false
-        align: false
-        demean: true
-    struct_gen_sde_0.5:
-        type: StructureGenerationEval
+    # cameo22:
+    #     type: StructurePredictionEval
+    #     path: /scratch/projects/cgai/openprot/data/pdb_npz
+    #     split: splits/cameo2022.csv
+    #     diffusion: false
+    #     augmented: false
+    #     align: false
+    #     demean: true
+    # struct_gen_sde_0.5:
+    #     type: StructureGenerationEval
+    #     num_samples: 100
+    #     sample_length: 128
+    #     nsteps: 200
+    #     sched_type: 'log'
+    #     sde_weight: 10.0
+    #     temp_factor: 0.5
+    #     sde_cutoff_time: 0.0
+    #     sde_cutoff_width: 0.00001
+    #     run_designability: true
+    # struct_gen_sde_0.7:
+    #     type: StructureGenerationEval
+    #     num_samples: 100
+    #     sample_length: 128
+    #     nsteps: 200
+    #     sched_type: 'log'
+    #     sde_weight: 10.0
+    #     temp_factor: 0.7
+    #     sde_cutoff_time: 0.0
+    #     sde_cutoff_width: 0.00001
+    #     run_designability: true
+    # struct_gen_sde_1.0:
+    #     type: StructureGenerationEval
+    #     num_samples: 100
+    #     sample_length: 128
+    #     nsteps: 200
+    #     sched_type: 'log'
+    #     sde_weight: 10.0
+    #     temp_factor: 1.0
+    #     sde_cutoff_time: 0.0
+    #     sde_cutoff_width: 0.00001
+    #     run_designability: true
+    seq_gen_unmask:
+        type: SequenceGenerationEval
         num_samples: 100
         sample_length: 128
-        nsteps: 200
-        sched_type: 'log'
-        sde_weight: 10.0
-        temp_factor: 0.5
-        sde_cutoff_time: 0.0
-        sde_cutoff_width: 0.00001
-        run_designability: true
-    struct_gen_sde_0.7:
-        type: StructureGenerationEval
-        num_samples: 100
-        sample_length: 128
-        nsteps: 200
-        sched_type: 'log'
-        sde_weight: 10.0
-        temp_factor: 0.7
-        sde_cutoff_time: 0.0
-        sde_cutoff_width: 0.00001
-        run_designability: true
-    struct_gen_sde_1.0:
-        type: StructureGenerationEval
-        num_samples: 100
-        sample_length: 128
-        nsteps: 200
-        sched_type: 'log'
-        sde_weight: 10.0
-        temp_factor: 1.0
-        sde_cutoff_time: 0.0
-        sde_cutoff_width: 0.00001
-        run_designability: true
+        strategy: unmask
+        unmask_order: random
+        temp: 0.1
     
 
 tracks:

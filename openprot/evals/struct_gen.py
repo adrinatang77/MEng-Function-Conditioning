@@ -28,7 +28,7 @@ class StructureGenerationEval(OpenProtEval):
             seqres="A" * L,
             seq_mask=np.zeros(L, dtype=np.float32),
             seq_noise=np.ones(L, dtype=np.float32),
-            atom37=np.random.randn(L, 37, 3).astype(np.float32) * 0.0,
+            atom37=np.zeros((L, 37, 3), dtype=np.float32),
             atom37_mask=np.ones((L, 37), dtype=np.float32),
         )
         return data

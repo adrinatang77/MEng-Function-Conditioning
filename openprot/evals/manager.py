@@ -27,9 +27,6 @@ class OpenProtEvalManager(torch.utils.data.IterableDataset):
 
         self.tracks.tokenize(data)
 
-    def compute_metrics(self):
-        breakpoint()
-
     def __iter__(self):
         i = 0
         for name in self.cfg.evals:

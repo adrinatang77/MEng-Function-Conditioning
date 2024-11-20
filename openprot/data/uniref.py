@@ -6,30 +6,39 @@ from ..utils import protein
 from ..utils import residue_constants as rc
 from .data import OpenProtDataset
 
+import threading 
+lock = threading.Lock()
 
 class UnirefDataset(OpenProtDataset):
-    def setup(self):        
+    def setup(self):  
         self.db = open(self.cfg.path)
         self.index = np.load(self.cfg.index)
+        self.need_setup = True
+
+    def actual_setup(self):
+        self.db = open(self.cfg.path)
+        self.index = np.load(self.cfg.index)
+        self.need_setup = False
 
     def __len__(self):
         return len(self.index) - 1  # unfortunately we have to skip the last one
 
     def __getitem__(self, idx: int):
+        if self.need_setup:
+            self.actual_setup()
+            
         start = self.index[idx]
         end = self.index[idx + 1]
-        self.db.seek(start)
-        item = self.db.read(end - start)
+        with lock:
+            self.db.seek(start)
+            item = self.db.read(end - start)
         lines = item.split("\n")
         header, lines = lines[0], lines[1:]
         seqres = "".join(lines)
         seq_mask = np.ones(len(seqres))
         seq_mask[seqres == 'X'] = 0
         name = header if len(header.split()) == 0 else header.split()[0]
-        if len(seqres) == 0:
-            self.db.seek(start)
-            print(name, seqres, start, end, item, lines, self.db.read(end - start))
-            
+       
         return self.make_data(
             name=name, seqres=seqres, seq_mask=seq_mask,
         )

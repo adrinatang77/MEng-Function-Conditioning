@@ -178,17 +178,14 @@ class SequenceTrack(OpenProtTrack):
 
     def corrupt(self, batch, noisy_batch, target, logger=None):
         tokens = batch["aatype"]
-        
+
         inp = self.apply_flow(tokens, batch["seq_noise"])
-        
         inp = torch.where(batch['seq_noise'] == 1.0, MASK_IDX, inp)
-        
         noisy_batch["aatype"] = inp
         noisy_batch['seq_noise'] = batch['seq_noise']
         
         target["aatype"] = tokens
         target["seq_supervise"] = (batch["seq_noise"] > 0) * batch["seq_mask"]
-        
         
         if logger:
             logger.masked_log("seq/toks", batch["seq_mask"], sum=True)
@@ -211,11 +208,14 @@ class SequenceTrack(OpenProtTrack):
             # === preprocessing ===
             esm_s = (model.esm_s_combine.softmax(0).unsqueeze(0) @ esm_s).squeeze(2)
             inp["x"] += model.esm_s_mlp(esm_s)
-            
-        inp["x"] += model.seq_embed(batch["aatype"])
+
+        
+        inp["x"] = model.seq_embed(batch["aatype"])
         if self.cfg.embed_t:
-            noise_embed = sinusoidal_embedding(batch["seq_noise"], model.cfg.dim//2, 1, .01)
-            inp["x"] += noise_embed
+            t_emb = sinusoidal_embedding(
+                batch["seq_noise"], model.cfg.dim//2, 1, .01
+            )
+            inp["x"] += torch.where(batch['aatype'] != MASK_IDX, noise_embed, 0.0)
 
 
       
@@ -225,10 +225,7 @@ class SequenceTrack(OpenProtTrack):
     def compute_loss(self, readout, target, logger=None, eps=1e-6, **kwargs):
         loss = torch.nn.functional.cross_entropy(
             readout["aatype"].transpose(1, 2), target["aatype"], reduction="none"
-        )
-        if torch.isnan(readout['aatype']).sum() > 0:
-            breakpoint()
-        
+        )       
 
         mask = target["seq_supervise"]
         if logger:
@@ -236,4 +233,5 @@ class SequenceTrack(OpenProtTrack):
             logger.masked_log("seq/loss", loss, mask=mask)
             logger.masked_log("seq/perplexity", loss, mask=mask, post=np.exp)
             logger.masked_log("seq/toks_sup", mask, sum=True)
+        
         return loss * mask

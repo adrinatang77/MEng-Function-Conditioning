@@ -125,9 +125,6 @@ class OpenProtWrapper(Wrapper):
 
     def general_step(self, batch):
 
-        if (batch['pad_mask'].sum(-1) == 0).sum() > 0:
-            breakpoint()
-            
         self._logger.register_masks(batch)
         self._logger.masked_log("toks", batch["pad_mask"], sum=True)
 
