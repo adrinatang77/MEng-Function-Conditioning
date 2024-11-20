@@ -4,12 +4,14 @@ import torch
 import esm
 import numpy as np
 
+
 def load_fasta(file_path):
     """Load sequences from a FASTA file."""
     sequences = []
     for record in SeqIO.parse(file_path, "fasta"):
         sequences.append(str(record.seq))
     return sequences
+
 
 def get_pLDDT(esmfold_model, sequence):
     """Run ESMFold to get pLDDT scores for a given sequence."""
@@ -18,8 +20,10 @@ def get_pLDDT(esmfold_model, sequence):
     pLDDT_scores = results["pLDDT"]
     return pLDDT_scores
 
+
 def calculate_sequence_diversity(sequences):
     """Calculate diversity as the average pairwise sequence distance."""
+
     def hamming_distance(seq1, seq2):
         return sum(c1 != c2 for c1, c2 in zip(seq1, seq2)) / len(seq1)
 
@@ -30,14 +34,15 @@ def calculate_sequence_diversity(sequences):
             distances.append(hamming_distance(sequences[i], sequences[j]))
     return np.mean(distances) if distances else 0
 
+
 def main(fasta_file):
     # Load sequences from FASTA file
     sequences = load_fasta(fasta_file)
-    
+
     # Initialize ESMFold model
     esmfold_model, _ = esm.pretrained.esmfold_v1()
     esmfold_model = esmfold_model.eval().cuda()  # Run on GPU if available
-    
+
     # Analyze pLDDTs and diversity
     pLDDTs = []
     for seq in sequences:
@@ -45,13 +50,14 @@ def main(fasta_file):
         avg_pLDDT = np.mean(pLDDT_scores)
         pLDDTs.append(avg_pLDDT)
         print(f"Sequence pLDDT: {avg_pLDDT}")
-    print(f'Overall average pLDDT {np.mean(np.array(plDDTs))}')
+    print(f"Overall average pLDDT {np.mean(np.array(plDDTs))}")
 
     # Calculate diversity
     diversity = calculate_sequence_diversity(sequences)
     print(f"Average Diversity: {diversity}")
 
     return pLDDTs, diversity
+
 
 if __name__ == "__main__":
     # Check if the file path is provided

@@ -2,6 +2,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import numpy as np
+
 # from typing import override
 from .track import OpenProtTrack
 from ..utils import residue_constants as rc
@@ -13,17 +14,20 @@ import math
 MASK_IDX = 20
 NUM_TOKENS = 21
 
+
 # processes a sequence (integers) into its class distribution representation (one-hot encoding)
 # returns tensor of size (seqlen, NUM_TOKENS)
 def seq2prob(seq):
     seq = seq.to(torch.int64)
     return F.one_hot(seq, num_classes=NUM_TOKENS)
 
+
 # given a probability distribution over classes, returns single sample
 # pt is probability distribution of shape (seqlen, NUM_TOKENS)
 def sample_p(pt):
     pt = pt.to(torch.float32)
     return torch.multinomial(pt, 1, replacement=True)
+
 
 def sinusoidal_embedding(pos, n_freqs, max_period, min_period):
     periods = torch.exp(
@@ -62,18 +66,19 @@ class SequenceTrack(OpenProtTrack):
         rate_matrix = pd.read_csv(self.cfg.rate_matrix_path, index_col=0)
         flow = torch.from_numpy(rate_matrix.values).float()
         self.flow = flow[:-1, :-1]
-        
+
     def tokenize(self, data):
 
         data["aatype"] = np.array(
             [rc.restype_order.get(c, rc.unk_restype_index) for c in data["seqres"]]
         )
-    
+
     @staticmethod
     def _af2_to_esm(d: Alphabet):
         # Remember that t is shifted from residue_constants by 1 (0 is padding).
         esm_reorder = [d.padding_idx] + [d.get_idx(v) for v in rc.restypes_with_x]
         return torch.tensor(esm_reorder)
+
     """
     def noise_transform(self, t, tokens, start = 0):
         '''
@@ -106,21 +111,21 @@ class SequenceTrack(OpenProtTrack):
         raise ValueError("Invalid noise schedule")
 
     """
-        
+
     def apply_flow(self, tokens, t):
 
         def t_transform(t):
-            return t # temporary
-            
-        tokens_ = torch.where(tokens == MASK_IDX, 0, tokens) # temporary
+            return t  # temporary
+
+        tokens_ = torch.where(tokens == MASK_IDX, 0, tokens)  # temporary
         B, L = tokens.shape
-        
-        probs = torch.matrix_exp(self.flow.to(t) * t_transform(t)[...,None,None])
-        toks_oh = F.one_hot(tokens_, num_classes = 20)
-        probs = torch.einsum('...ij,...j->...i', probs, toks_oh.float())
-        
+
+        probs = torch.matrix_exp(self.flow.to(t) * t_transform(t)[..., None, None])
+        toks_oh = F.one_hot(tokens_, num_classes=20)
+        probs = torch.einsum("...ij,...j->...i", probs, toks_oh.float())
+
         new_toks = torch.distributions.categorical.Categorical(probs).sample()
-        
+
         return torch.where(tokens == MASK_IDX, MASK_IDX, new_toks)
 
     def _compute_language_model_representations(self, esmaa):
@@ -153,7 +158,7 @@ class SequenceTrack(OpenProtTrack):
     def add_modules(self, model):
         model.seq_embed = nn.Embedding(21, model.cfg.dim)
         model.seq_out = nn.Linear(model.cfg.dim, 21)
-        
+
         if self.cfg.esm is not None:
 
             model.esm, self.esm_dict = esm_registry.get(self.cfg.esm)()
@@ -171,25 +176,23 @@ class SequenceTrack(OpenProtTrack):
 
             model.register_buffer("af2_to_esm", self._af2_to_esm(self.esm_dict))
 
-
-        # model.seq_mask = nn.Parameter(torch.zeros(model.cfg.dim)) 
+        # model.seq_mask = nn.Parameter(torch.zeros(model.cfg.dim))
         # keep this separate to avoid confusion
-
 
     def corrupt(self, batch, noisy_batch, target, logger=None):
         tokens = batch["aatype"]
 
         inp = self.apply_flow(tokens, batch["seq_noise"])
-        inp = torch.where(batch['seq_noise'] == 1.0, MASK_IDX, inp)
+        inp = torch.where(batch["seq_noise"] == 1.0, MASK_IDX, inp)
         noisy_batch["aatype"] = inp
-        noisy_batch['seq_noise'] = batch['seq_noise']
-        
+        noisy_batch["seq_noise"] = batch["seq_noise"]
+
         target["aatype"] = tokens
         target["seq_supervise"] = (batch["seq_noise"] > 0) * batch["seq_mask"]
-        
+
         if logger:
             logger.masked_log("seq/toks", batch["seq_mask"], sum=True)
-    
+
     def embed(self, model, batch, inp):
         def _af2_idx_to_esm_idx(aa, mask):
             aa = (aa + 1).masked_fill(mask != 1, 0)
@@ -209,23 +212,20 @@ class SequenceTrack(OpenProtTrack):
             esm_s = (model.esm_s_combine.softmax(0).unsqueeze(0) @ esm_s).squeeze(2)
             inp["x"] += model.esm_s_mlp(esm_s)
 
-        
         inp["x"] = model.seq_embed(batch["aatype"])
         if self.cfg.embed_t:
             t_emb = sinusoidal_embedding(
-                batch["seq_noise"], model.cfg.dim//2, 1, .01
+                batch["seq_noise"], model.cfg.dim // 2, 1, 0.01
             )
-            inp["x"] += torch.where(batch['aatype'] != MASK_IDX, noise_embed, 0.0)
+            inp["x"] += torch.where(batch["aatype"] != MASK_IDX, noise_embed, 0.0)
 
-
-      
     def predict(self, model, inp, out, readout):
         readout["aatype"] = model.seq_out(out["x"])
 
     def compute_loss(self, readout, target, logger=None, eps=1e-6, **kwargs):
         loss = torch.nn.functional.cross_entropy(
             readout["aatype"].transpose(1, 2), target["aatype"], reduction="none"
-        )       
+        )
 
         mask = target["seq_supervise"]
         if logger:
@@ -233,5 +233,5 @@ class SequenceTrack(OpenProtTrack):
             logger.masked_log("seq/loss", loss, mask=mask)
             logger.masked_log("seq/perplexity", loss, mask=mask, post=np.exp)
             logger.masked_log("seq/toks_sup", mask, sum=True)
-        
+
         return loss * mask

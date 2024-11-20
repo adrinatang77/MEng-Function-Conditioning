@@ -12,7 +12,7 @@ import torch.nn.functional as F
 class SequenceGenerationEval(OpenProtEval):
     def setup(self):
         pass
-        
+
     def run(self, model):
         NotImplemented
 
@@ -35,29 +35,34 @@ class SequenceGenerationEval(OpenProtEval):
         noisy_batch = batch.copy("name", "pad_mask")
         for track in model.tracks.values():
             track.corrupt(batch, noisy_batch, {})
-            
-        L = len(batch['seqres'])
-        
-        
+
+        L = len(batch["seqres"])
+
         for i in range(L):
-            
+
             _, out = model.forward(noisy_batch)
-            if self.cfg.unmask_order == 'random':
-                i = np.random.choice(torch.argwhere(noisy_batch['seq_noise'][0])[:,0].cpu())
-            elif self.cfg.unmask_order == 'purity':
-                i = torch.argmax(torch.where(noisy_batch['seq_noise'] > 0, out['aatype'].max(-1)[0], -np.inf)).item()
+            if self.cfg.unmask_order == "random":
+                i = np.random.choice(
+                    torch.argwhere(noisy_batch["seq_noise"][0])[:, 0].cpu()
+                )
+            elif self.cfg.unmask_order == "purity":
+                i = torch.argmax(
+                    torch.where(
+                        noisy_batch["seq_noise"] > 0, out["aatype"].max(-1)[0], -np.inf
+                    )
+                ).item()
 
-            noisy_batch['aatype'][:,i] = torch.distributions.categorical.Categorical(logits=out['aatype'][:,i] / self.cfg.temp).sample()
-            noisy_batch['seq_noise'][:,i] = 0.0
+            noisy_batch["aatype"][:, i] = torch.distributions.categorical.Categorical(
+                logits=out["aatype"][:, i] / self.cfg.temp
+            ).sample()
+            noisy_batch["seq_noise"][:, i] = 0.0
 
-
-        filename = 'seqs.fasta'
+        filename = "seqs.fasta"
         filepath = os.path.join(savedir, filename)
-        seq = ''.join([rc.restypes_with_x[aa] for aa in noisy_batch['aatype'][0]])
+        seq = "".join([rc.restypes_with_x[aa] for aa in noisy_batch["aatype"][0]])
         with open(filepath, "a") as f:
             f.write(f">{batch['name'][0]}\n")  # FASTA format header
             f.write(seq + "\n")
-
 
         """
         batch_size, seq_len = batch['aatype'].shape
@@ -124,5 +129,3 @@ class SequenceGenerationEval(OpenProtEval):
             predicted = torch.argmax(output['aatype'], dim=2)
             p_x0_g_xt = F.softmax(output['aatype'], dim=-1)
         """
-        
-
