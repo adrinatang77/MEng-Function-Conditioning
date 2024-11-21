@@ -1,6 +1,6 @@
-ckpt: null # 
+ckpt: null # workdir/unmasking-test/last.ckpt #null # 
 pretrained: null # workdir/trimul-vanilla-disto/last.ckpt # workdir/nodiff-relpos-pade/last.ckpt # load weights from here first
-validate: false # if true, only validate the model, don't train
+validate: true # if true, only validate the model, don't train
 logger:
     # set to true to log to neptune.ai
     neptune: false
@@ -8,9 +8,9 @@ logger:
     # please change "test" to something unique to your task
     project: openprot/struct-merge
     # will log to workdir and neptune.ai with this name
-    name: unmasking-test
+    name: unmasking-test-3e4
     # if not null, will duplicate stdout and stderr to workdir/{name}/{logfile}
-    logfile: null # std.out
+    logfile: std.out
     # if null, will log every epoch, otherwise every this number of steps
     train_log_freq: 100
     val_log_freq: null 
@@ -175,11 +175,11 @@ evals:
     #     run_designability: true
     seq_gen_unmask:
         type: SequenceGenerationEval
-        num_samples: 100
+        num_samples: 10
         sample_length: 128
         strategy: unmask
         unmask_order: random
-        temp: 0.1
+        temp: 0.3
     
 
 tracks:
@@ -270,7 +270,7 @@ model: # custom args
 
 optimizer:
     type: AdamW
-    lr: 3e-5
+    lr: 3e-4
     scheduler: 
         total_steps: 1000000
         warmup_steps: 1000

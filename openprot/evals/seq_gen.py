@@ -7,6 +7,7 @@ from ..tasks import SequenceDenoising
 import torch
 import os
 import torch.nn.functional as F
+import subprocess
 
 
 class SequenceGenerationEval(OpenProtEval):
@@ -29,6 +30,34 @@ class SequenceGenerationEval(OpenProtEval):
         )
         return data
 
+    def compute_metrics(
+        self, rank=0, world_size=1, device=None, savedir=".", logger=None
+    ):
+        torch.cuda.empty_cache()
+        
+        ## distributed designability
+        idx = list(range(0, self.cfg.num_samples, world_size))
+        seqs = list(open(f"{savedir}/seqs.fasta"))[1::2]
+        for i in idx:
+            
+            cmd = [
+                "bash",
+                "scripts/switch_conda_env.sh",
+                "python",
+                "-m",
+                "scripts.esmfold",
+                seqs[i].strip(),
+                f"{savedir}/sample{i}.pdb",
+            ]
+            out = subprocess.run(
+                cmd,
+                capture_output = True, # Python >= 3.7 only
+                text = True
+            )  # env=os.environ | {"CUDA_VISIBLE_DEVICES")
+            if logger is not None:
+                logger.log(f"{self.cfg.name}/plddt", float(out.stdout.split()[-1]))
+        
+
     def run_batch(self, model, batch: dict, savedir=".", device=None, logger=None):
         os.makedirs(savedir, exist_ok=True)
 
@@ -36,10 +65,9 @@ class SequenceGenerationEval(OpenProtEval):
         for track in model.tracks.values():
             track.corrupt(batch, noisy_batch, {})
 
-        L = len(batch["seqres"])
+        L = len(batch["seqres"][0])
 
         for i in range(L):
-
             _, out = model.forward(noisy_batch)
             if self.cfg.unmask_order == "random":
                 i = np.random.choice(
