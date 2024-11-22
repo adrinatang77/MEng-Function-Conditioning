@@ -127,6 +127,7 @@ class OpenProtTransformerBlock(nn.Module):
         relpos_attn=False,  # instead use trans relpos
         relpos_rope=False,
         relpos_values=False,
+        custom_rope=False,
         embed_rots=False,
         embed_trans=False,
         no_qk_points=4,
@@ -153,6 +154,7 @@ class OpenProtTransformerBlock(nn.Module):
             relpos_attn=relpos_attn,
             relpos_rope=relpos_rope,
             relpos_values=relpos_values,
+            custom_rope=custom_rope,
             embed_rots=embed_rots,
             embed_trans=embed_trans,
             no_qk_points=no_qk_points,
@@ -392,6 +394,7 @@ class OpenProtModel(nn.Module):
                     heads=cfg.heads,
                     ff_expand=cfg.ff_expand,
                     rope=cfg.rope,
+                    custom_rope=cfg.custom_rope,
                     adaLN=cfg.trunk_adaLN,
                     pairwise_dim=cfg.pairwise_dim,
                     pair_bias=cfg.block_pair_bias,

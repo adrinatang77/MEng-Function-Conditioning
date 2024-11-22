@@ -74,6 +74,7 @@ class GeometricMultiHeadAttention(nn.Module):
         relpos_attn=False,  # instead use trans relpos
         relpos_rope=False,
         relpos_values=False,
+        custom_rope=False,
         embed_rots=False,  # whether to embed rots into x at the top
         embed_trans=False,
         no_qk_points=4,
@@ -97,6 +98,7 @@ class GeometricMultiHeadAttention(nn.Module):
         self.relpos_values = relpos_values
         self.relpos_attn = relpos_attn
         self.relpos_rope = relpos_rope
+        self.custom_rope = custom_rope
 
         ## basic stuff we always need
         self.w_q = nn.Linear(dim, dim, bias=False)
@@ -155,7 +157,12 @@ class GeometricMultiHeadAttention(nn.Module):
             freqs_cis = rope.compute_freqs_cis(D // self.heads, L, device=x.device)
             query, key = rope.apply_rotary_emb(query, key, freqs_cis)
 
-        if self.relpos_rope:
+        elif self.custom_rope:
+            pos = torch.arange(L, device=query.device)
+            query = rotary_emb(query, pos, query.shape[-1] // 2, 10000, 1)
+            key = rotary_emb(key, pos, key.shape[-1] // 2, 10000, 1)
+
+        elif self.relpos_rope:
             query = rope_3d(query, trans[:, None], max_period=100, min_period=1)
             key = rope_3d(key, trans[:, None], max_period=100, min_period=1)
 
@@ -198,6 +205,10 @@ class GeometricMultiHeadAttention(nn.Module):
             out = rope_3d_gather(
                 attn, value, trans[:, None], max_period=100, min_period=1
             )
+        elif self.custom_rope:
+            value = rotary_emb(value, pos, value.shape[-1] // 2, 10000, 1)
+            out = attn @ value
+            out = rotary_emb(out, -pos, out.shape[-1] // 2, 10000, 1)
         else:
             out = attn @ value
         out = out.transpose(1, 2).reshape(B, L, D)

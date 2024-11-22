@@ -1,4 +1,4 @@
-ckpt: null # workdir/unmasking-test-1e4/last.ckpt #null # 
+ckpt: null # workdir/unmasking-test-fix/last.ckpt #null # 
 pretrained: null # workdir/trimul-vanilla-disto/last.ckpt # workdir/nodiff-relpos-pade/last.ckpt # load weights from here first
 validate: false # if true, only validate the model, don't train
 logger:
@@ -8,7 +8,7 @@ logger:
     # please change "test" to something unique to your task
     project: openprot/struct-merge
     # will log to workdir and neptune.ai with this name
-    name: unmasking-test-fix
+    name: unmasking-custom-rope
     # if not null, will duplicate stdout and stderr to workdir/{name}/{logfile}
     logfile: std.out
     # if null, will log every epoch, otherwise every this number of steps
@@ -33,7 +33,7 @@ trainer:
 
 # custom args to OpenProtDataset and elsewhere
 data: 
-    num_workers: 0
+    num_workers: 8
     batch: 32
     crop: 512
     seed: 137
@@ -173,13 +173,13 @@ evals:
     #     sde_cutoff_time: 0.0
     #     sde_cutoff_width: 0.00001
     #     run_designability: true
-    seq_gen_unmask_random_1.0:
-        type: SequenceGenerationEval
-        num_samples: 100
-        sample_length: 128
-        strategy: unmask
-        unmask_order: random
-        temp: 1.0
+    # seq_gen_unmask_random_1.0:
+    #     type: SequenceGenerationEval
+    #     num_samples: 100
+    #     sample_length: 128
+    #     strategy: unmask
+    #     unmask_order: random
+    #     temp: 1.0
     seq_gen_unmask_purity_1.0:
         type: SequenceGenerationEval
         num_samples: 100
@@ -187,6 +187,7 @@ evals:
         strategy: unmask
         unmask_order: purity
         temp: 1.0
+        gumbel: true
     
 
 tracks:
@@ -259,7 +260,8 @@ model: # custom args
     pair_bias: true
     pair_ff_expand: 4
     tri_mul: true
-    rope: true
+    rope: false
+    custom_rope: true
 
     ### ipa args
     readout_trans_before_sm: false

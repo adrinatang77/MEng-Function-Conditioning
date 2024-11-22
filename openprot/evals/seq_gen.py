@@ -8,6 +8,7 @@ import torch
 import os
 import torch.nn.functional as F
 import subprocess
+from torch.distributions.categorical import Categorical
 
 
 class SequenceGenerationEval(OpenProtEval):
@@ -69,11 +70,19 @@ class SequenceGenerationEval(OpenProtEval):
         L = len(batch["seqres"][0])
 
         for i in range(L):
+            
             _, out = model.forward(noisy_batch)
             logits = out['aatype'] 
+            
+            logits[:,:,-1] -= np.inf # MASK_IDX, keep even if fix
             logits -= torch.logsumexp(logits, dim=-1, keepdims=True)
             logits[noisy_batch["seq_noise"] == 0] -= np.inf
-            logits[:,:,-1] -= np.inf # MASK_IDX, keep even if fix
+
+            
+            if self.cfg.gumbel:
+                rand = torch.rand_like(logits)
+                gumbel = -torch.log(-torch.log(rand))
+                logits += gumbel * self.cfg.temp
                 
             if self.cfg.unmask_order == "random":
                 i = np.random.choice(
@@ -81,16 +90,15 @@ class SequenceGenerationEval(OpenProtEval):
                 )
             elif self.cfg.unmask_order == "purity":    
                 i = torch.argmax(logits.max(-1)[0]).item()
-            
-            noisy_batch["aatype"][:, i] = torch.distributions.categorical.Categorical(
-                logits=logits[:,i] / self.cfg.temp
-            ).sample()
+
+            if self.cfg.gumbel:
+                noisy_batch["aatype"][:, i] = logits[:,i].argmax(-1)
+            else:                                   
+                noisy_batch["aatype"][:, i] = Categorical(logits=logits[:,i] / self.cfg.temp).sample()
             noisy_batch["seq_noise"][:, i] = 0.0
-            # seq = "".join([rc.restypes_with_x[aa] for aa in noisy_batch["aatype"][0]])
+            seq = "".join([rc.restypes_with_x[aa] for aa in noisy_batch["aatype"][0]])
             
 
-        filename = "seqs.fasta"
-        filepath = os.path.join(savedir, filename)
         seq = "".join([rc.restypes_with_x[aa] for aa in noisy_batch["aatype"][0]])
         with open(f"{savedir}/{batch['name'][0]}.fasta", "w") as f:
             f.write(f">{batch['name'][0]}\n")  # FASTA format header
