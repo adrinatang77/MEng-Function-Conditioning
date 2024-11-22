@@ -190,6 +190,10 @@ class SequenceTrack(OpenProtTrack):
         target["aatype"] = tokens
         target["seq_supervise"] = (batch["seq_noise"] > 0) * batch["seq_mask"]
 
+        num_mask = ((target['aatype'] == 20) & batch["seq_mask"].bool()).sum()
+        if num_mask > 0:
+            breakpoint()
+        
         if logger:
             logger.masked_log("seq/toks", batch["seq_mask"], sum=True)
 
@@ -228,6 +232,8 @@ class SequenceTrack(OpenProtTrack):
         )
 
         mask = target["seq_supervise"]
+        
+        # print(((target['aatype'] == 20) & mask.bool()).sum())
         if logger:
 
             logger.masked_log("seq/loss", loss, mask=mask)

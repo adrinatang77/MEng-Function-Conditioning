@@ -36,17 +36,17 @@ class SequenceGenerationEval(OpenProtEval):
         torch.cuda.empty_cache()
         
         ## distributed designability
-        idx = list(range(0, self.cfg.num_samples, world_size))
-        seqs = list(open(f"{savedir}/seqs.fasta"))[1::2]
+        idx = list(range(rank, self.cfg.num_samples, world_size))
+        
         for i in idx:
-            
+            seq = list(open(f"{savedir}/sample{i}.fasta"))[1].strip()
             cmd = [
                 "bash",
                 "scripts/switch_conda_env.sh",
                 "python",
                 "-m",
                 "scripts.esmfold",
-                seqs[i].strip(),
+                seq,
                 f"{savedir}/sample{i}.pdb",
             ]
             out = subprocess.run(
@@ -54,6 +54,7 @@ class SequenceGenerationEval(OpenProtEval):
                 capture_output = True, # Python >= 3.7 only
                 text = True
             )  # env=os.environ | {"CUDA_VISIBLE_DEVICES")
+            
             if logger is not None:
                 logger.log(f"{self.cfg.name}/plddt", float(out.stdout.split()[-1]))
         
@@ -69,26 +70,29 @@ class SequenceGenerationEval(OpenProtEval):
 
         for i in range(L):
             _, out = model.forward(noisy_batch)
+            logits = out['aatype'] 
+            logits -= torch.logsumexp(logits, dim=-1, keepdims=True)
+            logits[noisy_batch["seq_noise"] == 0] -= np.inf
+            logits[:,:,-1] -= np.inf # MASK_IDX, keep even if fix
+                
             if self.cfg.unmask_order == "random":
                 i = np.random.choice(
                     torch.argwhere(noisy_batch["seq_noise"][0])[:, 0].cpu()
                 )
-            elif self.cfg.unmask_order == "purity":
-                i = torch.argmax(
-                    torch.where(
-                        noisy_batch["seq_noise"] > 0, out["aatype"].max(-1)[0], -np.inf
-                    )
-                ).item()
-
+            elif self.cfg.unmask_order == "purity":    
+                i = torch.argmax(logits.max(-1)[0]).item()
+            
             noisy_batch["aatype"][:, i] = torch.distributions.categorical.Categorical(
-                logits=out["aatype"][:, i] / self.cfg.temp
+                logits=logits[:,i] / self.cfg.temp
             ).sample()
             noisy_batch["seq_noise"][:, i] = 0.0
+            # seq = "".join([rc.restypes_with_x[aa] for aa in noisy_batch["aatype"][0]])
+            
 
         filename = "seqs.fasta"
         filepath = os.path.join(savedir, filename)
         seq = "".join([rc.restypes_with_x[aa] for aa in noisy_batch["aatype"][0]])
-        with open(filepath, "a") as f:
+        with open(f"{savedir}/{batch['name'][0]}.fasta", "w") as f:
             f.write(f">{batch['name'][0]}\n")  # FASTA format header
             f.write(seq + "\n")
 

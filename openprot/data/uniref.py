@@ -37,10 +37,12 @@ class UnirefDataset(OpenProtDataset):
         lines = item.split("\n")
         header, lines = lines[0], lines[1:]
         seqres = "".join(lines)
-        seq_mask = np.ones(len(seqres))
-        seq_mask[seqres == "X"] = 0
+        
+        seq_mask = np.ones(len(seqres), dtype=np.float32)
+    
+        seq_mask[[c not in rc.restype_order for c in seqres]] = 0
         name = header if len(header.split()) == 0 else header.split()[0]
-
+        
         return self.make_data(
             name=name,
             seqres=seqres,
