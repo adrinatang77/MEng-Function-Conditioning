@@ -1,16 +1,16 @@
-ckpt: null # workdir/unmasking-test-fix/last.ckpt #null # 
+ckpt: null # workdir/unmasking-custom-rope/last.ckpt #null # 
 pretrained: null # workdir/trimul-vanilla-disto/last.ckpt # workdir/nodiff-relpos-pade/last.ckpt # load weights from here first
 validate: false # if true, only validate the model, don't train
 logger:
     # set to true to log to neptune.ai
-    neptune: false
+    neptune: true
     run_id: null # STRUC1-140
     # please change "test" to something unique to your task
     project: openprot/struct-merge
     # will log to workdir and neptune.ai with this name
-    name: unmasking-custom-rope
+    name: unmasking-custom-beta13
     # if not null, will duplicate stdout and stderr to workdir/{name}/{logfile}
-    logfile: std.out
+    logfile: null # std.out
     # if null, will log every epoch, otherwise every this number of steps
     train_log_freq: 100
     val_log_freq: null 
@@ -85,7 +85,7 @@ datasets:
 tasks:
     SequenceUnmasking:
         fraction: 1.0
-        beta: [1, 2]
+        beta: [1, 3]
         uniform_prob: 0.0
         seed: 137
         datasets:
@@ -131,7 +131,7 @@ tasks:
     #             start: 0
     #             seed: 142
             
-evals: 
+evals: []
     # cameo22:
     #     type: StructurePredictionEval
     #     path: /scratch/projects/cgai/openprot/data/pdb_npz
@@ -180,14 +180,17 @@ evals:
     #     strategy: unmask
     #     unmask_order: random
     #     temp: 1.0
-    seq_gen_unmask_purity_1.0:
-        type: SequenceGenerationEval
-        num_samples: 100
-        sample_length: 128
-        strategy: unmask
-        unmask_order: purity
-        temp: 1.0
-        gumbel: true
+    # seq_gen_dplm:
+    #     type: SequenceGenerationEval
+    #     num_samples: 100
+    #     sample_length: 128
+    #     strategy: unmask
+    #     unmask_order: purity
+    #     temp: 1.0
+    #     gumbel: true
+    #     steps: 128
+    #     sigma: 0.0
+    #     # churn_temp: 0.5
     
 
 tracks:
