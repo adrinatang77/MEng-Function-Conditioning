@@ -1,6 +1,6 @@
-ckpt: null # workdir/unmasking-150m-beta13/last.ckpt #null # 
-pretrained: null # workdir/trimul-vanilla-disto/last.ckpt # workdir/nodiff-relpos-pade/last.ckpt # load weights from here first
-validate: true # if true, only validate the model, don't train
+ckpt: null # 
+pretrained: workdir/unmasking-150m-beta13/last.ckpt #  load weights from here first
+validate: false # if true, only validate the model, don't train
 logger:
     # set to true to log to neptune.ai
     neptune: false
@@ -8,11 +8,11 @@ logger:
     # please change "test" to something unique to your task
     project: openprot/struct-merge
     # will log to workdir and neptune.ai with this name
-    name: unmasking-150m-beta13-eval
+    name: unmasking-150m+denoise
     # if not null, will duplicate stdout and stderr to workdir/{name}/{logfile}
     logfile: false
     # if null, will log every epoch, otherwise every this number of steps
-    train_log_freq: 10
+    train_log_freq: 100
     val_log_freq: null 
     ckpt_freq: 10000000
     save_freq: 5000
@@ -237,6 +237,9 @@ tracks:
         loss_weight: 1.0 
         rate_matrix_path: ./openprot/uniform.csv
         embed_t: false
+        rand_prob: 0.15
+        denoise_weight: 0.1
+        unmask_weight: 1.0
 
 model: # custom args
     checkpoint: true
@@ -282,7 +285,7 @@ model: # custom args
 
 optimizer:
     type: AdamW
-    lr: 0 # 3e-5
+    lr: 3e-5
     scheduler: 
         total_steps: 1000000
         warmup_steps: 1000

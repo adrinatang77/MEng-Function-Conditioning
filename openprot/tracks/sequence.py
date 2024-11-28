@@ -181,14 +181,21 @@ class SequenceTrack(OpenProtTrack):
 
     def corrupt(self, batch, noisy_batch, target, logger=None):
         tokens = batch["aatype"]
-
-        inp = self.apply_flow(tokens, batch["seq_noise"])
+        mask = batch['seq_mask']
+        
+        inp = tokens # self.apply_flow(tokens, batch["seq_noise"])
+        rand = torch.rand(tokens.shape, device=tokens.device)
+        randaa = torch.randint(0, 20, tokens.shape, device=tokens.device)
+        
+        inp = torch.where(mask.bool() & (rand < self.cfg.rand_prob), randaa, inp)
         inp = torch.where(batch["seq_noise"] == 1.0, MASK_IDX, inp)
+        
         noisy_batch["aatype"] = inp
         noisy_batch["seq_noise"] = batch["seq_noise"]
 
         target["aatype"] = tokens
         target["seq_supervise"] = (batch["seq_noise"] > 0) * batch["seq_mask"]
+        target["denoise_seq_supervise"] = (batch["seq_noise"] == 0) * batch["seq_mask"]
         
         if logger:
             logger.masked_log("seq/toks", batch["seq_mask"], sum=True)
@@ -227,13 +234,16 @@ class SequenceTrack(OpenProtTrack):
             readout["aatype"].transpose(1, 2), target["aatype"], reduction="none"
         )
 
-        mask = target["seq_supervise"]
+        unmask_mask = target["seq_supervise"]
+        denoise_mask = target["denoise_seq_supervise"]
         
-        # print(((target['aatype'] == 20) & mask.bool()).sum())
         if logger:
+            logger.masked_log("seq/loss", loss, mask=unmask_mask)
+            logger.masked_log("seq/perplexity", loss, mask=unmask_mask, post=np.exp)
+            logger.masked_log("seq/denoise_loss", loss, mask=denoise_mask)
+            logger.masked_log("seq/denoise_perplexity", loss, mask=denoise_mask, post=np.exp)
+            
+            logger.masked_log("seq/toks_sup", unmask_mask, sum=True)
+            logger.masked_log("seq/denoise_toks_sup", denoise_mask, sum=True)
 
-            logger.masked_log("seq/loss", loss, mask=mask)
-            logger.masked_log("seq/perplexity", loss, mask=mask, post=np.exp)
-            logger.masked_log("seq/toks_sup", mask, sum=True)
-
-        return loss * mask
+        return self.cfg.unmask_weight * loss * unmask_mask + self.cfg.denoise_weight * loss * denoise_mask
