@@ -157,6 +157,8 @@ class SequenceGenerationEval(OpenProtEval):
         max_step,
         noise,
     ):
+        output_scores_copy = output_scores.clone()
+        output_tokens_copy = output_tokens.clone()
         """
             This function is used to perform reparameterized decoding.
         """
@@ -207,28 +209,33 @@ class SequenceGenerationEval(OpenProtEval):
         lowest_k_mask = topk_masking(_scores_for_topk, cutoff_len, stochastic=True, temp=1.5 * rate)
         
             # if need resampling, set the topk stochastically
-        not_v1_t = lowest_k_mask # 127 indices are True, i.e., they will be kept as mask
+        # not_v1_t = lowest_k_mask # 127 indices are True, i.e., they will be kept as mask
          # for b_t = 0, the token is set to noise if it is in the lowest k scores.
-        not_v2_t = lowest_k_mask
+        # not_v2_t = lowest_k_mask
 
         # not v1_t, not_v2_t = not unmask
-        last_mask_position = xt_neq_x0 # True if mask
-        masked_to_noise = (~xt_neq_x0 & not_v1_t) | (xt_neq_x0 & not_v2_t)
+        # last_mask_position = xt_neq_x0 # True if mask
+        masked_to_noise = (~xt_neq_x0 & lowest_k_mask) | (xt_neq_x0 & lowest_k_mask)
         
-        if isinstance(noise, torch.Tensor):
-            output_tokens.masked_scatter_(masked_to_noise, noise[masked_to_noise])
-        elif isinstance(noise, (int, float)): # noise = mask_id
-            output_tokens.masked_fill_(masked_to_noise, noise)
-        else:
-            raise NotImplementedError("noise should be either a tensor or a scalar")
+        output_tokens.masked_fill_(masked_to_noise, noise)
         output_scores.masked_fill_(masked_to_noise, -math.inf)
 
-        masked_to_x0 = xt_neq_x0 & ~not_v2_t # is mask & unmask
+        masked_to_x0 = xt_neq_x0 & ~lowest_k_mask # is mask & unmask
         output_tokens.masked_scatter_(masked_to_x0, cur_tokens[masked_to_x0])
         output_scores.masked_scatter_(masked_to_x0, cur_scores[masked_to_x0])
-        assert ((masked_to_x0 & last_mask_position) == masked_to_x0).all()
-        new_xt_neq_x0 = (xt_neq_x0 | not_v1_t) & not_v2_t
-        assert (new_xt_neq_x0 == not_v2_t).all()
+        assert ((masked_to_x0 & xt_neq_x0) == masked_to_x0).all()
+        new_xt_neq_x0 = (xt_neq_x0 | lowest_k_mask) & lowest_k_mask
+        assert (new_xt_neq_x0 == lowest_k_mask).all()
+
+        output_tokens_ = torch.where(~lowest_k_mask, torch.where(xt_neq_x0, cur_tokens, output_tokens_copy), 20)
+        output_scores_ = torch.where(~lowest_k_mask, torch.where(xt_neq_x0, cur_scores, output_scores_copy), -math.inf)
+        
+        try:
+            assert (output_tokens_ == output_tokens).all()
+            assert (output_scores_ == output_scores).all()
+        except:
+            breakpoint()
+            
         return new_xt_neq_x0, output_tokens, output_scores
          
     def dplm_sample(self, logits, mask, toks, scores, step, max_iter):
@@ -241,25 +248,34 @@ class SequenceGenerationEval(OpenProtEval):
         gumbel_noise = -torch.log(-torch.log(torch.rand_like(logits) + 1e-8) + 1e-8)
         logits = logits + gumbel_noise
         _scores, _tokens = logits.log_softmax(dim=-1).max(dim=-1) # softmax AFTER gumbel!
+
+        rate = 1 - (step+1) / max_iter
+        cutoff_len = (rate * torch.ones_like(_tokens).sum(-1, keepdims=True)).long()
+        lowest_k_mask = topk_masking(_scores, cutoff_len, stochastic=False) 
+        # lowest_k_mask = topk_masking(_scores_for_topk, cutoff_len, stochastic=True, temp=1.5 * rate)
         
+        output_tokens_ = torch.where(~lowest_k_mask, torch.where(mask, _tokens, toks), 20)
+        output_scores_ = torch.where(~lowest_k_mask, torch.where(mask, _scores, scores), -math.inf)
+
+        return lowest_k_mask, output_tokens_, output_scores_
         # logits = torch.log_softmax(logits / self.cfg.temp, dim=-1)
         # gumbel = -torch.log(-torch.log(torch.rand_like(logits)))
         # _scores, _tokens = torch.max(logits + gumbel, -1)
 
-        non_special_sym_mask = torch.ones_like(mask).bool()
+        # non_special_sym_mask = torch.ones_like(mask).bool()
 
-        output_masks, output_tokens, output_scores = self._reparam_decoding(
-            output_tokens=toks.clone(),
-            output_scores=scores.clone(),
-            cur_tokens=_tokens.clone(),
-            cur_scores=_scores.clone(),
-            xt_neq_x0=mask,
-            non_special_sym_mask=non_special_sym_mask,
-            t=step + 1,
-            max_step=max_iter,
-            noise=20,
-        )
-        return output_masks, output_tokens, output_scores
+        # output_masks, output_tokens, output_scores = self._reparam_decoding(
+        #     output_tokens=toks.clone(),
+        #     output_scores=scores.clone(),
+        #     cur_tokens=_tokens.clone(),
+        #     cur_scores=_scores.clone(),
+        #     xt_neq_x0=mask,
+        #     non_special_sym_mask=non_special_sym_mask,
+        #     t=step + 1,
+        #     max_step=max_iter,
+        #     noise=20,
+        # )
+        # return output_masks, output_tokens, output_scores
             
 
     def run_batch(self, model, batch: dict, savedir=".", device=None, logger=None):
@@ -277,20 +293,20 @@ class SequenceGenerationEval(OpenProtEval):
         scores = torch.zeros_like(noisy_batch['seq_noise'])
         
         sched = np.linspace(0.99, 0, self.cfg.steps+1)
-        for i in range(self.cfg.steps): 
-        # for t, s in zip(sched[:-1], sched[1:]): # t > s
-        #     dt = t - s
+        # for i in range(self.cfg.steps): 
+        for t, s in zip(sched[:-1], sched[1:]): # t > s
+            dt = t - s
             
             _, out = model.forward(noisy_batch)
             logits = out['aatype'] 
 
-            mask, toks, scores = self.dplm_sample(logits, mask, toks, scores, step=i, max_iter=self.cfg.steps)             
-            noisy_batch['aatype'] = toks
-            noisy_batch['seq_noise'] = mask.float()
+            # mask, toks, scores = self.dplm_sample(logits, mask, toks, scores, step=i, max_iter=self.cfg.steps)             
+            # noisy_batch['aatype'] = toks
+            # noisy_batch['seq_noise'] = mask.float()
 
-            # gumbel_noise = -torch.log(-torch.log(torch.rand_like(logits) + 1e-8) + 1e-8)
-            # logits = logits + gumbel_noise
-            # scores, sample = logits.log_softmax(dim=-1).max(dim=-1) # softmax AFTER gumbel!
+            gumbel_noise = -torch.log(-torch.log(torch.rand_like(logits) + 1e-8) + 1e-8)
+            logits = logits + gumbel_noise
+            scores, sample = logits.log_softmax(dim=-1).max(dim=-1) # softmax AFTER gumbel!
             
             
             # # scores[~is_mask.bool()] -= np.inf
@@ -302,8 +318,20 @@ class SequenceGenerationEval(OpenProtEval):
             # # unmask = unmask & False
             # # unmask[:,torch.topk(scores, k, dim=-1).indices] = True
 
-            # rate = s
-            # unmask = ~topk_masking(scores, (128*rate*torch.ones(1, 1, device=logits.device)).long(), stochastic=True, temp=1.5 * rate)
+            rate = s
+            # rate = 1 - (step+1) / max_iter
+            cutoff_len = (rate * torch.ones_like(sample).sum(-1, keepdims=True)).long()
+            lowest_k_mask = topk_masking(scores, cutoff_len, stochastic=False) 
+            # lowest_k_mask = topk_masking(_scores_for_topk, cutoff_len, stochastic=True, temp=1.5 * rate)
+        
+            noisy_batch['aatype'] = torch.where(
+                ~lowest_k_mask, 
+                torch.where(mask, sample, noisy_batch['aatype']),
+                20
+            )
+            mask = lowest_k_mask
+
+                                     
             # # # # at time t p(MASK | x0) = t, p(x0 | x0) = 1 - t
             # # # # R(x0 -> MASK) = 1 / (1 - t)
             # # # # going backwards R(MASK -> x0) = 1 / t
