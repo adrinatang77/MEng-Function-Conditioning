@@ -91,59 +91,59 @@ class SequenceGenerationEval(OpenProtEval):
             if logger is not None:
                 logger.log(f"{self.cfg.name}/plddt", float(out.stdout.split()[-1]))
 
-    def resample_conditional(self, _tokens, _scores, ratio, scale):
-        to_be_resample_idx = []
-        resample_input = []
-        resample_input_mask = []
-        resample_input_scores = []
-        for i, seq in enumerate(_tokens):
-            most_token_dict = {}
-            most_token = None
-            most_token_num = -1
-            for j, token in enumerate(seq):
-                token = int(token)
-                if token not in most_token_dict:
-                    most_token_dict[token] = [j]
-                else:
-                    most_token_dict[token].append(j)
-                if len(most_token_dict[token]) > most_token_num:
-                    most_token = token
-                    most_token_num = len(most_token_dict[token])
-            if most_token_num > len(seq) * ratio:#max(0.3/(step+1) ** 0.2, 0.1):
-                to_be_resample_idx.append(i)
-                resample_input_scores.append(_scores[i])
-                mask = torch.zeros_like(seq).bool()
-                for k, v in most_token_dict.items():
-                    if len(v) > len(seq) * ratio:#max(0.3/(step+1) ** 0.2, 0.1):
-                        mask |= seq.eq(k)
-                resample_input_mask.append(mask)
-                resample_input.append(seq.masked_fill(mask, self.mask_id))
-                #resample_input.append(seq.masked_scatter(mask, xt[i][mask]))
+    # def resample_conditional(self, _tokens, _scores, ratio, scale):
+    #     to_be_resample_idx = []
+    #     resample_input = []
+    #     resample_input_mask = []
+    #     resample_input_scores = []
+    #     for i, seq in enumerate(_tokens):
+    #         most_token_dict = {}
+    #         most_token = None
+    #         most_token_num = -1
+    #         for j, token in enumerate(seq):
+    #             token = int(token)
+    #             if token not in most_token_dict:
+    #                 most_token_dict[token] = [j]
+    #             else:
+    #                 most_token_dict[token].append(j)
+    #             if len(most_token_dict[token]) > most_token_num:
+    #                 most_token = token
+    #                 most_token_num = len(most_token_dict[token])
+    #         if most_token_num > len(seq) * ratio:#max(0.3/(step+1) ** 0.2, 0.1):
+    #             to_be_resample_idx.append(i)
+    #             resample_input_scores.append(_scores[i])
+    #             mask = torch.zeros_like(seq).bool()
+    #             for k, v in most_token_dict.items():
+    #                 if len(v) > len(seq) * ratio:#max(0.3/(step+1) ** 0.2, 0.1):
+    #                     mask |= seq.eq(k)
+    #             resample_input_mask.append(mask)
+    #             resample_input.append(seq.masked_fill(mask, 20))
+    #             #resample_input.append(seq.masked_scatter(mask, xt[i][mask]))
 
         
-        if len(to_be_resample_idx) > 0:
-            resample_input = torch.stack(resample_input, dim=0).type_as(_tokens)
-            resample_input_scores = torch.stack(resample_input_scores, dim=0).type_as(_scores)
-            resample_input_mask = torch.stack(resample_input_mask, dim=0).type_as(_tokens).bool()
-            resample_logits = self.net(
-                input_ids=resample_input,
-            )['logits']
-            if resample_logits.dtype != _scores.dtype:
-                resample_logits = resample_logits.type_as(_scores)
-            resample_logits[..., self.mask_id] = -math.inf
-            resample_logits[..., self.x_id] = -math.inf
-            resample_logits[..., self.pad_id] = -math.inf
-            resample_logits[..., self.bos_id] = -math.inf
-            resample_logits[..., self.eos_id] = -math.inf
+    #     if len(to_be_resample_idx) > 0:
+    #         resample_input = torch.stack(resample_input, dim=0).type_as(_tokens)
+    #         resample_input_scores = torch.stack(resample_input_scores, dim=0).type_as(_scores)
+    #         resample_input_mask = torch.stack(resample_input_mask, dim=0).type_as(_tokens).bool()
+    #         resample_logits = self.net(
+    #             input_ids=resample_input,
+    #         )['logits']
+    #         if resample_logits.dtype != _scores.dtype:
+    #             resample_logits = resample_logits.type_as(_scores)
+    #         resample_logits[..., self.mask_id] = -math.inf
+    #         resample_logits[..., self.x_id] = -math.inf
+    #         resample_logits[..., self.pad_id] = -math.inf
+    #         resample_logits[..., self.bos_id] = -math.inf
+    #         resample_logits[..., self.eos_id] = -math.inf
             
-            resample_logits = top_k_top_p_filtering(resample_logits, top_p=0.95)
-            #noise_scale = 1.5 - 0.2 * ((step + 1) / max_step)
-            noise_scale = scale
-            assert resample_logits.size(0) == len(to_be_resample_idx)
-            resample_tokens, resample_scores = stochastic_sample_from_categorical(resample_logits, temperature=0.0, noise_scale=noise_scale)
-            resample_input.masked_scatter_(resample_input_mask, resample_tokens[resample_input_mask])
-            resample_input_scores.masked_scatter_(resample_input_mask, resample_scores[resample_input_mask])
-            _tokens[to_be_resample_idx], _scores[to_be_resample_idx] = resample_input, resample_input_scores
+    #         resample_logits = top_k_top_p_filtering(resample_logits, top_p=0.95)
+    #         #noise_scale = 1.5 - 0.2 * ((step + 1) / max_step)
+    #         noise_scale = scale
+    #         assert resample_logits.size(0) == len(to_be_resample_idx)
+    #         resample_tokens, resample_scores = stochastic_sample_from_categorical(resample_logits, temperature=0.0, noise_scale=noise_scale)
+    #         resample_input.masked_scatter_(resample_input_mask, resample_tokens[resample_input_mask])
+    #         resample_input_scores.masked_scatter_(resample_input_mask, resample_scores[resample_input_mask])
+    #         _tokens[to_be_resample_idx], _scores[to_be_resample_idx] = resample_input, resample_input_scores
 
     def _reparam_decoding(
         self,
@@ -198,12 +198,14 @@ class SequenceGenerationEval(OpenProtEval):
             if most_token_num > len(seq) * 0.25:
                 to_be_resample.append(i) # index of sequence needing resampling
                 
-        lowest_k_mask = topk_masking(_scores_for_topk, cutoff_len, stochastic=False) # 127 indices are True, i.e., they will be kept as mask
-        if len(to_be_resample) > 0:
-            noise_scale = 1.5
-            #print(lowest_k_mask[to_be_resample[0]])
-            lowest_k_mask[to_be_resample] = topk_masking(_scores_for_topk[to_be_resample], cutoff_len[to_be_resample], 
-                                                         stochastic=True, temp=noise_scale * rate)
+        # lowest_k_mask = topk_masking(_scores_for_topk, cutoff_len, stochastic=False) # 127 indices are True, i.e., they will be kept as mask
+        # if len(to_be_resample) > 0:
+        #     noise_scale = 1.5
+        #     #print(lowest_k_mask[to_be_resample[0]])
+        #     lowest_k_mask[to_be_resample] = topk_masking(_scores_for_topk[to_be_resample], cutoff_len[to_be_resample], 
+        #                                                  stochastic=True, temp=noise_scale * rate)
+        lowest_k_mask = topk_masking(_scores_for_topk, cutoff_len, stochastic=True, temp=1.5 * rate)
+        
             # if need resampling, set the topk stochastically
         not_v1_t = lowest_k_mask # 127 indices are True, i.e., they will be kept as mask
          # for b_t = 0, the token is set to noise if it is in the lowest k scores.
@@ -231,9 +233,18 @@ class SequenceGenerationEval(OpenProtEval):
          
     def dplm_sample(self, logits, mask, toks, scores, step, max_iter):
 
-        noise_scale = 1.0
-        _tokens, _scores = stochastic_sample_from_categorical(logits, temperature=0.0, noise_scale=noise_scale)
-        self.resample_conditional(_tokens, _scores, ratio=0.25, scale=1.0)
+        # noise_scale = 1.0
+        # _tokens, _scores = stochastic_sample_from_categorical(logits, temperature=0.0, noise_scale=1.0)
+        # # self.resample_conditional(_tokens, _scores, ratio=0.25, scale=1.0)
+
+
+        gumbel_noise = -torch.log(-torch.log(torch.rand_like(logits) + 1e-8) + 1e-8)
+        logits = logits + gumbel_noise
+        _scores, _tokens = logits.log_softmax(dim=-1).max(dim=-1) # softmax AFTER gumbel!
+        
+        # logits = torch.log_softmax(logits / self.cfg.temp, dim=-1)
+        # gumbel = -torch.log(-torch.log(torch.rand_like(logits)))
+        # _scores, _tokens = torch.max(logits + gumbel, -1)
 
         non_special_sym_mask = torch.ones_like(mask).bool()
 
@@ -261,51 +272,52 @@ class SequenceGenerationEval(OpenProtEval):
         L = len(batch["seqres"][0])
         
         
-        mask = noisy_batch['aatype'].bool()
+        mask = noisy_batch['seq_noise'].bool()
         toks = noisy_batch['aatype'].clone()
         scores = torch.zeros_like(noisy_batch['seq_noise'])
         
         sched = np.linspace(0.99, 0, self.cfg.steps+1)
-        for i in range(self.cfg.steps): #t, s in zip(sched[:-1], sched[1:]): # t > s
-            # dt = t - s
+        for i in range(self.cfg.steps): 
+        # for t, s in zip(sched[:-1], sched[1:]): # t > s
+        #     dt = t - s
             
             _, out = model.forward(noisy_batch)
             logits = out['aatype'] 
 
-            mask, toks, scores = self.dplm_sample(logits, mask, toks, scores, step=i, max_iter=self.cfg.steps)    
-            
+            mask, toks, scores = self.dplm_sample(logits, mask, toks, scores, step=i, max_iter=self.cfg.steps)             
             noisy_batch['aatype'] = toks
             noisy_batch['seq_noise'] = mask.float()
-            # logits = torch.log_softmax(logits / self.cfg.temp, dim=-1)
-            # gumbel = -torch.log(-torch.log(torch.rand_like(logits)))
+
+            # gumbel_noise = -torch.log(-torch.log(torch.rand_like(logits) + 1e-8) + 1e-8)
+            # logits = logits + gumbel_noise
+            # scores, sample = logits.log_softmax(dim=-1).max(dim=-1) # softmax AFTER gumbel!
             
-            # scores, sample = torch.max(logits + gumbel, -1)
-            # sample = Categorical(logits = logits / self.cfg.temp).sample()
-            # scores = Categorical(logits = logits / self.cfg.temp).log_prob(sample)
-            # is_mask = noisy_batch['seq_noise']
             
             # # scores[~is_mask.bool()] -= np.inf
-            # # # breakpoint()
-
-            # unmask_prob = (1/t * dt) + self.cfg.sigma * np.sqrt((1-t) / t) * dt
-            # # print(unmask_prob)
-            # unmask = (torch.rand_like(is_mask) < unmask_prob) & is_mask.bool()
-            # # k = unmask.sum()
+            # # unmask_prob = (1/t * dt) + self.cfg.sigma * np.sqrt((1-t) / t) * dt
+            # unmask_prob = 1 - t
+            # # unmask = (torch.rand_like(is_mask) < unmask_prob) & is_mask.bool()
+            # unmask = torch.rand_like(is_mask) < unmask_prob
+            # k = unmask.sum()
             # # unmask = unmask & False
             # # unmask[:,torch.topk(scores, k, dim=-1).indices] = True
-            # # at time t p(MASK | x0) = t, p(x0 | x0) = 1 - t
-            # # R(x0 -> MASK) = 1 / (1 - t)
-            # # going backwards R(MASK -> x0) = 1 / t
 
-            # remask_prob = self.cfg.sigma * np.sqrt(s / (1 - s)) * dt
-            # remask = (torch.rand_like(is_mask) < remask_prob) & ~is_mask.bool()
+            # rate = s
+            # unmask = ~topk_masking(scores, (128*rate*torch.ones(1, 1, device=logits.device)).long(), stochastic=True, temp=1.5 * rate)
+            # # # # at time t p(MASK | x0) = t, p(x0 | x0) = 1 - t
+            # # # # R(x0 -> MASK) = 1 / (1 - t)
+            # # # # going backwards R(MASK -> x0) = 1 / t
 
-            # # print(unmask_prob, remask_prob)
+            # # remask_prob = self.cfg.sigma * np.sqrt(s / (1 - s)) * dt
+            # # remask = (torch.rand_like(is_mask) < remask_prob) & ~is_mask.bool()
+
+            # # # # print(unmask_prob, remask_prob)
 
             
             # aatype = noisy_batch['aatype']
-            # aatype = torch.where(unmask, sample, aatype)
-            # aatype = torch.where(remask, 20, aatype)
+            # # # aatype = torch.where(unmask, sample, aatype)
+            # aatype = torch.where(unmask, sample, 20)
+            # # # aatype = torch.where(remask, 20, aatype)
             # noisy_batch['aatype'] = aatype
             
             # noise = noisy_batch["seq_noise"] 
@@ -335,7 +347,7 @@ class SequenceGenerationEval(OpenProtEval):
             #     noisy_batch["aatype"][:, i] = Categorical(logits=logits[:,i] / self.cfg.temp).sample()
             # noisy_batch["seq_noise"][:, i] = 0.0
             seq = "".join([rc.restypes_with_x[aa] for aa in noisy_batch["aatype"][0]])
-            # print(seq.replace('X', '-'))
+            print(seq.replace('X', '-'))
             
 
         seq = "".join([rc.restypes_with_x[aa] for aa in noisy_batch["aatype"][0]])

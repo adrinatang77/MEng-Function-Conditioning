@@ -6,6 +6,7 @@ from abc import abstractmethod
 from ..utils.misc_utils import autoimport
 import os
 from ..tracks.manager import OpenProtTrackManager
+from ..utils import residue_constants as rc
 
 # from ..evals.manager import OpenProtEvalManager
 
@@ -42,16 +43,16 @@ class Wrapper(pl.LightningModule):
     def on_validation_epoch_end(self):
         self._logger.epoch_end(self.trainer, prefix="val")
 
-    # uncomment this to debug
-    def on_before_optimizer_step(self, optimizer):
-        quit = False
-        for name, p in self.model.named_parameters():
-            if p.requires_grad and p.grad is None:
-                print(name, "has no grad")
-                quit = True
+    # # uncomment this to debug
+    # def on_before_optimizer_step(self, optimizer):
+    #     quit = False
+    #     for name, p in self.model.named_parameters():
+    #         if p.requires_grad and p.grad is None:
+    #             print(name, "has no grad")
+    #             quit = True
 
-        if quit:
-            exit()
+    #     if quit:
+    #         exit()
 
     def configure_optimizers(self):
         cls = getattr(torch.optim, self.cfg.optimizer.type)
@@ -97,12 +98,22 @@ class OpenProtWrapper(Wrapper):
     def __init__(self, cfg, tracks: OpenProtTrackManager, evals: dict):
         super().__init__(cfg)
         self.model = OpenProtModel(cfg.model)
+
+        from byprot.models.lm.dplm import DiffusionProteinLanguageModel
+        os.environ['HF_HOME'] = "/scratch/10165/bjing"
+        self.dplm = DiffusionProteinLanguageModel.from_pretrained("airkingbd/dplm_150m")
+
+        
         self.tracks = tracks
 
         tracks.add_modules(self.model)
 
         self.evals = evals
 
+        
+        
+
+        
     def transfer_batch_to_device(self, batch, device, dataloader_idx):
         return batch.to(device)
 
@@ -111,15 +122,32 @@ class OpenProtWrapper(Wrapper):
             return param_group["lr"]
 
     def forward(self, noisy_batch):
+        
+        
+        ours_to_dplm = [self.dplm.tokenizer._token_to_id[c] for c in rc.restypes] + [32]
+        
+        inp = torch.tensor(ours_to_dplm).cuda()[noisy_batch['aatype']]
+        inp = torch.where(noisy_batch['pad_mask'].bool(), inp, self.dplm.tokenizer._token_to_id["<pad>"])
+        B, L = inp.shape
+        inp_ = inp.new_zeros(B, L+2)
+        inp_[:,0] = self.dplm.tokenizer._token_to_id["<cls>"]
+        inp_[:,-1] = self.dplm.tokenizer._token_to_id["<eos>"]
+        inp_[:,1:-1] = inp
 
-        ## embed the tracks into an input dict
-        inp = self.tracks.embed(self.model, noisy_batch)
+        out = None
+        readout = {}
+        logits = self.dplm.net(input_ids=inp_)['logits'][:,1:-1]
+        readout['aatype'] = logits[:,:,torch.tensor(ours_to_dplm).cuda()]
+        return out, readout
+        
+        # ## embed the tracks into an input dict
+        # inp = self.tracks.embed(self.model, noisy_batch)
 
-        ## run it thorugh the model
-        out = self.model(inp)
+        # ## run it thorugh the model
+        # out = self.model(inp)
 
-        ## place the readouts in a dict
-        readout = self.tracks.readout(self.model, inp, out)
+        # ## place the readouts in a dict
+        # readout = self.tracks.readout(self.model, inp, out)
 
         return out, readout
 

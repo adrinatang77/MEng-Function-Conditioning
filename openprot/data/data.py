@@ -65,6 +65,8 @@ class OpenProtData(dict):
                 # special attribute
                 if key == "seqres":
                     self[key] = self[key][start:end]
+                    # with open("seqres.dump", "a") as f:
+                    #     f.write(self[key] + '\n')
 
                 # non-array attribute
                 elif type(self[key]) not in [torch.Tensor, np.ndarray]:
