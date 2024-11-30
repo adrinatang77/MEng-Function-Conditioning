@@ -1,6 +1,6 @@
 ckpt: null # 
 pretrained: workdir/unmasking-150m-beta13/last.ckpt #  load weights from here first
-validate: false # if true, only validate the model, don't train
+validate: true # if true, only validate the model, don't train
 logger:
     # set to true to log to neptune.ai
     neptune: false
@@ -8,9 +8,10 @@ logger:
     # please change "test" to something unique to your task
     project: openprot/struct-merge
     # will log to workdir and neptune.ai with this name
-    name: unmasking-150m+denoise
+    # name: unmasking-150m+mlm
+    name: unmasking-150m-eval-twostage
     # if not null, will duplicate stdout and stderr to workdir/{name}/{logfile}
-    logfile: false
+    logfile: std.out
     # if null, will log every epoch, otherwise every this number of steps
     train_log_freq: 100
     val_log_freq: null 
@@ -21,7 +22,7 @@ trainer:
     devices: 1
     max_epochs: 1
     max_steps: 1000000
-    enable_progress_bar: false
+    enable_progress_bar: true
     limit_train_batches: 1.0
     limit_val_batches: 1.0
     num_sanity_val_steps: 0
@@ -180,19 +181,52 @@ evals:
     #     strategy: unmask
     #     unmask_order: random
     #     temp: 1.0
-    seq_gen_dplm:
+    # seq_gen_dplm_remask10_temp1: # 61.70931306564199
+    #     type: SequenceGenerationEval
+    #     num_samples: 100
+    #     sample_length: 128
+    #     temp: 1.0
+    #     steps: 128
+    #     remask: 10
+    #     topk_temp: 1.0
+    # seq_gen_dplm_remask5_temp1: # 61.74950329322648
+    #     type: SequenceGenerationEval
+    #     num_samples: 100
+    #     sample_length: 128
+    #     temp: 1.0
+    #     steps: 128
+    #     remask: 5
+    #     topk_temp: 1.0
+    # seq_gen_dplm_remask3_temp1: # 62.37859237947026
+    #     type: SequenceGenerationEval
+    #     num_samples: 100
+    #     sample_length: 128
+    #     temp: 1.0
+    #     steps: 128
+    #     remask: 3
+    #     topk_temp: 1.0
+    # seq_gen_dplm_remask1_temp1: # 60.35578393848955
+    #     type: SequenceGenerationEval
+    #     num_samples: 100
+    #     sample_length: 128
+    #     temp: 1.0
+    #     steps: 128
+    #     remask: 1
+    #     topk_temp: 1.0
+    seq_gen_dplm: 
         type: SequenceGenerationEval
         num_samples: 100
-        sample_length: 128
-        # strategy: unmask
-        # unmask_order: purity
-        temp: 1.0
-        # gumbel: true
+        sample_length: 256
         steps: 128
-        sigma: 3.0
-        # churn_temp: 0.5
-    
-
+        strategy: two_stage
+        logits: standard
+        remask: 10
+        end: 0.5
+        cutoff: 0.5
+        temp_anneal: true
+        topk_anneal: false
+        gumbel: 20
+        
 tracks:
     # register tracks here
     # StructureTrack: 
@@ -286,9 +320,13 @@ model: # custom args
 optimizer:
     type: AdamW
     lr: 3e-5
+    betas: [0.9, 0.98]
+    eps: 1e-8
+    weight_decay: 0.01
+    fused: true
     scheduler: 
         total_steps: 1000000
-        warmup_steps: 1000
+        warmup_steps: 2000
         start_decay: 10000
         end_factor: 1.00
         

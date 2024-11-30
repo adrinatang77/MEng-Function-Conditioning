@@ -10,24 +10,17 @@ import math
 import torch.nn.functional as F
 import subprocess
 from torch.distributions.categorical import Categorical
+from biopandas.pdb import PandasPdb
 
-def topk_masking(scores, cutoff_len, stochastic=False, temp=1.0):
-    """
-    scores: [b, n]
-    cutoff_len: [b, 1]
-    stochastic: bool, whether to add noise to select top_k or not
-    returns:
-        mask: [b, n], with 1 if the token is in top-k lowest scores, 0 otherwise
-    """
-    if stochastic:
-        gumbel_noise = -torch.log(-torch.log(torch.rand_like(scores) + 1e-8) + 1e-8)
-        _scores = scores + temp * gumbel_noise
-    else:
-        _scores = scores
-    sorted_index = _scores.sort(-1)[0]
-    cutoff = sorted_index.gather(dim=-1, index=cutoff_len)
-    masking = _scores < cutoff
-    return masking
+def topk_masking(scores, k, mask=None, temp=1.0):
+    gumbel = -torch.log(-torch.log(torch.rand_like(scores) + 1e-8) + 1e-8)
+    scores = scores + temp * gumbel
+    if mask is not None:
+        scores = torch.where(mask, scores, -np.inf) 
+    new = torch.zeros_like(scores).bool()
+    new[...,torch.topk(scores, k, dim=-1).indices] = True
+    return new
+    
 class SequenceGenerationEval(OpenProtEval):
     def setup(self):
         pass
@@ -48,33 +41,41 @@ class SequenceGenerationEval(OpenProtEval):
         )
         return data
 
+    def compute_sequence_entropy(self, seq):
+        p = np.zeros(20)
+        for s in seq:
+            p[rc.restype_order[s]] += 1
+        p /= p.sum()
+        return np.e ** (-np.nansum(p * np.log(p)))
+
     def compute_metrics(
         self, rank=0, world_size=1, device=None, savedir=".", logger=None
     ):
         torch.cuda.empty_cache()
-        
+        ## WORKS FOR SINGLE RANK ONLY AT THE MOMENT
         ## distributed designability
         idx = list(range(rank, self.cfg.num_samples, world_size))
-        
+        os.makedirs(f"{savedir}/rank{rank}", exist_ok=True)
         for i in idx:
-            seq = list(open(f"{savedir}/sample{i}.fasta"))[1].strip()
-            cmd = [
-                "bash",
-                "scripts/switch_conda_env.sh",
-                "python",
-                "-m",
-                "scripts.esmfold",
-                seq,
-                f"{savedir}/sample{i}.pdb",
-            ]
-            out = subprocess.run(
-                cmd,
-                capture_output = True, # Python >= 3.7 only
-                text = True
-            )  # env=os.environ | {"CUDA_VISIBLE_DEVICES")
+            cmd = ['cp', f"{savedir}/sample{i}.fasta", f"{savedir}/rank{rank}"]
+            subprocess.run(cmd)
             
+        cmd = [
+            "bash",
+            "scripts/switch_conda_env.sh",
+            "python",
+            "-m",
+            "scripts.esmfold",
+            "--outdir",
+            savedir,
+            "--dir",
+            f"{savedir}/rank{rank}",
+        ]
+        out = subprocess.run(cmd)  
+        for i in idx:
+            plddt = PandasPdb().read_pdb(f"{savedir}/sample{i}.pdb").df['ATOM']['b_factor'].mean()
             if logger is not None:
-                logger.log(f"{self.cfg.name}/plddt", float(out.stdout.split()[-1]))
+                logger.log(f"{self.cfg.name}/plddt", plddt)
 
 
     def run_batch(self, model, batch: dict, savedir=".", device=None, logger=None):
@@ -85,100 +86,123 @@ class SequenceGenerationEval(OpenProtEval):
             track.corrupt(batch, noisy_batch, {})
 
         L = len(batch["seqres"][0])
+
         
         
         mask = noisy_batch['seq_noise'].bool()
-        toks = noisy_batch['aatype'].clone()
-        scores = torch.zeros_like(noisy_batch['seq_noise'])
+        scores = torch.ones_like(noisy_batch['seq_noise']) * -np.inf
+        sched = np.linspace(1.0, 0, self.cfg.steps+1)
         
-        sched = np.linspace(0.99, 0, self.cfg.steps+1)
-        # for i in range(self.cfg.steps): 
         for t, s in zip(sched[:-1], sched[1:]): # t > s
-            dt = t - s
+                
+            num_mask = round(t * self.cfg.sample_length)
+            num_unmask = self.cfg.sample_length - num_mask
+            remask = min(self.cfg.remask, int(0.5*num_mask), num_unmask)
+
+            if self.cfg.temp_anneal:
+                temp = min(t/self.cfg.cutoff + (1-t/self.cfg.cutoff)*self.cfg.end, 1.0)
+            else:
+                temp = 1.0
+            
+            if self.cfg.topk_anneal:
+                gumbel_factor = min(t/self.cfg.cutoff + (1-t/self.cfg.cutoff)*self.cfg.end, 1.0)
+            else:
+                gumbel_factor = 1.0
+            if self.cfg.strategy == 'two_stage':
+                topk = topk_masking(scores, num_unmask - remask, noisy_batch['aatype'] != 20, temp=self.cfg.gumbel * gumbel_factor) 
+                noisy_batch['aatype'] = torch.where(topk, noisy_batch['aatype'], 20)
+                scores = torch.where(topk, scores, -np.inf)
             
             _, out = model.forward(noisy_batch)
-            logits = out['aatype'] 
+            logits = out['aatype'] / temp
+            if self.cfg.logits == 'standard':
+                sample_ = Categorical(logits=logits).sample()
+                scores_ = Categorical(logits=logits).log_prob(sample_)
+            elif self.cfg.logits == 'gumbel':
+                gumbel_noise = -torch.log(-torch.log(torch.rand_like(logits) + 1e-8) + 1e-8)
+                logits = logits + gumbel_noise
+                scores_, sample_ = logits.log_softmax(dim=-1).max(dim=-1) # softmax AFTER gumbel!
 
-            # mask, toks, scores = self.dplm_sample(logits, mask, toks, scores, step=i, max_iter=self.cfg.steps)             
-            # noisy_batch['aatype'] = toks
-            # noisy_batch['seq_noise'] = mask.float()
-
-            gumbel_noise = -torch.log(-torch.log(torch.rand_like(logits) + 1e-8) + 1e-8)
-            logits = logits + gumbel_noise
-            scores, sample = logits.log_softmax(dim=-1).max(dim=-1) # softmax AFTER gumbel!
+            new_num_mask = round(s * self.cfg.sample_length)
+            if self.cfg.strategy == 'one_stage':            
+                topk = (  
+                    topk_masking(scores, num_unmask - remask, ~mask, temp=self.cfg.gumbel * gumbel_factor) | 
+                    topk_masking(scores_, remask+(num_mask - new_num_mask), mask, temp=self.cfg.gumbel * gumbel_factor) 
+                )
+            elif self.cfg.strategy == 'two_stage':
+                topk = topk_masking(
+                    scores_,
+                    remask+(num_mask - new_num_mask), 
+                    noisy_batch['aatype'] == 20,
+                    temp=self.cfg.gumbel * gumbel_factor
+                )
+            elif self.cfg.strategy == 'dplm':
+                topk = topk_masking(scores_, self.cfg.sample_length - new_num_mask, temp=0.0)
+            elif self.cfg.strategy == 'dplm_custom':
+                gumbel = -torch.log(-torch.log(torch.rand_like(scores) + 1e-8) + 1e-8)
+                topk = topk_masking(
+                    torch.where(
+                        mask,
+                        scores_ + self.cfg.gumbel*gumbel * gumbel_factor, 
+                        scores+self.cfg.gumbel*gumbel * gumbel_factor
+                    ), 
+                    self.cfg.sample_length - new_num_mask, temp=0.0
+                )
+                
             
+            if self.cfg.strategy == 'two_stage':
+                noisy_batch['aatype'] = torch.where(topk, sample_, noisy_batch['aatype'])
+                scores = torch.where(topk, scores_, scores)
+            else:
+                noisy_batch['aatype'] = torch.where(
+                    topk, torch.where(mask, sample_, noisy_batch['aatype']), 20
+                )
+                
+                scores = torch.where(
+                    topk, torch.where(mask, scores_, scores), -np.inf
+                )
+                mask = ~topk
+
+            #### gumbel logits
+            # dplm 71.95978381529582
+            # +gumbel 51.759465084490145
+            # -0.75 44.87779806512229 (61)
+            # -0.0 47.44080854354403 (40)
+            # -inf 39.08901199273137 (45)
+            # -0.5 + gumbel 46.5057778487319 (44)
+
+            #### normal logits
+            #+4*gumbel, +4*gumbel 62.950148782852956 (30)
+            #+2*gumbel, +10*gumbel 64.92839980669494 (27)
             
-            # # scores[~is_mask.bool()] -= np.inf
-            # # unmask_prob = (1/t * dt) + self.cfg.sigma * np.sqrt((1-t) / t) * dt
-            # unmask_prob = 1 - t
-            # # unmask = (torch.rand_like(is_mask) < unmask_prob) & is_mask.bool()
-            # unmask = torch.rand_like(is_mask) < unmask_prob
-            # k = unmask.sum()
-            # # unmask = unmask & False
-            # # unmask[:,torch.topk(scores, k, dim=-1).indices] = True
-
-            rate = s
-            # rate = 1 - (step+1) / max_iter
-            cutoff_len = (rate * torch.ones_like(sample).sum(-1, keepdims=True)).long()
-            lowest_k_mask = topk_masking(scores, cutoff_len, stochastic=False) 
-            # lowest_k_mask = topk_masking(_scores_for_topk, cutoff_len, stochastic=True, temp=1.5 * rate)
-        
-            noisy_batch['aatype'] = torch.where(
-                ~lowest_k_mask, 
-                torch.where(mask, sample, noisy_batch['aatype']),
-                20
-            )
-            mask = lowest_k_mask
-
+            # for a, b, c, d in zip(
+            #     scores[~mask].flatten(), 
+            #     noisy_batch['aatype'][~mask].flatten(),
+            #     scores_[~mask].flatten(),
+            #     sample_[~mask].flatten()
+            # ):
+            #     f.write(f"{t},{a.item()},{b.item()},{c.item()},{d.item()}\n")
+            
+            # print(f"currently {mask.sum()} masked, unmasking {(mask & topk).sum()}, remasking {(~mask & ~topk).sum()}")
+            
                                      
             # # # # at time t p(MASK | x0) = t, p(x0 | x0) = 1 - t
             # # # # R(x0 -> MASK) = 1 / (1 - t)
             # # # # going backwards R(MASK -> x0) = 1 / t
-
-            # # remask_prob = self.cfg.sigma * np.sqrt(s / (1 - s)) * dt
-            # # remask = (torch.rand_like(is_mask) < remask_prob) & ~is_mask.bool()
-
-            # # # # print(unmask_prob, remask_prob)
-
-            
-            # aatype = noisy_batch['aatype']
-            # # # aatype = torch.where(unmask, sample, aatype)
-            # aatype = torch.where(unmask, sample, 20)
-            # # # aatype = torch.where(remask, 20, aatype)
-            # noisy_batch['aatype'] = aatype
-            
-            # noise = noisy_batch["seq_noise"] 
-            # noise = torch.where(unmask, 0.0, noise)
-            # noise = torch.where(remask, 1.0, noise)            
-            # noisy_batch['seq_noise'] = noise
-
             
             # Langevin mixing R(MASK -> x0) = \sqrt{1-t / t}
             # Langevin mixing R(x0 -> mask) = \sqrt{t / (1-t)}
             
-            # if self.cfg.gumbel:
-            #     rand = torch.rand_like(logits)
-            #     gumbel = -torch.log(-torch.log(rand))
-            #     logits += gumbel * self.cfg.temp
-                
-            # if self.cfg.unmask_order == "random":
-            #     i = np.random.choice(
-            #         torch.argwhere(noisy_batch["seq_noise"][0])[:, 0].cpu()
-            #     )
-            # elif self.cfg.unmask_order == "purity":    
-            #     i = torch.argmax(logits.max(-1)[0]).item()
-
-            # if self.cfg.gumbel:
-            #     noisy_batch["aatype"][:, i] = logits[:,i].argmax(-1)
-            # else:                                   
-            #     noisy_batch["aatype"][:, i] = Categorical(logits=logits[:,i] / self.cfg.temp).sample()
-            # noisy_batch["seq_noise"][:, i] = 0.0
-            seq = "".join([rc.restypes_with_x[aa] for aa in noisy_batch["aatype"][0]])
-            print(seq.replace('X', '-'))
+         
+            # seq = "".join([rc.restypes_with_x[aa] for aa in noisy_batch["aatype"][0]])
+            # print(seq.replace('X', '-'))
             
-
+       
         seq = "".join([rc.restypes_with_x[aa] for aa in noisy_batch["aatype"][0]])
-        print(seq.replace('X', '-'))
+        # print(seq)
+        if logger is not None:
+            logger.log(f"{self.cfg.name}/seqent", self.compute_sequence_entropy(seq))
+        
         with open(f"{savedir}/{batch['name'][0]}.fasta", "w") as f:
             f.write(f">{batch['name'][0]}\n")  # FASTA format header
             f.write(seq + "\n")
