@@ -42,9 +42,9 @@ class SequenceGenerationEval(OpenProtEval):
         return data
 
     def compute_sequence_entropy(self, seq):
-        p = np.zeros(20)
+        p = np.zeros(21)
         for s in seq:
-            p[rc.restype_order[s]] += 1
+            p[rc.restype_order_with_x[s]] += 1
         p /= p.sum()
         return np.e ** (-np.nansum(p * np.log(p)))
 
@@ -70,6 +70,7 @@ class SequenceGenerationEval(OpenProtEval):
             savedir,
             "--dir",
             f"{savedir}/rank{rank}",
+            "--print",
         ]
         out = subprocess.run(cmd)  
         for i in idx:
@@ -96,20 +97,25 @@ class SequenceGenerationEval(OpenProtEval):
         for t, s in zip(sched[:-1], sched[1:]): # t > s
                 
             num_mask = round(t * self.cfg.sample_length)
-            num_unmask = self.cfg.sample_length - num_mask
-            remask = min(self.cfg.remask, int(0.5*num_mask), num_unmask)
-
-            if self.cfg.temp_anneal:
-                temp = min(t/self.cfg.cutoff + (1-t/self.cfg.cutoff)*self.cfg.end, 1.0)
-            else:
-                temp = 1.0
             
-            if self.cfg.topk_anneal:
-                gumbel_factor = min(t/self.cfg.cutoff + (1-t/self.cfg.cutoff)*self.cfg.end, 1.0)
-            else:
-                gumbel_factor = 1.0
+            # num_unmask = self.cfg.sample_length - num_mask
+            # # remask = min(self.cfg.remask, int(0.5*num_mask), num_unmask)
+            # gumbel_factor = 1.0
+            
+            new_num_mask = round(s * self.cfg.sample_length)
+            
+
+            _, out = model.forward(noisy_batch)
+            logits = out['aatype']
+            sample = Categorical(logits=logits / self.cfg.temp).sample()
+            entropy = torch.nansum(logits.softmax(-1) * logits.log_softmax(-1), -1)
+            
+            topk = topk_masking(entropy, num_mask - new_num_mask, noisy_batch['aatype'] == 20, temp=0.0)
+            noisy_batch['aatype'] = torch.where(topk, sample, noisy_batch['aatype'])
+            """
+            
             if self.cfg.strategy == 'two_stage':
-                topk = topk_masking(scores, num_unmask - remask, noisy_batch['aatype'] != 20, temp=self.cfg.gumbel * gumbel_factor) 
+                topk = topk_masking(topk_factor, num_unmask - remask, noisy_batch['aatype'] != 20, temp=self.cfg.gumbel * gumbel_factor) 
                 noisy_batch['aatype'] = torch.where(topk, noisy_batch['aatype'], 20)
                 scores = torch.where(topk, scores, -np.inf)
             
@@ -192,14 +198,14 @@ class SequenceGenerationEval(OpenProtEval):
             
             # Langevin mixing R(MASK -> x0) = \sqrt{1-t / t}
             # Langevin mixing R(x0 -> mask) = \sqrt{t / (1-t)}
-            
+            """
          
             # seq = "".join([rc.restypes_with_x[aa] for aa in noisy_batch["aatype"][0]])
             # print(seq.replace('X', '-'))
             
        
         seq = "".join([rc.restypes_with_x[aa] for aa in noisy_batch["aatype"][0]])
-        # print(seq)
+        print(seq)
         if logger is not None:
             logger.log(f"{self.cfg.name}/seqent", self.compute_sequence_entropy(seq))
         

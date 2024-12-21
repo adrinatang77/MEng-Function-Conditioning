@@ -180,23 +180,31 @@ class SequenceTrack(OpenProtTrack):
         # keep this separate to avoid confusion
 
     def corrupt(self, batch, noisy_batch, target, logger=None):
+        eps = 1e-6
+        
         tokens = batch["aatype"]
         
         mask = batch["seq_noise"].bool() & batch["seq_mask"].bool()
 
-        rand = torch.rand(tokens.shape, device=tokens.device)
-        randaa = torch.randint(0, 20, tokens.shape, device=tokens.device)
-
-        inp = tokens
-        inp = torch.where((rand < 1.0) & mask, MASK_IDX, inp)
-        # inp = torch.where((rand > 0.9) & mask, randaa, inp)
-        
-        noisy_batch["aatype"] = inp
+        noisy_batch["aatype"] = torch.where(mask, MASK_IDX, tokens)
         noisy_batch["seq_noise"] = batch["seq_noise"]
 
         target["aatype"] = tokens
-        target["seq_supervise"] = mask
-        # target["denoise_seq_supervise"] = (batch["seq_noise"] == 0) * batch["seq_mask"]
+        
+        if self.cfg.loss_reweight == 'var':
+            t = mask.sum(-1) / (eps + batch['seq_mask'].sum(-1))
+            target["seq_supervise"] = mask / (eps + t[...,None])
+            
+        if self.cfg.loss_reweight == 'norm':
+            t = mask.sum(-1)
+            target["seq_supervise"] = mask / (eps + t[...,None])
+            
+        elif self.cfg.loss_reweight == 'linear':
+            t = mask.sum(-1) / (eps + batch['seq_mask'].sum(-1))
+            target["seq_supervise"] = mask * (1 - t[...,None])
+
+        else:
+            target["seq_supervise"] = mask    
         
         if logger:
             logger.masked_log("seq/toks", batch["seq_mask"], sum=True)

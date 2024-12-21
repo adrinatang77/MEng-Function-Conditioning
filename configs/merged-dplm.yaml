@@ -1,14 +1,14 @@
 ckpt: workdir/unmasking-150m-resume/last.ckpt # workdir/unmasking-150m-resume/last.ckpt # 
 pretrained: null  #  load weights from here first
-validate: true # if true, only validate the model, don't train
+validate: false # if true, only validate the model, don't train
 logger:
     # set to true to log to neptune.ai
-    neptune: false
+    neptune: true
     run_id: null # STRUC1-156
     # please change "test" to something unique to your task
     project: openprot/struct-merge
     # will log to workdir and neptune.ai with this name
-    name: unmasking-150m-eval
+    name: unmasking-150m-dplmlike
     # name: unmasking-150m-resume
     # if not null, will duplicate stdout and stderr to workdir/{name}/{logfile}
     logfile: std.out
@@ -22,7 +22,7 @@ trainer:
     devices: 1
     max_epochs: 1
     max_steps: 1000000
-    enable_progress_bar: true
+    enable_progress_bar: false
     limit_train_batches: 1.0
     limit_val_batches: 1.0
     num_sanity_val_steps: 0
@@ -86,10 +86,10 @@ datasets:
 tasks:
     SequenceUnmasking:
         fraction: 1.0
-        # beta: [1, 2]
-        # uniform_prob: 0.0
-        beta: [3, 9]
-        uniform_prob: 0.2 # (which is drawn from β(3, 9) with 80% probability and a linear distribution with 20% probability
+        beta: [1, 2]
+        uniform_prob: 1.0
+        # beta: [3, 9]
+        # uniform_prob: 0.2 # (which is drawn from β(3, 9) with 80% probability and a linear distribution with 20% probability
         seed: 137
         datasets:
             uniref:
@@ -217,13 +217,16 @@ evals:
     #     topk_temp: 1.0
     seq_gen_dplm: 
         type: SequenceGenerationEval
-        num_samples: 100
-        sample_length: 128
+        num_samples: 10
+        sample_length: 256
         steps: 128
         strategy: one_stage
-        logits: standard
-        remask: 0
-        temp: 0.7
+        logits: gumbel
+        remask: 10
+        end: 0.5
+        cutoff: 0.5
+        temp_anneal: true
+        topk_anneal: false
         gumbel: 20
         
 tracks:
@@ -273,7 +276,7 @@ tracks:
         rand_prob: 0.15
         denoise_weight: 0.1
         unmask_weight: 1.0
-        loss_reweight: var
+        loss_reweight: linear
 
 model: # custom args
     checkpoint: true

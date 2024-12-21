@@ -12,6 +12,7 @@ parser.add_argument('--outpdb', type=str, default='tmp')
 parser.add_argument('--outdir', type=str, default='/tmp')
 parser.add_argument('--fasta', type=str, default=None)
 parser.add_argument('--dir', type=str, default=None)
+parser.add_argument('--print', action='store_true')
 args = parser.parse_args()
 
 print(args)
@@ -49,6 +50,7 @@ with torch.no_grad():
         from biopandas.pdb import PandasPdb
         plddt = PandasPdb().read_pdb(f"{args.outdir}/{name}.pdb").df['ATOM']['b_factor'].mean()
         res.append(plddt)
-        # print(seq, plddt, np.mean(res), flush=True)
+        if args.print:
+            print(seq, plddt, np.mean(res), flush=True)
         
-# print(np.mean(res))
+if args.print: print(np.mean(res))
