@@ -1,17 +1,17 @@
-ckpt: workdir/unmasking-150m-resume/last.ckpt # workdir/unmasking-150m-resume/last.ckpt # 
+ckpt: null # workdir/invfold-1e3-relpos-256-bs4+afdb/last.ckpt # 
 pretrained: null  #  load weights from here first
-validate: true # if true, only validate the model, don't train
+validate: false # if true, only validate the model, don't train
 logger:
     # set to true to log to neptune.ai
-    neptune: false
-    run_id: null # STRUC1-156
+    neptune: true
+    run_id: null 
     # please change "test" to something unique to your task
     project: openprot/struct-merge
     # will log to workdir and neptune.ai with this name
-    name: unmasking-150m-eval
+    name: 1e3-relpos-384-bs4+afdb # invfold-1e3-relpos-256-bs4
     # name: unmasking-150m-resume
     # if not null, will duplicate stdout and stderr to workdir/{name}/{logfile}
-    logfile: std.out
+    logfile: null # std.out
     # if null, will log every epoch, otherwise every this number of steps
     train_log_freq: 100
     val_log_freq: null 
@@ -28,7 +28,7 @@ trainer:
     num_sanity_val_steps: 0
     gradient_clip_val: 1.0
     accumulate_grad_batches: 1
-    val_check_interval: 50000000
+    val_check_interval: 20000
     check_val_every_n_epoch: 1
     logger: false
 
@@ -36,7 +36,7 @@ trainer:
 data: 
     num_workers: 8
     batch: 32
-    crop: 512
+    crop: 256
     seed: 137
 
 # These are the raw features which are expected to be supplied by the Datasets
@@ -76,7 +76,7 @@ datasets:
         path: /scratch/projects/cgai/openprot/data/afdb_rep_v4/afdb_rep_v4
         annotations: /scratch/projects/cgai/openprot/data/afdb_rep_v4.pkl.gz
         blacklist: /scratch/projects/cgai/openprot/cameo_afdb_blacklist.tsv
-        plddt_thresh: 70
+        plddt_thresh: 80
         index: null
     uniref:
         type: UnirefDataset
@@ -84,18 +84,33 @@ datasets:
         index: /scratch/projects/cgai/openprot/data/uniref50.index  
 
 tasks:
-    SequenceUnmasking:
+    InverseFolding:
         fraction: 1.0
-        # beta: [1, 2]
-        # uniform_prob: 0.0
-        beta: [3, 9]
-        uniform_prob: 0.2 # (which is drawn from β(3, 9) with 80% probability and a linear distribution with 20% probability
+        beta: [1, 2]
+        uniform_prob: 1.0
         seed: 137
+        random_rot: true
         datasets:
-            uniref:
-                fraction: 1.0
+            pdb:
+                fraction: 0.25
                 start: 0
-                seed: 678
+                seed: 37
+            afdb:
+                fraction: 0.75
+                start: 0
+                seed: 37  
+    # SequenceUnmasking: # make it impossible to predict X
+    #     fraction: 0.0
+    #     # beta: [1, 2]
+    #     # uniform_prob: 0.0
+    #     beta: [3, 9]
+    #     uniform_prob: 0.2 
+    #     seed: 137
+    #     datasets:
+    #         uniref:
+    #             fraction: 1.0
+    #             start: 0
+    #             seed: 678
     # SequenceDenoising:
     #     fraction: 0.0
     #     seed: 137
@@ -176,113 +191,58 @@ evals:
     #     sde_cutoff_time: 0.0
     #     sde_cutoff_width: 0.00001
     #     run_designability: true
-    # seq_gen_unmask_random_1.0:
+    # seq_gen_dplm: 
     #     type: SequenceGenerationEval
     #     num_samples: 100
     #     sample_length: 128
-    #     strategy: unmask
-    #     unmask_order: random
-    #     temp: 1.0
-    # seq_gen_dplm_remask10_temp1: # 61.70931306564199
-    #     type: SequenceGenerationEval
-    #     num_samples: 100
-    #     sample_length: 128
-    #     temp: 1.0
     #     steps: 128
-    #     remask: 10
-    #     topk_temp: 1.0
-    # seq_gen_dplm_remask5_temp1: # 61.74950329322648
-    #     type: SequenceGenerationEval
-    #     num_samples: 100
-    #     sample_length: 128
-    #     temp: 1.0
-    #     steps: 128
-    #     remask: 5
-    #     topk_temp: 1.0
-    # seq_gen_dplm_remask3_temp1: # 62.37859237947026
-    #     type: SequenceGenerationEval
-    #     num_samples: 100
-    #     sample_length: 128
-    #     temp: 1.0
-    #     steps: 128
-    #     remask: 3
-    #     topk_temp: 1.0
-    # seq_gen_dplm_remask1_temp1: # 60.35578393848955
-    #     type: SequenceGenerationEval
-    #     num_samples: 100
-    #     sample_length: 128
-    #     temp: 1.0
-    #     steps: 128
-    #     remask: 1
-    #     topk_temp: 1.0
-    seq_gen_dplm: 
-        type: SequenceGenerationEval
-        num_samples: 100
-        sample_length: 128
-        steps: 128
-        strategy: one_stage
-        logits: standard
-        remask: 0
-        temp: 0.7
-        gumbel: 20
+    #     temp: 0.7
+    cameo22_invfold:
+        type: InverseFoldingEval
+        path: ./cameo
+        split: splits/cameo2022.csv
+        temp: 0.1
         
+        # order: random
 tracks:
     # register tracks here
-    # StructureTrack: 
-    #     loss_weight: 1.0
-    #     readout_pairwise: true
-        
-    #     embed_trans: edm
-    #     embed_t: false
-    #     readout_trans: true
-    #     int_loss_weight: 0.5
-    #     multiply_out: 15.0
-        
-    #     rot_augment: 1
-    #     embed_pairwise: false
-    #     struct_module: true
-        
-    #     clamp_pade: false
-    #     clamp_nape: true
-    #     clamp_mse: false
-    #     nape_cutoff: 15
-    #     losses:
-    #         pade: 0.1
-    #         lddt: 1.0
-    #         distogram: 0.3
-    #         mse: 0.001
-    #         # nape: 0.0
-    #         diffusion: 1.0
-    #     diffusion:
-    #         # type: GaussianFM
-    #         # prior_sigma: 15.0
-    #         # center_noise: true
-    #         # center_pos: true
-    #         # train_align: false
-    #         # inf_align: false
-    #         # prediction: "velocity"
-    #         type: EDMDiffusion
-    #         sched_p: 7
-    #         data_sigma: 15
-    #         sigma_max: 160
+    StructureTrack: 
+        loss_weight: 0.0
+        readout_pairwise: true
+        embed_trans: null
+        embed_t: false
+        # trunk or sm
+        readout_trans: trunk
+        postcondition: true
+        int_loss_weight: 0.5
+        postcond_before_relpos: true
+        embed_pairwise: false
+        losses:
+            lddt: 1.0
+            distogram: 0.3
+            mse: 0.225
+        diffusion:
+            type: EDMDiffusion
+            sched_p: 7
+            data_sigma: 15
+            sigma_max: 2000
+            sigma_min: 0.05
+            aligned_loss: true
     SequenceTrack:
         esm: null # esm2_3B # esm2_650M # esm2_8M_270K
         loss_weight: 1.0 
-        rate_matrix_path: ./openprot/uniform.csv
         embed_t: false
-        rand_prob: 0.15
-        denoise_weight: 0.1
-        unmask_weight: 1.0
         loss_reweight: var
 
 model: # custom args
     checkpoint: true
-    dim: 640
+    dim: 384 # 640
     pairwise_dim: 128
-    heads: 20
+    heads: 4 # 20
     pairwise_heads: 4
-    blocks: 30
-    
+    blocks: 12 # 30
+
+    relpos: true
     # topology of the network
     pair_blocks:
         start: 0
@@ -319,7 +279,7 @@ model: # custom args
 
 optimizer:
     type: AdamW
-    lr: 3e-5
+    lr: 1e-3
     betas: [0.9, 0.98]
     eps: 1e-8
     weight_decay: 0.01

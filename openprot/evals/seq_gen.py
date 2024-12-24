@@ -52,8 +52,7 @@ class SequenceGenerationEval(OpenProtEval):
         self, rank=0, world_size=1, device=None, savedir=".", logger=None
     ):
         torch.cuda.empty_cache()
-        ## WORKS FOR SINGLE RANK ONLY AT THE MOMENT
-        ## distributed designability
+
         idx = list(range(rank, self.cfg.num_samples, world_size))
         os.makedirs(f"{savedir}/rank{rank}", exist_ok=True)
         for i in idx:
@@ -70,7 +69,7 @@ class SequenceGenerationEval(OpenProtEval):
             savedir,
             "--dir",
             f"{savedir}/rank{rank}",
-            "--print",
+            # "--print",
         ]
         out = subprocess.run(cmd)  
         for i in idx:

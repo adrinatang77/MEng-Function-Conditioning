@@ -63,9 +63,10 @@ esm_registry = {
 class SequenceTrack(OpenProtTrack):
 
     def setup(self):
-        rate_matrix = pd.read_csv(self.cfg.rate_matrix_path, index_col=0)
-        flow = torch.from_numpy(rate_matrix.values).float()
-        self.flow = flow[:-1, :-1]
+        # rate_matrix = pd.read_csv(self.cfg.rate_matrix_path, index_col=0)
+        # flow = torch.from_numpy(rate_matrix.values).float()
+        # self.flow = flow[:-1, :-1]
+        pass
 
     def tokenize(self, data):
 
@@ -228,15 +229,16 @@ class SequenceTrack(OpenProtTrack):
             esm_s = (model.esm_s_combine.softmax(0).unsqueeze(0) @ esm_s).squeeze(2)
             inp["x"] += model.esm_s_mlp(esm_s)
 
-        inp["x"] = model.seq_embed(batch["aatype"])
+        inp["x"] += model.seq_embed(batch["aatype"])
         if self.cfg.embed_t:
             t_emb = sinusoidal_embedding(
                 batch["seq_noise"], model.cfg.dim // 2, 1, 0.01
             )
             inp["x"] += torch.where(batch["aatype"] != MASK_IDX, noise_embed, 0.0)
 
-    def predict(self, model, inp, out, readout):
+    def predict(self, model, inp, out, readout, inf=1e6):
         readout["aatype"] = model.seq_out(out["x"])
+        readout["aatype"][...,-1] = -inf # ban X
 
     def compute_loss(self, readout, target, logger=None, eps=1e-6, **kwargs):
         loss = torch.nn.functional.cross_entropy(

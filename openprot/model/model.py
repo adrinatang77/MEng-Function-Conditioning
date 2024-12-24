@@ -398,6 +398,8 @@ class OpenProtModel(nn.Module):
                     adaLN=cfg.trunk_adaLN,
                     pairwise_dim=cfg.pairwise_dim,
                     pair_bias=cfg.block_pair_bias,
+                    relpos_attn=cfg.relpos,
+                    relpos_values=cfg.relpos,
                     **(pair_args if i in pair_block_idx else {}),
                 )
             )

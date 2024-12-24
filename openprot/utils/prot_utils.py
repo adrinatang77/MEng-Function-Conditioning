@@ -8,6 +8,8 @@ import numpy as np
 def seqres_to_aatype(seq):
     return [rc.restype_order.get(c, rc.unk_restype_index) for c in seq]
 
+def aatype_to_seqres(aatype):
+    return "".join([rc.restypes_with_x[c] for c in aatype])
 
 def write_ca_traj(prot, traj):
     strs = []

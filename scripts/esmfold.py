@@ -42,6 +42,7 @@ if args.dir:
 # print(seqs)
 with torch.no_grad():
     for seq, name in tqdm.tqdm(zip(seqs, names), total=len(seqs)):
+        
         output = model.infer_pdb(seq)
 
         with open(f"{args.outdir}/{name}.pdb", "w") as f:

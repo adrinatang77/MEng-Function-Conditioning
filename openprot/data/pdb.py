@@ -2,7 +2,7 @@ import torch
 import numpy as np
 import pandas as pd
 from .data import OpenProtDataset
-
+from ..utils import residue_constants as rc
 
 class PDBDataset(OpenProtDataset):
 
@@ -58,10 +58,14 @@ class PDBDataset(OpenProtDataset):
             np.load(f"{self.cfg.path}/{name[1:3]}/{name}.npz", allow_pickle=True)
         )
         seqres = self.df.seqres[name]
+
+        seq_mask = np.ones(len(seqres), dtype=np.float32)
+        seq_mask[[c not in rc.restype_order for c in seqres]] = 0
+        
         return self.make_data(
             name=name,
             seqres=seqres,
-            seq_mask=np.ones(len(seqres)),
+            seq_mask=seq_mask,
             atom37=prot["all_atom_positions"],
             atom37_mask=prot["all_atom_mask"],
         )
