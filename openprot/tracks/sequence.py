@@ -185,7 +185,8 @@ class SequenceTrack(OpenProtTrack):
         
         tokens = batch["aatype"]
         
-        mask = batch["seq_noise"].bool() & batch["seq_mask"].bool()
+        mask = batch["seq_noise"].bool() | ~batch["seq_mask"].bool()
+        sup = batch["seq_noise"].bool() & batch["seq_mask"].bool()
 
         noisy_batch["aatype"] = torch.where(mask, MASK_IDX, tokens)
         noisy_batch["seq_noise"] = batch["seq_noise"]
@@ -194,18 +195,18 @@ class SequenceTrack(OpenProtTrack):
         
         if self.cfg.loss_reweight == 'var':
             t = mask.sum(-1) / (eps + batch['seq_mask'].sum(-1))
-            target["seq_supervise"] = mask / (eps + t[...,None])
+            target["seq_supervise"] = sup / (eps + t[...,None])
             
         if self.cfg.loss_reweight == 'norm':
             t = mask.sum(-1)
-            target["seq_supervise"] = mask / (eps + t[...,None])
+            target["seq_supervise"] = sup / (eps + t[...,None])
             
         elif self.cfg.loss_reweight == 'linear':
             t = mask.sum(-1) / (eps + batch['seq_mask'].sum(-1))
-            target["seq_supervise"] = mask * (1 - t[...,None])
+            target["seq_supervise"] = sup * (1 - t[...,None])
 
         else:
-            target["seq_supervise"] = mask    
+            target["seq_supervise"] = sup    
         
         if logger:
             logger.masked_log("seq/toks", batch["seq_mask"], sum=True)

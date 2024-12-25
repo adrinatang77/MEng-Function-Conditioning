@@ -15,7 +15,7 @@ class StructureGeneration(OpenProtTask):
             data.crop(crop)
 
         ## noise EVERYTHING
-        elif np.random.rand() < self.cfg.uniform_prob:
+        if np.random.rand() < self.cfg.uniform_prob:
             noise_level = np.random.rand()
         else:
             noise_level = np.random.beta(*self.cfg.beta)
