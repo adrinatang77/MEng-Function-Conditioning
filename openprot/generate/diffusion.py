@@ -143,17 +143,19 @@ class GaussianFM(Diffusion):
 class EDMDiffusion(Diffusion):
 
     def get_sigma(self, t):
-        p = self.cfg.sched_p
-        return (
-            self.cfg.sigma_min ** (1 / p)
-            + t * (self.cfg.sigma_max ** (1 / p) - self.cfg.sigma_min ** (1 / p))
-        ) ** p
+        return t 
+        
+    #     p = self.cfg.sched_p
+    #     return (
+    #         self.cfg.sigma_min ** (1 / p)
+    #         + t * (self.cfg.sigma_max ** (1 / p) - self.cfg.sigma_min ** (1 / p))
+    #     ) ** p
 
-    def sigma_to_t(self, sigma):
-        p = self.cfg.sched_p
-        num = sigma ** (1 / p) - self.cfg.sigma_min ** (1 / p)
-        denom = self.cfg.sigma_max ** (1 / p) - self.cfg.sigma_min ** (1 / p)
-        return num / denom
+    # def sigma_to_t(self, sigma):
+    #     p = self.cfg.sched_p
+    #     num = sigma ** (1 / p) - self.cfg.sigma_min ** (1 / p)
+    #     denom = self.cfg.sigma_max ** (1 / p) - self.cfg.sigma_min ** (1 / p)
+    #     return num / denom
 
     def add_noise(self, pos, t, mask=None):
 
@@ -206,10 +208,16 @@ class EDMDiffusion(Diffusion):
             if mask is not None:
                 shape = list(mask.shape) + [3]
                 device = mask.device
-            x = torch.randn(shape, device=device) * self.cfg.sigma_max
+            x = torch.randn(shape, device=device) * cfg.sigma_max
 
         out = [x]
-        sched = self.get_sigma(np.linspace(1, 0, cfg.nsteps + 1))
+        
+        p = cfg.sched_p
+        sched = np.linspace(1, 0, cfg.nsteps + 1)
+        sched = (
+            cfg.sigma_min ** (1 / p)
+            + sched * (cfg.sigma_max ** (1 / p) - cfg.sigma_min ** (1 / p))
+        ) ** p
 
         # dx = g(t) dw with g(t) = \sqrt{ (d/dt) sigma^2 } = \sqrt{ 2\dot\sigma \sigma}
         # with t = \sigma this is just \sqrt{2t}
@@ -220,7 +228,7 @@ class EDMDiffusion(Diffusion):
             dt = t2 - t1
             g = np.sqrt(2 * t2)
 
-            x0 = model(x, self.sigma_to_t(t2))
+            x0 = model(x, t2)
 
             preds.append(x0)
             s = (x0 - x) / t2**2  # score

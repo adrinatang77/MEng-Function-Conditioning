@@ -14,7 +14,7 @@ from ..utils.rotation_conversions import axis_angle_to_matrix, random_rotations
 from ..utils.rigid_utils import Rigid, Rotation
 from ..utils import residue_constants as rc
 from ..model.positions import PositionEmbedder, PositionDecoder, PairwiseProjectionHead
-from ..utils import diffusion
+from ..generate import diffusion
 from functools import partial
 import numpy as np
 import math
@@ -116,8 +116,6 @@ class StructureTrack(OpenProtTrack):
             model.trans_out = nn.Sequential(
                 nn.LayerNorm(model.cfg.dim), nn.Linear(model.cfg.dim, 3)
             )
-        if self.cfg.embed_t:
-            model.linear_t = nn.Linear(model.cfg.dim, model.cfg.dim)
 
     def corrupt(self, batch, noisy_batch, target, logger=None):
 
@@ -143,15 +141,6 @@ class StructureTrack(OpenProtTrack):
 
         dev = batch["frame_trans"].device
         B, L, _ = batch["frame_trans"].shape
-
-        # if self.cfg.rot_augment > 1:
-        #     randrots = random_rotations(self.cfg.rot_augment, device=dev)
-        #     noisy_batch["frame_trans"] = torch.einsum(
-        #         "rij,blj->rbli", randrots, noisy_batch["frame_trans"]
-        #     )
-        #     target["frame_trans"] = torch.einsum(
-        #         "rij,blj->rbli", randrots, target["frame_trans"]
-        #     )
 
         # placeholder
         noisy_batch["frame_rots"] = torch.eye(3, device=dev).expand(B, L, 3, 3)
@@ -187,14 +176,13 @@ class StructureTrack(OpenProtTrack):
             model.frame_mask[None, None],
         )
 
+        t_emb = batch['trans_noise'] ** (1/self.cfg.t_emb_p)
+        t_emb = t_emb / self.cfg.t_emb_max ** (1/self.cfg.t_emb_p)
         t_emb = sinusoidal_embedding(
             batch["trans_noise"], model.cfg.dim // 2, 1, 0.01
         ).float()
         inp["x_cond"] += t_emb
-        if self.cfg.embed_t:
-            inp["x"] = inp["x"] + model.linear_t(t_emb)
 
-        inp["trans_noise"] = batch["trans_noise"]  # need this for the postconditioning
 
         if self.cfg.embed_pairwise:
             dmat = inp["trans"][..., None, :, :] - inp["trans"][..., None, :]
@@ -202,10 +190,10 @@ class StructureTrack(OpenProtTrack):
             inp["z"] = inp.get("z", 0) + model.pairwise_in(
                 sinusoidal_embedding(dmat, model.cfg.pairwise_dim // 2, 100, 1)
             )
-        if self.cfg.postcond_before_relpos:
-            inp["postcond_fn"] = lambda trans: self.diffusion.postcondition(
-                inp["trans"], trans, inp["trans_noise"]
-            )
+        
+        inp["postcond_fn"] = lambda trans: self.diffusion.postcondition(
+            inp["trans"], trans, batch["trans_noise"]
+        )
 
     def predict(self, model, inp, out, readout):
         if self.cfg.readout_trans == "trunk":
@@ -219,9 +207,7 @@ class StructureTrack(OpenProtTrack):
         else:
             readout["trans"] = out["sm"]["trans"]
         if self.cfg.postcondition:
-            readout["trans"] = self.diffusion.postcondition(
-                inp["trans"], readout["trans"], inp["trans_noise"]
-            )
+            readout["trans"] = inp["postcond_fn"](readout["trans"])
         if self.cfg.readout_pairwise:
             readout["pairwise"] = model.pairwise_out(out["z"])
 
@@ -298,12 +284,6 @@ class StructureTrack(OpenProtTrack):
         mask = target["struct_supervise"]
         t = target["trans_noise"]
 
-        # def compute_mse(pred, gt, mask, clamp=None):
-        #     gt = rmsdalign(pred.detach(), gt, mask)
-        #     gt = torch.where(mask[...,None].bool(), gt, 0.0)
-        #     mse = torch.square(pred - gt).sum(-1)
-        #     return mse
-        # mse = compute_mse(pred, gt, mask)
         mse = self.diffusion.compute_loss(
             pred=pred,
             target=gt,
@@ -354,63 +334,4 @@ class StructureTrack(OpenProtTrack):
 
         return loss
 
-    """
-    
-    def compute_pade_loss(self, readout, target, logger=None):
-        pred = readout["pos"]
-        gt = target["frame_pos"]
-        mask = target["struct_supervise"]  # this does not do exactly what we want
-
-        pade = compute_pade(pred, gt, mask)
-
-        if logger:
-            logger.masked_log("struct/pade_loss", pade[-1], mask=mask)
-            logger.masked_log("struct/pade_loss_aux", pade.mean(0), mask=mask)
-        w = self.cfg.int_loss_weight
-        return w * pade.mean(0) + (1 - w) * pade[-1]
-
-    def compute_nape_loss(self, readout, target, eps=1e-5, logger=None):
-        pred = readout["pos"]
-        gt = target["frame_pos"]
-        mask = target["struct_supervise"]
-
-        def compute_nape(pred, gt, mask, cutoff=15, scale=10, clamp=None):
-            gt_dmat = (gt[..., None, :] - gt[..., None, :, :]).square().sum(-1).sqrt()
-            dists_to_score = (
-                (gt_dmat < cutoff) * mask.unsqueeze(-1) * mask.unsqueeze(-2)
-            )
-
-            aligned_pos = rmsdalign(
-                pred.unsqueeze(-3).detach(), gt.unsqueeze(-3), dists_to_score
-            )
-            aligned_pos = torch.nan_to_num(aligned_pos)
-
-            pred_pos = pred.unsqueeze(-3)
-
-            nape = (eps + (aligned_pos - pred_pos).square().sum(-1)).sqrt()
-
-            if clamp is not None:
-                nape = torch.clamp(nape, max=clamp)
-            nape = nape / scale
-            nape = (nape * dists_to_score).sum(-1) / (dists_to_score.sum(-1) + eps)
-
-            return nape
-
-        if self.cfg.clamp_nape:
-            nape = 0.1 * compute_nape(
-                pred, gt, mask, cutoff=self.cfg.nape_cutoff
-            ) + 0.9 * compute_nape(
-                pred, gt, mask, cutoff=self.cfg.nape_cutoff, clamp=10
-            )
-        else:
-            nape = compute_nape(pred, gt, mask, cutoff=self.cfg.nape_cutoff)
-
-        nape = nape.mean(0)
-        if self.cfg.rot_augment > 1:
-            nape = nape.mean(0)
-
-        if logger:
-            logger.masked_log("struct/nape_loss", nape, mask=mask)
-
-        return nape
-    """
+   

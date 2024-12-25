@@ -44,6 +44,7 @@ class InverseFoldingEval(OpenProtEval):
 
         L = len(seqres)
         data["seq_noise"] = np.ones(L, dtype=np.float32) * 1.0
+        
 
         return data
 
@@ -110,6 +111,9 @@ class InverseFoldingEval(OpenProtEval):
         for track in model.tracks.values():
             track.corrupt(batch, noisy_batch, {})
 
+        # have to maintain train-test alignment
+        noisy_batch['trans_noise'].fill_(self.cfg.sigma) 
+            
         L = len(batch["seqres"][0])
         
         mask = noisy_batch['seq_noise'].bool()
@@ -128,7 +132,6 @@ class InverseFoldingEval(OpenProtEval):
         recov = (recov * batch['frame_mask']).sum() / batch['frame_mask'].sum()
         
         if logger is not None:
-            # logger.log(f"{self.cfg.name}/seqent", self.compute_sequence_entropy(seq))
             logger.log(f"{self.cfg.name}/recov", recov.item())
         
         with open(f"{savedir}/{batch['name'][0]}.fasta", "w") as f:

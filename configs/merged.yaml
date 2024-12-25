@@ -1,4 +1,4 @@
-ckpt: null # workdir/invfold-1e3-relpos-256-bs4+afdb/last.ckpt # 
+ckpt: null # workdir/1e3-relpos-384-bs4+afdb/last.ckpt # 
 pretrained: null  #  load weights from here first
 validate: false # if true, only validate the model, don't train
 logger:
@@ -8,9 +8,9 @@ logger:
     # please change "test" to something unique to your task
     project: openprot/struct-merge
     # will log to workdir and neptune.ai with this name
-    name: 1e3-relpos-384-bs4+afdb # invfold-1e3-relpos-256-bs4
+    name: invfold-1e3-384-0.2 # invfold-1e3-relpos-256-bs4
     # if not null, will duplicate stdout and stderr to workdir/{name}/{logfile}
-    logfile: null # std.out
+    logfile: std.out
     # if null, will log every epoch, otherwise every this number of steps
     train_log_freq: 100
     val_log_freq: null 
@@ -89,6 +89,7 @@ tasks:
         uniform_prob: 1.0
         seed: 137
         random_rot: true
+        sigma: 0.2
         datasets:
             pdb:
                 fraction: 0.25
@@ -201,6 +202,7 @@ evals:
         path: ./cameo
         split: splits/cameo2022.csv
         temp: 0.1
+        sigma: 0.2
         
         # order: random
 tracks:
@@ -209,12 +211,12 @@ tracks:
         loss_weight: 0.0
         readout_pairwise: true
         embed_trans: null
-        embed_t: false
+        t_emb_p: 7
+        t_emb_max: 2000
         # trunk or sm
         readout_trans: trunk
         postcondition: true
         int_loss_weight: 0.5
-        postcond_before_relpos: true
         embed_pairwise: false
         losses:
             lddt: 1.0
@@ -222,10 +224,7 @@ tracks:
             mse: 0.225
         diffusion:
             type: EDMDiffusion
-            sched_p: 7
             data_sigma: 15
-            sigma_max: 2000
-            sigma_min: 0.05
             aligned_loss: true
     SequenceTrack:
         esm: null # esm2_3B # esm2_650M # esm2_8M_270K
@@ -235,7 +234,7 @@ tracks:
 
 model: # custom args
     checkpoint: true
-    dim: 512 # 640
+    dim: 384 # 640
     pairwise_dim: 128
     heads: 4 # 20
     pairwise_heads: 4
