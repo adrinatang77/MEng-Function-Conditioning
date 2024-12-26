@@ -139,9 +139,9 @@ class GeometricMultiHeadAttention(nn.Module):
             self.linear_b = Linear(pairwise_dim, heads, bias=False)
 
         if relpos_attn:
-            self.linear_relpos_query = nn.Linear(dim, heads * 3 * 64, bias=False)
+            self.linear_relpos_query = nn.Linear(dim, heads * 6 * relpos_freqs, bias=False)
         if relpos_values:
-            self.w_r = Linear(heads * 3 * 64, dim, init="final", bias=False)
+            self.w_r = Linear(heads * 6 * relpos_freqs, dim, init="final", bias=False)
 
         if pair_values:
             self.w_z = Linear(heads * pairwise_dim, dim)

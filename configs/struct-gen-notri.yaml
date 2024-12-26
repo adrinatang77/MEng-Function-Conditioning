@@ -8,7 +8,7 @@ logger:
     # please change "test" to something unique to your task
     project: openprot/diffusion
     # will log to workdir and neptune.ai with this name
-    name: struct-gen-notri-relpos-1000 # struct-gen-notri-gaussianfm+pdb
+    name: struct-gen-notri-relpos-1000-48 # struct-gen-notri-gaussianfm+pdb
     # if not null, will duplicate stdout and stderr to workdir/{name}/{logfile}
     logfile: std.out
     # if null, will log every epoch, otherwise every this number of steps
@@ -162,7 +162,7 @@ model: # custom args
     blocks: 12
 
     relpos: true
-    trunk_relpos: [32, 1, 1000]
+    trunk_relpos: [48, 1, 1000]
     sm_relpos: [32, 1, 100]
     # topology of the network
     pair_blocks:

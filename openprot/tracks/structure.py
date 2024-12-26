@@ -144,7 +144,11 @@ class StructureTrack(OpenProtTrack):
             inp["x"] += model.trans_in(emb.view(*emb.shape[:-2], -1))
         elif self.cfg.embed_trans == "edm":
             precond = self.diffusion.precondition(inp["trans"], batch["trans_noise"])
-            inp["x"] += model.trans_in(precond)
+            inp["x"] += torch.where(
+                batch["frame_mask"].bool()[..., None],  
+                model.trans_in(precond),
+                model.frame_mask[None, None],
+            )
 
         # tell the model which frames were not present
         # inp["x"] += torch.where(
