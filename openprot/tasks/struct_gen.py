@@ -21,6 +21,17 @@ class StructureGeneration(OpenProtTask):
             noise_level = np.random.beta(*self.cfg.beta)
 
         L = len(data["seqres"])
+        
+
+        ##############
+
+        p = self.cfg.sched_p
+        noise_level = (
+            self.cfg.sigma_min ** (1 / p)
+            + noise_level * (self.cfg.sigma_max ** (1 / p) - self.cfg.sigma_min ** (1 / p))
+        ) ** p
+        #####
+        
         data["trans_noise"] = np.ones(L, dtype=np.float32) * noise_level
         data["rots_noise"] = np.ones(L, dtype=np.float32) * noise_level
 

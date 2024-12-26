@@ -74,6 +74,9 @@ class GeometricMultiHeadAttention(nn.Module):
         relpos_attn=False,  # instead use trans relpos
         relpos_rope=False,
         relpos_values=False,
+        relpos_freqs=32,
+        relpos_max=100,
+        relpos_min=1,
         custom_rope=False,
         embed_rots=False,  # whether to embed rots into x at the top
         embed_trans=False,
@@ -96,6 +99,9 @@ class GeometricMultiHeadAttention(nn.Module):
         self.no_qk_points = no_qk_points
         self.no_v_points = no_v_points
         self.relpos_values = relpos_values
+        self.relpos_max = relpos_max
+        self.relpos_min = relpos_min
+        self.relpos_freqs = relpos_freqs
         self.relpos_attn = relpos_attn
         self.relpos_rope = relpos_rope
         self.custom_rope = custom_rope
@@ -140,7 +146,7 @@ class GeometricMultiHeadAttention(nn.Module):
         if pair_values:
             self.w_z = Linear(heads * pairwise_dim, dim)
 
-    def forward(self, x, z, mask, trans, rots):
+    def forward(self, x, z, mask, trans, rots, relpos_mask=None):
 
         B, L, D = x.shape
 
@@ -163,8 +169,18 @@ class GeometricMultiHeadAttention(nn.Module):
             key = rotary_emb(key, pos, key.shape[-1] // 2, 10000, 1)
 
         elif self.relpos_rope:
-            query = rope_3d(query, trans[:, None], max_period=100, min_period=1)
-            key = rope_3d(key, trans[:, None], max_period=100, min_period=1)
+            query = rope_3d(
+                query,
+                trans[:, None],
+                max_period=self.relpos_max,
+                min_period=self.relpos_min
+            )
+            key = rope_3d(
+                key,
+                trans[:, None],
+                max_period=self.relpos_max,
+                min_period=self.relpos_min
+            )
 
         attn = query @ key.mT / math.sqrt(D / self.heads)  # B H L L
 
@@ -185,7 +201,10 @@ class GeometricMultiHeadAttention(nn.Module):
         if self.relpos_attn or self.relpos_values:
             relpos = trans[:, None] - trans[:, :, None]
             relpos_emb = sinusoidal_embedding(
-                relpos, n_freqs=32, max_period=100, min_period=1
+                relpos, 
+                n_freqs=self.relpos_freqs,
+                max_period=self.relpos_max,
+                min_period=self.relpos_min,
             )
             relpos_emb = relpos_emb.view(B, L, L, -1)
 
@@ -195,7 +214,14 @@ class GeometricMultiHeadAttention(nn.Module):
 
             relpos_attn = torch.einsum("bhid,bijd->bhij", relpos_query, relpos_emb)
             relpos_attn = relpos_attn / math.sqrt(3 * 64)
+            if relpos_mask is not None:
+                relpos_attn = torch.where(
+                    relpos_mask[:,None,:,None].bool(),
+                    relpos_attn, 
+                    0.0
+                )
             attn = attn + relpos_attn
+            
 
         attn = torch.softmax(attn, dim=-1)
 
@@ -203,7 +229,7 @@ class GeometricMultiHeadAttention(nn.Module):
         value = self.w_v(x).view(B, L, self.heads, -1).transpose(1, 2)
         if self.relpos_rope:
             out = rope_3d_gather(
-                attn, value, trans[:, None], max_period=100, min_period=1
+                attn, value, trans[:, None], max_period=self.relpos_max, min_period=self.relpos_min
             )
         elif self.custom_rope:
             value = rotary_emb(value, pos, value.shape[-1] // 2, 10000, 1)
@@ -227,7 +253,14 @@ class GeometricMultiHeadAttention(nn.Module):
         if self.relpos_values:
             relpos_out = torch.einsum("bhij,bijd->bihd", attn, relpos_emb)
             relpos_out = relpos_out.reshape(B, L, -1)
-            out = out + self.w_r(relpos_out)
+            if relpos_mask is not None:
+                out = out + torch.where(
+                    relpos_mask[:,:,None].bool(), 
+                    self.w_r(relpos_out), 
+                    0.0
+                )
+            else:
+                out = out + self.w_r(relpos_out)
 
         return out
 

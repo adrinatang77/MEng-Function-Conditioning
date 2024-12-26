@@ -53,29 +53,6 @@ def pseudo_beta_fn(aatype, all_atom_positions, all_atom_masks):
         return pseudo_beta
 
 
-"""
-def log_I0(x):  # this is unsatisfactory
-    k_star = torch.round(x / 2)
-    logx = torch.log(x)
-    log_A_k_star = 2 * (k_star * (logx - np.log(2)) - torch.lgamma(k_star + 1))
-    ks = torch.arange(-30, 31, device=x.device) + k_star[..., None]
-
-    log_A_k_ratio = 2 * (ks - k_star[..., None]) * (logx[..., None] - np.log(2)) + 2 * (
-        torch.lgamma(k_star[..., None] + 1) - torch.lgamma(ks + 1)
-    )
-    log_sum_A_k_ratio = torch.logsumexp(log_A_k_ratio, -1)
-    return log_sum_A_k_ratio + log_A_k_star
-
-
-def torus_logZ(x):  # x = 1 / sigma^2
-    return torch.where(
-        x < 100,
-        np.log(2 * np.pi) + log_I0(x) - x,
-        0.5 * np.log(2 * np.pi) - 0.5 * torch.log(x),
-    )
-"""
-
-
 class StructureTrack(OpenProtTrack):
 
     def setup(self):
@@ -170,19 +147,23 @@ class StructureTrack(OpenProtTrack):
             inp["x"] += model.trans_in(precond)
 
         # tell the model which frames were not present
-        inp["x"] += torch.where(
-            batch["frame_mask"].bool()[..., None],
-            0.0,
-            model.frame_mask[None, None],
-        )
-
+        # inp["x"] += torch.where(
+        #     batch["frame_mask"].bool()[..., None],
+        #     0.0,
+        #     model.frame_mask[None, None],
+        # )
+        
+        inp["relpos_mask"] = batch["frame_mask"]
+            
         t_emb = batch['trans_noise'] ** (1/self.cfg.t_emb_p)
         t_emb = t_emb / self.cfg.t_emb_max ** (1/self.cfg.t_emb_p)
-        t_emb = sinusoidal_embedding(
-            batch["trans_noise"], model.cfg.dim // 2, 1, 0.01
-        ).float()
+        t_emb = sinusoidal_embedding(t_emb, model.cfg.dim // 2, 1, 0.01).float()
+        t_emb = torch.where(
+            batch["frame_mask"][...,None].bool(), 
+            t_emb,
+            model.frame_mask[None, None]
+        )
         inp["x_cond"] += t_emb
-
 
         if self.cfg.embed_pairwise:
             dmat = inp["trans"][..., None, :, :] - inp["trans"][..., None, :]
@@ -192,7 +173,9 @@ class StructureTrack(OpenProtTrack):
             )
         
         inp["postcond_fn"] = lambda trans: self.diffusion.postcondition(
-            inp["trans"], trans, batch["trans_noise"]
+            inp["trans"],
+            trans,
+            batch["trans_noise"]
         )
 
     def predict(self, model, inp, out, readout):

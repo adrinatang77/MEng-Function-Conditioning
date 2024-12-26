@@ -127,6 +127,9 @@ class OpenProtTransformerBlock(nn.Module):
         relpos_attn=False,  # instead use trans relpos
         relpos_rope=False,
         relpos_values=False,
+        relpos_freqs=32,
+        relpos_max=100,
+        relpos_min=1,
         custom_rope=False,
         embed_rots=False,
         embed_trans=False,
@@ -154,6 +157,9 @@ class OpenProtTransformerBlock(nn.Module):
             relpos_attn=relpos_attn,
             relpos_rope=relpos_rope,
             relpos_values=relpos_values,
+            relpos_freqs=relpos_freqs,
+            relpos_min=relpos_min,
+            relpos_max=relpos_max,
             custom_rope=custom_rope,
             embed_rots=embed_rots,
             embed_trans=embed_trans,
@@ -229,7 +235,7 @@ class OpenProtTransformerBlock(nn.Module):
             torch.nn.init.zeros_(self.sequence_to_pair.o_proj.weight)
             torch.nn.init.zeros_(self.sequence_to_pair.o_proj.bias)
 
-    def forward(self, x, z, rots, trans, mask, x_cond=None, postcond_fn=None):
+    def forward(self, x, z, rots, trans, mask, x_cond=None, postcond_fn=None, relpos_mask=None):
 
         ### no pair2sequence
 
@@ -249,6 +255,7 @@ class OpenProtTransformerBlock(nn.Module):
                 mask=mask.bool(),
                 trans=postcond_fn(trans) if postcond_fn is not None else trans,
                 rots=rots,
+                relpos_mask=relpos_mask,
             ),
             gate_mha,
         )
@@ -306,6 +313,9 @@ class StructureModule(nn.Module):
             relpos_attn=cfg.ipa_relpos,
             relpos_values=cfg.ipa_relpos,
             relpos_rope=cfg.ipa_rope,
+            relpos_freqs=cfg.sm_relpos[0],
+            relpos_min=cfg.sm_relpos[1],
+            relpos_max=cfg.sm_relpos[2],
             embed_trans=cfg.embed_trans,
         )
         if cfg.separate_ipa_blocks:
@@ -319,7 +329,7 @@ class StructureModule(nn.Module):
                 nn.LayerNorm(cfg.dim), nn.Linear(cfg.dim, cfg.dim)
             )
 
-    def forward(self, x, z, rots, trans, mask, x_cond, postcond_fn):
+    def forward(self, x, z, rots, trans, mask, x_cond, postcond_fn, relpos_mask):
         if self.cfg.zero_frames_before_ipa:
             trans = torch.zeros_like(trans)
             rots = torch.zeros_like(rots) + torch.eye(
@@ -349,7 +359,7 @@ class StructureModule(nn.Module):
             else:
                 block = self.ipa_block
 
-            x, z, rots, trans = block(x, z, rots, trans, mask, x_cond, postcond_fn)
+            x, z, rots, trans = block(x, z, rots, trans, mask, x_cond, postcond_fn, relpos_mask)
             all_rots.append(rots)
             all_trans.append(trans)
             all_x.append(x)
@@ -400,6 +410,9 @@ class OpenProtModel(nn.Module):
                     pair_bias=cfg.block_pair_bias,
                     relpos_attn=cfg.relpos,
                     relpos_values=cfg.relpos,
+                    relpos_freqs=cfg.trunk_relpos[0],
+                    relpos_min=cfg.trunk_relpos[1],
+                    relpos_max=cfg.trunk_relpos[2],
                     **(pair_args if i in pair_block_idx else {}),
                 )
             )
@@ -428,6 +441,7 @@ class OpenProtModel(nn.Module):
         trans = inp.get("trans", None)
         x_cond = inp.get("x_cond", None)
         postcond_fn = inp.get("postcond_fn", None)
+        relpos_mask = inp.get("relpos_mask", None)
 
         for i, block in enumerate(self.blocks):
 
@@ -436,16 +450,10 @@ class OpenProtModel(nn.Module):
                     block, x, z, rots, trans, mask, x_cond, use_reentrant=False
                 )
             else:
-                x, z, rots, trans = block(x, z, rots, trans, mask, x_cond)
-
-        if self.cfg.readout_trans_before_sm:
-            if self.cfg.readout_adaLN:
-                trans = self.trans_readout(x, x_cond)
-            else:
-                trans = self.trans_readout(x)
+                x, z, rots, trans = block(x, z, rots, trans, mask, x_cond, relpos_mask=relpos_mask)
 
         if self.cfg.struct_module:
-            sm_out = self.structure_module(x, z, rots, trans, mask, x_cond, postcond_fn)
+            sm_out = self.structure_module(x, z, rots, trans, mask, x_cond, postcond_fn=postcond_fn, relpos_mask=relpos_mask)
         else:
             sm_out = None
 

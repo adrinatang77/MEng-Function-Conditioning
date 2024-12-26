@@ -16,11 +16,19 @@ class StructurePrediction(OpenProtTask):
 
         rand = np.random.rand()
         if rand < self.cfg.max_noise_prob:
-            noise_level = 1.0
+            t = 1.0
         elif rand < self.cfg.max_noise_prob + self.cfg.uniform_prob:
-            noise_level = np.random.rand()
+            t = np.random.rand()
         else:
-            noise_level = np.random.beta(*self.cfg.beta)
+            t = np.random.beta(*self.cfg.beta)
+
+        ####
+        p = self.cfg.sched_p
+        noise_level = (
+            self.cfg.sigma_min ** (1 / p)
+            + t * (self.cfg.sigma_max ** (1 / p) - self.cfg.sigma_min ** (1 / p))
+        ) ** p
+        ####
 
         L = len(data["seqres"])
         data["trans_noise"] = np.ones(L, dtype=np.float32) * noise_level
@@ -39,7 +47,7 @@ class StructurePrediction(OpenProtTask):
             data["atom37"] @= randrot.T
 
         data["/struct_pred"] = np.ones((), dtype=np.float32)
-        if noise_level == 1.0:
+        if t == 1.0:
             data["/struct_pred/t1"] = np.ones((), dtype=np.float32)
         else:
             data["/struct_pred/t1"] = np.zeros((), dtype=np.float32)

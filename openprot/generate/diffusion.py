@@ -179,7 +179,7 @@ class EDMDiffusion(Diffusion):
 
         return cskip * inp + cout * out
 
-    def compute_loss(self, pred, target, t, mask, eps=1e-12):
+    def compute_loss(self, pred, target, t, mask, eps=1e-9):
 
         if self.cfg.aligned_loss:
             target = rmsdalign(pred.detach(), target, mask)

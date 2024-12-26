@@ -3,6 +3,10 @@ import numpy as np
 
 
 class SequenceUnmasking(OpenProtTask):
+
+    def register_loss_masks(self):
+        return ["/seq_gen"]
+        
     def prep_data(self, data, crop=None):
 
         if crop is not None:
@@ -15,6 +19,8 @@ class SequenceUnmasking(OpenProtTask):
 
         L = len(data["seqres"])
         data["seq_noise"] = (np.random.rand(L) < noise_level).astype(np.float32)
+
+        data["/seq_gen"] = np.ones((), dtype=np.float32)
         
         return data
 

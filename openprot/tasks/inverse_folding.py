@@ -4,6 +4,10 @@ from ..utils import residue_constants as rc
 from scipy.spatial.transform import Rotation as R
 
 class InverseFolding(OpenProtTask):
+
+    def register_loss_masks(self):
+        return ["/inv_fold"]
+        
     def prep_data(self, data, crop=None, eps=1e-6):
 
         if crop is not None:
@@ -28,5 +32,7 @@ class InverseFolding(OpenProtTask):
         if self.cfg.random_rot:
             randrot = R.random().as_matrix()
             data["atom37"] @= randrot.T
+
+        data["/inv_fold"] = np.ones((), dtype=np.float32)
         
         return data

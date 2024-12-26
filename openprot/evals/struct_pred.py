@@ -35,7 +35,7 @@ class StructurePredictionEval(OpenProtEval):
         )
 
         L = len(seqres)
-        data["trans_noise"] = np.ones(L, dtype=np.float32) * 1.0
+        data["trans_noise"] = np.ones(L, dtype=np.float32) * 160.
         data["rots_noise"] = np.ones(L, dtype=np.float32) * 1.0
 
         return data
@@ -43,6 +43,7 @@ class StructurePredictionEval(OpenProtEval):
     def run_diffusion(self, model, batch, noisy_batch, savedir):
         diffusion = self.tracks["StructureTrack"].diffusion
 
+        # noisy_batch["frame_trans"] = self
         def model_func(pos, t):
             noisy_batch["trans_noise"] = torch.ones_like(noisy_batch["trans_noise"]) * t
             noisy_batch["frame_trans"] = pos
@@ -74,6 +75,7 @@ class StructurePredictionEval(OpenProtEval):
         for track in model.tracks.values():
             track.corrupt(batch, noisy_batch, {})
 
+        noisy_batch["frame_trans"] = torch.randn_like(noisy_batch["frame_trans"]) * 160
         if self.cfg.diffusion:
             coords = self.run_diffusion(model, batch, noisy_batch, savedir)
         else:

@@ -1,14 +1,14 @@
 ckpt: null # workdir/struct-gen-notri-edm-sm/last.ckpt
 pretrained: null # workdir/trimul-vanilla-disto/last.ckpt # workdir/nodiff-relpos-pade/last.ckpt # load weights from here first
-validate: true # if true, only validate the model, don't train
+validate: false # if true, only validate the model, don't train
 logger:
     # set to true to log to neptune.ai
-    neptune: false
+    neptune: true
     run_id: null # DIF-106  
     # please change "test" to something unique to your task
     project: openprot/diffusion
     # will log to workdir and neptune.ai with this name
-    name: struct-gen-notri-edm-sm-lddt-replica # struct-gen-notri-gaussianfm+pdb
+    name: struct-gen-notri-relpos-1000 # struct-gen-notri-gaussianfm+pdb
     # if not null, will duplicate stdout and stderr to workdir/{name}/{logfile}
     logfile: std.out
     # if null, will log every epoch, otherwise every this number of steps
@@ -79,6 +79,9 @@ tasks:
         max_noise_prob: 0.0
         seed: 137
         random_rot: true
+        sched_p: 7
+        sigma_max: 160
+        sigma_min: 0.05
         datasets:
             afdb_genie:
                 fraction: 0.75
@@ -126,14 +129,14 @@ tracks:
     StructureTrack: 
         loss_weight: 1.0
         readout_pairwise: false
-        embed_trans: edm
+        embed_trans: null
         # trunk or sm
         readout_trans: null
-        embed_t: false
         postcondition: true
         int_loss_weight: 0.5
         t_emb_p: 7
-        t_emb_max: 2000
+        t_emb_max: 160
+        t_emb_min: 0.05
         embed_pairwise: false
         
         nape_cutoff: 15
@@ -158,7 +161,9 @@ model: # custom args
     pairwise_heads: 4
     blocks: 12
 
-    relpos: false
+    relpos: true
+    trunk_relpos: [32, 1, 1000]
+    sm_relpos: [32, 1, 100]
     # topology of the network
     pair_blocks:
         start: 0
@@ -211,7 +216,7 @@ optimizer:
     # fused: true
     scheduler: 
         total_steps: 1000000
-        warmup_steps: 2000
+        warmup_steps: 1000
         start_decay: 10000
         end_factor: 1.00
         
