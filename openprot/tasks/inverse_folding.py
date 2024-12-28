@@ -21,7 +21,7 @@ class InverseFolding(OpenProtTask):
         L = len(data["seqres"])
         data["seq_noise"] = (np.random.rand(L) < noise_level).astype(np.float32)
 
-        data["trans_noise"] = np.ones(L, dtype=np.float32) * self.cfg.sigma
+        data["struct_noise"] = np.ones(L, dtype=np.float32) * self.cfg.sigma
 
         # center the structures
         pos = data["atom37"][..., rc.atom_order["CA"], :]

@@ -207,19 +207,16 @@ class GeometricMultiHeadAttention(nn.Module):
                 min_period=self.relpos_min,
             )
             relpos_emb = relpos_emb.view(B, L, L, -1)
+            if relpos_mask is not None:
+                square_mask = relpos_mask[:,None,:,None] & relpos_mask[:,:,None,None]
+                relpos_emb = torch.where(square_mask, relpos_emb, 0.0)
 
         if self.relpos_attn:
             relpos_query = self.linear_relpos_query(x)
             relpos_query = relpos_query.view(B, L, self.heads, -1).transpose(1, 2)
 
             relpos_attn = torch.einsum("bhid,bijd->bhij", relpos_query, relpos_emb)
-            relpos_attn = relpos_attn / math.sqrt(3 * 64)
-            if relpos_mask is not None:
-                relpos_attn = torch.where(
-                    relpos_mask[:,None,:,None].bool(),
-                    relpos_attn, 
-                    0.0
-                )
+            relpos_attn = relpos_attn / math.sqrt(6 * self.relpos_freqs)
             attn = attn + relpos_attn
             
 
@@ -253,14 +250,7 @@ class GeometricMultiHeadAttention(nn.Module):
         if self.relpos_values:
             relpos_out = torch.einsum("bhij,bijd->bihd", attn, relpos_emb)
             relpos_out = relpos_out.reshape(B, L, -1)
-            if relpos_mask is not None:
-                out = out + torch.where(
-                    relpos_mask[:,:,None].bool(), 
-                    self.w_r(relpos_out), 
-                    0.0
-                )
-            else:
-                out = out + self.w_r(relpos_out)
+            out = out + self.w_r(relpos_out)
 
         return out
 

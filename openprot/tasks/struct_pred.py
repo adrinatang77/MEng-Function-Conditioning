@@ -9,26 +9,27 @@ class StructurePrediction(OpenProtTask):
     def register_loss_masks(self):
         return ["/struct_pred", "/struct_pred/t1"]
 
-    def prep_data(self, data, crop=None, eps=1e-6):
+    def prep_data(self, data, crop=None, eps=1e-6, inf=1e5):
 
         if crop is not None:
             data.crop(crop)
 
         rand = np.random.rand()
         if rand < self.cfg.max_noise_prob:
-            t = 1.0
-        elif rand < self.cfg.max_noise_prob + self.cfg.uniform_prob:
-            t = np.random.rand()
+            noise_level = inf
         else:
-            t = np.random.beta(*self.cfg.beta)
+            if rand < self.cfg.max_noise_prob + self.cfg.uniform_prob:
+                t = np.random.rand()
+            else:
+                t = np.random.beta(*self.cfg.beta)
 
-        ####
-        p = self.cfg.sched_p
-        noise_level = (
-            self.cfg.sigma_min ** (1 / p)
-            + t * (self.cfg.sigma_max ** (1 / p) - self.cfg.sigma_min ** (1 / p))
-        ) ** p
-        ####
+            ####
+            p = self.cfg.sched_p
+            noise_level = (
+                self.cfg.sigma_min ** (1 / p)
+                + t * (self.cfg.sigma_max ** (1 / p) - self.cfg.sigma_min ** (1 / p))
+            ) ** p
+            ####
 
         L = len(data["seqres"])
         data["struct_noise"] = np.ones(L, dtype=np.float32) * noise_level
@@ -44,7 +45,7 @@ class StructurePrediction(OpenProtTask):
             data["atom37"] @= randrot.T
 
         data["/struct_pred"] = np.ones((), dtype=np.float32)
-        if t == 1.0:
+        if noise_level == inf:
             data["/struct_pred/t1"] = np.ones((), dtype=np.float32)
         else:
             data["/struct_pred/t1"] = np.zeros((), dtype=np.float32)

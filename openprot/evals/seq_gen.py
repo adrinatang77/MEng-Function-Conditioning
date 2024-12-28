@@ -3,7 +3,6 @@ from ..utils import protein
 from ..utils.geometry import compute_lddt
 from ..utils import residue_constants as rc
 import numpy as np
-from ..tasks import SequenceDenoising
 import torch
 import os
 import math

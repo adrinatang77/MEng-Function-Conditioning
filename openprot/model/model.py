@@ -171,9 +171,9 @@ class OpenProtTransformerBlock(nn.Module):
         self.pair_updates = pair_updates
         self.pair_ffn = pair_ffn
         self.frame_update = frame_update
-        self.update_rots = update_rots
-        self.rots_type = rots_type
-        self.readout_rots = readout_rots
+        # self.update_rots = update_rots
+        # self.rots_type = rots_type
+        # self.readout_rots = readout_rots
         self.tri_mul = tri_mul
         self.update_x = update_x
         self.adaLN = adaLN
@@ -206,10 +206,10 @@ class OpenProtTransformerBlock(nn.Module):
                 torch.nn.init.zeros_(self.linear_frame_update[-1].weight)
                 torch.nn.init.zeros_(self.linear_frame_update[-1].bias)
 
-        if readout_rots:
-            self.linear_rots_out = nn.Sequential(
-                nn.LayerNorm(dim), nn.Linear(dim, rot_dim)
-            )
+        # if readout_rots:
+        #     self.linear_rots_out = nn.Sequential(
+        #         nn.LayerNorm(dim), nn.Linear(dim, rot_dim)
+        #     )
         if pair_updates:
             self.sequence_to_pair = SequenceToPair(dim, pairwise_dim // 2, pairwise_dim)
 
@@ -235,7 +235,7 @@ class OpenProtTransformerBlock(nn.Module):
             torch.nn.init.zeros_(self.sequence_to_pair.o_proj.weight)
             torch.nn.init.zeros_(self.sequence_to_pair.o_proj.bias)
 
-    def forward(self, x, z, rots, trans, mask, x_cond=None, postcond_fn=None, relpos_mask=None):
+    def forward(self, x, z, trans, mask, x_cond=None, postcond_fn=lambda x: x, relpos_mask=None):
 
         ### no pair2sequence
 
@@ -253,8 +253,8 @@ class OpenProtTransformerBlock(nn.Module):
                 x=modulate(self.mha_norm(x), shift_mha, scale_mha),
                 z=self.pair_norm(z) if hasattr(self, "pair_norm") else None,
                 mask=mask.bool(),
-                trans=postcond_fn(trans) if postcond_fn is not None else trans,
-                rots=rots,
+                trans=postcond_fn(trans),
+                rots=None,
                 relpos_mask=relpos_mask,
             ),
             gate_mha,
@@ -280,16 +280,16 @@ class OpenProtTransformerBlock(nn.Module):
                 update = self.linear_frame_update(x)
             trans = trans + update
 
-        if self.readout_rots:
-            rotvec = self.linear_rots_out(x)
-            if self.rots_type == "quat":
-                rots = Rotation(quats=rotvec, normalize_quats=True).get_rot_mats()
-            elif self.rots_type == "vec":
-                rots = axis_angle_to_matrix(rotvec)
+        # if self.readout_rots:
+        #     rotvec = self.linear_rots_out(x)
+        #     if self.rots_type == "quat":
+        #         rots = Rotation(quats=rotvec, normalize_quats=True).get_rot_mats()
+        #     elif self.rots_type == "vec":
+        #         rots = axis_angle_to_matrix(rotvec)
 
         if not self.update_x:
             x = x_in
-        return x, z, rots, trans
+        return x, z, trans
 
 
 class StructureModule(nn.Module):
@@ -329,26 +329,20 @@ class StructureModule(nn.Module):
                 nn.LayerNorm(cfg.dim), nn.Linear(cfg.dim, cfg.dim)
             )
 
-    def forward(self, x, z, rots, trans, mask, x_cond, postcond_fn, relpos_mask):
-        if self.cfg.zero_frames_before_ipa:
-            trans = torch.zeros_like(trans)
-            rots = torch.zeros_like(rots) + torch.eye(
-                3, device=rots.device, dtype=rots.dtype
-            )
-
+    def forward(self, x, z, trans, mask, x_cond, postcond_fn):
+            
         if self.cfg.move_x_to_xcond:
             x_cond = x_cond + self.x_cond_linear(x)
 
         if self.cfg.zero_x_before_ipa:
             x = torch.zeros_like(x)
 
-        all_rots = [rots]
-        all_trans = [trans]
-        all_x = [x]
+        
+        trans = torch.zeros_like(trans) 
+        all_trans = []
+        all_x = []
         for i in range(self.cfg.ipa_blocks):
 
-            if self.cfg.detach_rots:
-                rots = rots.detach()
             if self.cfg.detach_trans:
                 trans = trans.detach()
             if self.cfg.detach_x:
@@ -359,15 +353,13 @@ class StructureModule(nn.Module):
             else:
                 block = self.ipa_block
 
-            x, z, rots, trans = block(x, z, rots, trans, mask, x_cond, postcond_fn, relpos_mask)
-            all_rots.append(rots)
+            x, z, trans = block(x, z, trans, mask, x_cond, postcond_fn)
             all_trans.append(trans)
             all_x.append(x)
 
         return {
             "x": torch.stack(all_x),
             "trans": torch.stack(all_trans),
-            "rots": torch.stack(all_rots),
         }
 
 
@@ -437,23 +429,23 @@ class OpenProtModel(nn.Module):
         if self.cfg.pairwise_pos_emb:
             z = z + self.pairwise_positional_embedding(residx, mask=mask)
 
-        rots = inp.get("rots", None)
-        trans = inp.get("trans", None)
+        trans = inp.get("struct", None)
         x_cond = inp.get("x_cond", None)
         postcond_fn = inp.get("postcond_fn", None)
-        relpos_mask = inp.get("relpos_mask", None)
+        struct_mask = inp.get("struct_mask", None)
 
         for i, block in enumerate(self.blocks):
 
             if block.pair_updates and self.cfg.checkpoint:
-                x, z, rots, trans = torch.utils.checkpoint.checkpoint(
-                    block, x, z, rots, trans, mask, x_cond, use_reentrant=False
+                raise Exception("Check")
+                x, z, trans = torch.utils.checkpoint.checkpoint(
+                    block, x, z, trans, mask, x_cond, use_reentrant=False
                 )
             else:
-                x, z, rots, trans = block(x, z, rots, trans, mask, x_cond, relpos_mask=relpos_mask)
+                x, z, trans = block(x, z, trans, mask, x_cond, relpos_mask=struct_mask)
 
         if self.cfg.struct_module:
-            sm_out = self.structure_module(x, z, rots, trans, mask, x_cond, postcond_fn=postcond_fn, relpos_mask=relpos_mask)
+            sm_out = self.structure_module(x, z, trans, mask, x_cond, postcond_fn=postcond_fn)
         else:
             sm_out = None
 
