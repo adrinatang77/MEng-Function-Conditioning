@@ -60,10 +60,9 @@ class StructureTrack(OpenProtTrack):
 
     def tokenize(self, data):
 
-        frames, frame_mask = atom37_to_frames(data["atom37"], data["atom37_mask"])
-        data["frame_trans"] = frames._trans
-        data["frame_rots"] = frames._rots._rot_mats
-        data["frame_mask"] = frame_mask
+        # frames, frame_mask = atom37_to_frames(data["atom37"], data["atom37_mask"])
+        data["struct"] = data["atom37"][:,1] # frames._trans
+        data["struct_mask"] = data["atom37_mask"][:,1] # frame_mask
         """
         aatype = np.array(
             [rc.restype_order.get(c, rc.unk_restype_index) for c in data["seqres"]]
@@ -75,13 +74,7 @@ class StructureTrack(OpenProtTrack):
 
     def add_modules(self, model):
         model.frame_mask = nn.Parameter(torch.zeros(model.cfg.dim))
-        if self.cfg.readout_pairwise:
-            model.pairwise_out = nn.Linear(model.cfg.pairwise_dim, 64)
-        if self.cfg.embed_trans == "sinusoidal":
-            model.trans_in = nn.Linear(6 * (model.cfg.dim // 6), model.cfg.dim)
-            torch.nn.init.zeros_(model.trans_in.weight)
-            torch.nn.init.zeros_(model.trans_in.bias)
-        elif self.cfg.embed_trans == "edm":
+        if self.cfg.embed_trans:
             model.trans_in = nn.Linear(3, model.cfg.dim)
         if self.cfg.embed_pairwise:
             model.pairwise_in = nn.Linear(
@@ -89,7 +82,9 @@ class StructureTrack(OpenProtTrack):
             )
             torch.nn.init.zeros_(model.pairwise_in.weight)
             torch.nn.init.zeros_(model.pairwise_in.bias)
-        if self.cfg.readout_trans in ["trunk", "sm"]:
+        if self.cfg.readout_pairwise:
+            model.pairwise_out = nn.Linear(model.cfg.pairwise_dim, 64)
+        if self.cfg.readout_trans:
             model.trans_out = nn.Sequential(
                 nn.LayerNorm(model.cfg.dim), nn.Linear(model.cfg.dim, 3)
             )
@@ -97,30 +92,21 @@ class StructureTrack(OpenProtTrack):
     def corrupt(self, batch, noisy_batch, target, logger=None):
 
         for key in [
-            "trans_noise",
-            "rots_noise",
-            "frame_mask",
+            "struct_noise",
+            "struct_mask",
         ]:
             noisy_batch[key] = batch[key]
 
-        target["trans_noise"] = batch["trans_noise"]
-        target["struct_supervise"] = batch["frame_mask"]
-
         # add noise
         noisy, target_tensor = self.diffusion.add_noise(
-            batch["frame_trans"], batch["trans_noise"], batch["frame_mask"].bool()
-        )
-        noisy_batch["frame_trans"] = noisy
+            batch["struct"], batch["struct_noise"], batch["struct_mask"].bool() 
+        ) # the mask is used to center the coords
+        noisy_batch["struct"] = noisy
 
         # training targets
-        target["frame_trans"] = target_tensor  # diffusion target
-        target["frame_pos"] = batch["frame_trans"]  # sm target
-
-        dev = batch["frame_trans"].device
-        B, L, _ = batch["frame_trans"].shape
-
-        # placeholder
-        noisy_batch["frame_rots"] = torch.eye(3, device=dev).expand(B, L, 3, 3)
+        target["struct_noise"] = batch["struct_noise"]
+        target["struct_supervise"] = batch["struct_mask"]
+        target["struct"] = target_tensor #
 
         # needed for computing distogram loss
         target["beta"], target["beta_mask"] = pseudo_beta_fn(
@@ -130,56 +116,58 @@ class StructureTrack(OpenProtTrack):
         if logger:
             logger.masked_log("struct/toks", batch["frame_mask"], sum=True)
 
-    def embed(self, model, batch, inp):
+    def embed(self, model, batch, inp, inf=2000):
 
-        B, L = batch["trans_noise"].shape
-        dev = batch["frame_trans"].device
+        embed_as_mask = (batch["struct_noise"] >= np.inf) | ~batch["struct_mask"].bool()
 
-        # currently zerod out before they are used
-        inp["trans"] = batch["frame_trans"]
-        inp["rots"] = batch["frame_rots"]
-
-        if self.cfg.embed_trans == "sinusoidal":
-            emb = sinusoidal_embedding(inp["trans"], model.cfg.dim // 6, 100, 1)
-            inp["x"] += model.trans_in(emb.view(*emb.shape[:-2], -1))
-        elif self.cfg.embed_trans == "edm":
-            precond = self.diffusion.precondition(inp["trans"], batch["trans_noise"])
+        # linear embed coords if specified
+        if self.cfg.embed_trans:
+            precond = self.diffusion.precondition(
+                batch["struct"],
+                batch["struct_noise"]
+            )
             inp["x"] += torch.where(
-                batch["frame_mask"].bool()[..., None],  
+                embed_as_mask[...,None],
+                0.0,
                 model.trans_in(precond),
-                model.frame_mask[None, None],
-            ) # this stuff is not being consistently handled atm
+            ) 
 
-        # tell the model which frames were not present
+        # always tell the model which frames were not present
         inp["x"] += torch.where(
-            batch["frame_mask"].bool()[..., None],
-            0.0,
+            embed_as_mask[..., None],
             model.frame_mask[None, None],
+            0.0,
         )
-        
-        inp["relpos_mask"] = batch["frame_mask"]
+
+        # embed sigma
+        def sigma_transform(noise_level):
+            t_emb = noise_level ** (1/self.cfg.t_emb_p)
+            t_emb = t_emb / self.cfg.t_emb_max ** (1/self.cfg.t_emb_p)
             
-        t_emb = batch['trans_noise'] ** (1/self.cfg.t_emb_p)
-        t_emb = t_emb / self.cfg.t_emb_max ** (1/self.cfg.t_emb_p)
-        t_emb = sinusoidal_embedding(t_emb, model.cfg.dim // 2, 1, 0.01).float()
+        t_emb = sigma_transform(batch["struct_noise"])
         t_emb = torch.where(
-            batch["frame_mask"][...,None].bool(), 
-            t_emb,
-            model.frame_mask[None, None]
+            embed_as_mask[..., None], 
+            model.frame_mask[None, None],
+            sinusoidal_embedding(t_emb, model.cfg.dim // 2, 1, 0.01).float(),
         )
         inp["x_cond"] += t_emb
 
         if self.cfg.embed_pairwise:
-            dmat = inp["trans"][..., None, :, :] - inp["trans"][..., None, :]
+            raise Exception("This hasn't been touched in a while, should fix")
+            dmat = inp["struct"][..., None, :, :] - inp["struct"][..., None, :]
             dmat = torch.square(dmat).sum(-1).sqrt()
             inp["z"] = inp.get("z", 0) + model.pairwise_in(
                 sinusoidal_embedding(dmat, model.cfg.pairwise_dim // 2, 100, 1)
             )
+
+        # finally provide the raw struct for relpos
+        inp["struct"] = batch["struct"]
+        inp["struct_mask"] = embed_as_mask
         
         inp["postcond_fn"] = lambda trans: self.diffusion.postcondition(
-            inp["trans"],
+            inp["struct"],
             trans,
-            batch["trans_noise"]
+            batch["struct_noise"]
         )
 
     def predict(self, model, inp, out, readout):
@@ -275,7 +263,7 @@ class StructureTrack(OpenProtTrack):
             pred=pred,
             target=gt,
             t=t,
-            mask=mask,  # not exactly right
+            mask=mask, # used for alignment
         )
 
         if logger:
@@ -286,7 +274,7 @@ class StructureTrack(OpenProtTrack):
         return w * mse.mean(0) + (1 - w) * mse[-1]
 
     def compute_distogram_loss(self, readout, target, logger=None, eps=1e-6):
-
+        raise Exception("This hasn't been used in a while")
         dev = readout["pairwise"].device
         bins = torch.linspace(2.3125, 21.6875, 63, device=dev)
 
@@ -305,20 +293,4 @@ class StructureTrack(OpenProtTrack):
             logger.masked_log("struct/distogram", loss, mask, dims=2)
 
         return (loss * mask).sum(-1) / (eps + mask.sum(-1))
-
-    def compute_diffusion_loss(self, readout, target, logger=None, eps=1e-6):
-
-        loss = self.diffusion.compute_loss(
-            pred=readout["trans"],
-            target=target["frame_trans"],
-            t=target["trans_noise"],
-            mask=target["struct_supervise"],  # not exactly right
-        )
-        if logger:
-            logger.masked_log(
-                "struct/diffusion_loss", loss, mask=target["struct_supervise"]
-            )
-
-        return loss
-
    

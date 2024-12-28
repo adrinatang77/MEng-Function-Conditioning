@@ -185,8 +185,8 @@ class SequenceTrack(OpenProtTrack):
         
         tokens = batch["aatype"]
         
-        mask = batch["seq_noise"].bool() | ~batch["seq_mask"].bool()
-        sup = batch["seq_noise"].bool() & batch["seq_mask"].bool()
+        mask = batch["seq_noise"].bool() | ~batch["seq_mask"].bool() # these will be input as MASK
+        sup = batch["seq_noise"].bool() & batch["seq_mask"].bool() # these will be actually supervised
 
         noisy_batch["aatype"] = torch.where(mask, MASK_IDX, tokens)
         noisy_batch["seq_noise"] = batch["seq_noise"]
@@ -247,15 +247,9 @@ class SequenceTrack(OpenProtTrack):
         )
 
         mask = target["seq_supervise"]
-        # denoise_mask = target["denoise_seq_supervise"]
         
         if logger:
             logger.masked_log("seq/loss", loss, mask=mask)
             logger.masked_log("seq/perplexity", loss, mask=mask, post=np.exp)
-            # logger.masked_log("seq/denoise_loss", loss, mask=denoise_mask)
-            # logger.masked_log("seq/denoise_perplexity", loss, mask=denoise_mask, post=np.exp)
-            
-            # logger.masked_log("seq/toks_sup", unmask_mask, sum=True)
-            # logger.masked_log("seq/denoise_toks_sup", denoise_mask, sum=True)
-
-        return loss * mask # self.cfg.unmask_weight * loss * unmask_mask + self.cfg.denoise_weight * loss * denoise_mask
+       
+        return loss * mask
