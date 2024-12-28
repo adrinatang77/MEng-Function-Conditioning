@@ -148,14 +148,14 @@ class StructureTrack(OpenProtTrack):
                 batch["frame_mask"].bool()[..., None],  
                 model.trans_in(precond),
                 model.frame_mask[None, None],
-            )
+            ) # this stuff is not being consistently handled atm
 
         # tell the model which frames were not present
-        # inp["x"] += torch.where(
-        #     batch["frame_mask"].bool()[..., None],
-        #     0.0,
-        #     model.frame_mask[None, None],
-        # )
+        inp["x"] += torch.where(
+            batch["frame_mask"].bool()[..., None],
+            0.0,
+            model.frame_mask[None, None],
+        )
         
         inp["relpos_mask"] = batch["frame_mask"]
             

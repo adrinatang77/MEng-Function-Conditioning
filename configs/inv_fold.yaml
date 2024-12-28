@@ -3,12 +3,12 @@ pretrained: null  #  load weights from here first
 validate: false # if true, only validate the model, don't train
 logger:
     # set to true to log to neptune.ai
-    neptune: false
+    neptune: true
     run_id: null 
     # please change "test" to something unique to your task
     project: openprot/struct-merge
     # will log to workdir and neptune.ai with this name
-    name: invfold-1e3-384-0.2-edm # invfold-1e3-relpos-256-bs4
+    name: invfold-1e3-384-0.2-relpos-only # invfold-1e3-relpos-256-bs4
     # if not null, will duplicate stdout and stderr to workdir/{name}/{logfile}
     logfile: std.out
     # if null, will log every epoch, otherwise every this number of steps
@@ -210,7 +210,7 @@ tracks:
     StructureTrack: 
         loss_weight: 0.0
         readout_pairwise: true
-        embed_trans: edm
+        embed_trans: null
         t_emb_p: 7
         t_emb_max: 2000
         # trunk or sm
