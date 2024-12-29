@@ -140,6 +140,7 @@ class GeometricMultiHeadAttention(nn.Module):
 
         if relpos_attn:
             self.linear_relpos_query = nn.Linear(dim, heads * 6 * relpos_freqs, bias=False)
+            # self.null_relpos = nn.Parameter(torch.zeros((6 * relpos_freqs)))
         if relpos_values:
             self.w_r = Linear(heads * 6 * relpos_freqs, dim, init="final", bias=False)
 
@@ -217,7 +218,7 @@ class GeometricMultiHeadAttention(nn.Module):
 
             relpos_attn = torch.einsum("bhid,bijd->bhij", relpos_query, relpos_emb)
             relpos_attn = relpos_attn / math.sqrt(6 * self.relpos_freqs)
-            attn = attn + relpos_attn
+            attn = attn + relpos_attn # this is already 0 for masked pairs
             
 
         attn = torch.softmax(attn, dim=-1)
@@ -250,6 +251,9 @@ class GeometricMultiHeadAttention(nn.Module):
         if self.relpos_values:
             relpos_out = torch.einsum("bhij,bijd->bihd", attn, relpos_emb)
             relpos_out = relpos_out.reshape(B, L, -1)
+            # if relpos_mask is not None:
+            #     out = out + torch.where(relpos_mask[...,None], self.w_r(relpos_out), 0.0)
+            # else:
             out = out + self.w_r(relpos_out)
 
         return out

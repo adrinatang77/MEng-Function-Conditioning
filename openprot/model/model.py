@@ -329,7 +329,7 @@ class StructureModule(nn.Module):
                 nn.LayerNorm(cfg.dim), nn.Linear(cfg.dim, cfg.dim)
             )
 
-    def forward(self, x, z, trans, mask, x_cond, postcond_fn):
+    def forward(self, x, z, trans, mask, x_cond, postcond_fn, relpos_mask=None):
             
         if self.cfg.move_x_to_xcond:
             x_cond = x_cond + self.x_cond_linear(x)
@@ -353,7 +353,7 @@ class StructureModule(nn.Module):
             else:
                 block = self.ipa_block
 
-            x, z, trans = block(x, z, trans, mask, x_cond, postcond_fn)
+            x, z, trans = block(x, z, trans, mask, x_cond, postcond_fn, relpos_mask=relpos_mask)
             all_trans.append(trans)
             all_x.append(x)
 

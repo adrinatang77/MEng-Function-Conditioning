@@ -163,7 +163,7 @@ class StructureTrack(OpenProtTrack):
 
         # finally provide the raw struct for relpos
         inp["struct"] = batch["struct"]
-        inp["struct_mask"] = embed_as_mask
+        inp["struct_mask"] = ~embed_as_mask
 
         # provide the postcondition function
         postcond_noise = torch.where(
