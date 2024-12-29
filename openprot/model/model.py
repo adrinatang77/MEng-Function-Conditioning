@@ -380,8 +380,8 @@ class OpenProtModel(nn.Module):
             tri_mul=cfg.tri_mul,
         )
         relpos_args = dict(
-            relpos_attn=cfg.relpos,
-            relpos_values=cfg.relpos,
+            relpos_attn=True,
+            relpos_values=True,
             relpos_freqs=cfg.trunk_relpos[0],
             relpos_min=cfg.trunk_relpos[1],
             relpos_max=cfg.trunk_relpos[2],
