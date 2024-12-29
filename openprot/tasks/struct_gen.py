@@ -32,7 +32,6 @@ class StructureGeneration(OpenProtTask):
         ) ** p
         #####
         
-        
         data["seq_noise"] = np.ones(L, dtype=np.float32)
 
         data["struct_noise"] = np.ones(L, dtype=np.float32) * noise_level
