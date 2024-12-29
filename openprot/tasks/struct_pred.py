@@ -46,7 +46,7 @@ class StructurePrediction(OpenProtTask):
             data["atom37"] @= randrot.T
 
         data["/struct_pred"] = np.ones((), dtype=np.float32)
-        if noise_level == self.cfg.sigma_max:
+        if noise_level >= self.cfg.sigma_max:
             data["/struct_pred/t1"] = np.ones((), dtype=np.float32)
         else:
             data["/struct_pred/t1"] = np.zeros((), dtype=np.float32)
