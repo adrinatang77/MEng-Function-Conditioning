@@ -35,8 +35,7 @@ class StructurePredictionEval(OpenProtEval):
         )
 
         L = len(seqres)
-        data["trans_noise"] = np.ones(L, dtype=np.float32) * 160.
-        data["rots_noise"] = np.ones(L, dtype=np.float32) * 1.0
+        data["struct_noise"] = np.ones(L, dtype=np.float32) * 160.
 
         return data
 
@@ -45,8 +44,8 @@ class StructurePredictionEval(OpenProtEval):
 
         # noisy_batch["frame_trans"] = self
         def model_func(pos, t):
-            noisy_batch["trans_noise"] = torch.ones_like(noisy_batch["trans_noise"]) * t
-            noisy_batch["frame_trans"] = pos
+            noisy_batch["struct_noise"] = torch.ones_like(noisy_batch["struct_noise"]) * t
+            noisy_batch["struct"] = pos
             _, readout = model.forward(noisy_batch)
             return readout["trans"]
 
@@ -75,30 +74,30 @@ class StructurePredictionEval(OpenProtEval):
         for track in model.tracks.values():
             track.corrupt(batch, noisy_batch, {})
 
-        noisy_batch["frame_trans"] = torch.randn_like(noisy_batch["frame_trans"]) * 160
+        noisy_batch["struct"] = torch.randn_like(noisy_batch["struct"]) * 160.
         if self.cfg.diffusion:
             coords = self.run_diffusion(model, batch, noisy_batch, savedir)
         else:
             _, readout = model.forward(noisy_batch)
             coords = readout["trans"][-1]
 
-        L = batch["frame_trans"].shape[1]
+        L = batch["struct"].shape[1]
         aatype = batch["aatype"].cpu().numpy()[0]
 
-        coords = rmsdalign(batch["frame_trans"], coords, batch["frame_mask"])
+        coords = rmsdalign(batch["struct"], coords, batch["struct_mask"])
 
-        lddt = compute_lddt(coords, batch["frame_trans"], batch["frame_mask"])
+        lddt = compute_lddt(coords, batch["struct"], batch["struct_mask"])
 
         tmscore = compute_tmscore(  # second is reference
             coords1=coords.cpu().numpy()[0],
-            coords2=batch["frame_trans"].cpu().numpy()[0],
+            coords2=batch["struct"].cpu().numpy()[0],
             seq1=aatype,
             seq2=aatype,
             mask1=None,
-            mask2=batch["frame_mask"].cpu().numpy()[0],
+            mask2=batch["struct_mask"].cpu().numpy()[0],
         )
 
-        rmsd = compute_rmsd(batch["frame_trans"], coords, batch["frame_mask"])
+        rmsd = compute_rmsd(batch["struct"], coords, batch["struct_mask"])
         if logger:
             logger.log("struct/lddt", lddt)
             logger.log("struct/tm", tmscore["tm"])
@@ -107,9 +106,9 @@ class StructurePredictionEval(OpenProtEval):
             logger.log("struct/rmsd", rmsd)
 
         prot = make_ca_prot(
-            coords=batch["frame_trans"].cpu().numpy()[0],
+            coords=batch["struct"].cpu().numpy()[0],
             aatype=aatype,
-            mask=batch["frame_mask"].cpu().numpy()[0],
+            mask=batch["struct_mask"].cpu().numpy()[0],
         )
         ref_str = protein.to_pdb(prot)
 

@@ -73,7 +73,7 @@ class StructureTrack(OpenProtTrack):
         """
 
     def add_modules(self, model):
-        model.frame_mask = nn.Parameter(torch.zeros(model.cfg.dim))
+        # model.frame_mask = nn.Parameter(torch.zeros(model.cfg.dim))
         if self.cfg.embed_trans:
             model.trans_in = nn.Linear(3, model.cfg.dim)
         if self.cfg.embed_pairwise:
@@ -116,28 +116,25 @@ class StructureTrack(OpenProtTrack):
         if logger:
             logger.masked_log("struct/toks", batch["struct_mask"], sum=True)
 
-    def embed(self, model, batch, inp, inf=1e5):
+    def embed(self, model, batch, inp):
 
-        embed_as_mask = (batch["struct_noise"] >= inf) | ~batch["struct_mask"].bool()
+        tmax = self.cfg.t_emb_max
+        embed_as_mask = (batch["struct_noise"] >= tmax) | ~batch["struct_mask"].bool()
 
+        coords = torch.where(
+            embed_as_mask[...,None],
+            tmax * torch.randn_like(batch["struct"]),
+            batch["struct"]
+        )
+        noise = torch.where(
+            embed_as_mask,
+            tmax,
+            batch["struct_noise"]
+        )
         # linear embed coords if specified
         if self.cfg.embed_trans:
-            precond = self.diffusion.precondition(
-                batch["struct"],
-                batch["struct_noise"]
-            )
-            inp["x"] += torch.where(
-                embed_as_mask[...,None],
-                0.0,
-                model.trans_in(precond),
-            ) 
-
-        # always tell the model which frames were not present
-        inp["x"] += torch.where(
-            embed_as_mask[..., None],
-            model.frame_mask[None, None],
-            0.0,
-        )
+            precond = self.diffusion.precondition(coords, noise)
+            inp["x"] += model.trans_in(precond)
 
         # embed sigma
         def sigma_transform(noise_level):
@@ -145,12 +142,8 @@ class StructureTrack(OpenProtTrack):
             t_emb = t_emb / self.cfg.t_emb_max ** (1/self.cfg.t_emb_p)
             return t_emb
             
-        t_emb = sigma_transform(batch["struct_noise"])
-        t_emb = torch.where(
-            embed_as_mask[..., None], 
-            model.frame_mask[None, None],
-            sinusoidal_embedding(t_emb, model.cfg.dim // 2, 1, 0.01).float(),
-        )
+        t_emb = sigma_transform(noise) 
+        t_emb = sinusoidal_embedding(t_emb, model.cfg.dim // 2, 1, 0.01).float()
         inp["x_cond"] += t_emb
 
         if self.cfg.embed_pairwise:
@@ -162,17 +155,9 @@ class StructureTrack(OpenProtTrack):
             )
 
         # finally provide the raw struct for relpos
-        inp["struct"] = batch["struct"]
-        inp["struct_mask"] = ~embed_as_mask
-
-        # provide the postcondition function
-        postcond_noise = torch.where(
-            embed_as_mask,
-            inf, # covers edge case of missing residues
-            batch["struct_noise"]
-        )
+        inp["struct"] = coords 
         inp["postcond_fn"] = lambda x: self.diffusion.postcondition(
-            inp["struct"], x, postcond_noise,
+            coords, x, noise,
         )
 
     def predict(self, model, inp, out, readout):

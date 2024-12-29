@@ -16,7 +16,7 @@ class StructurePrediction(OpenProtTask):
 
         rand = np.random.rand()
         if rand < self.cfg.max_noise_prob:
-            noise_level = inf
+            noise_level = self.cfg.sigma_max
         else:
             if rand < self.cfg.max_noise_prob + self.cfg.uniform_prob:
                 t = np.random.rand()

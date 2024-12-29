@@ -111,7 +111,7 @@ class InverseFoldingEval(OpenProtEval):
             track.corrupt(batch, noisy_batch, {})
 
         # have to maintain train-test alignment
-        noisy_batch['trans_noise'].fill_(self.cfg.sigma) 
+        noisy_batch['struct_noise'].fill_(self.cfg.sigma) 
             
         L = len(batch["seqres"][0])
         
@@ -128,7 +128,7 @@ class InverseFoldingEval(OpenProtEval):
         seq = "".join([rc.restypes_with_x[aa] for aa in noisy_batch["aatype"][0]])
         
         recov = (noisy_batch['aatype'] == batch['aatype']).float()
-        recov = (recov * batch['frame_mask']).sum() / batch['frame_mask'].sum()
+        recov = (recov * batch['struct_mask']).sum() / batch['struct_mask'].sum()
         
         if logger is not None:
             logger.log(f"{self.cfg.name}/recov", recov.item())

@@ -82,8 +82,8 @@ class StructureGenerationEval(OpenProtEval):
         diffusion = self.tracks["StructureTrack"].diffusion
 
         def model_func(pos, t):
-            noisy_batch["trans_noise"] = torch.ones_like(noisy_batch["trans_noise"]) * t
-            noisy_batch["frame_trans"] = pos
+            noisy_batch["struct_noise"] = torch.ones_like(noisy_batch["struct_noise"]) * t
+            noisy_batch["struct"] = pos
             _, readout = model.forward(noisy_batch)
             
             return readout["trans"][-1]
@@ -95,7 +95,7 @@ class StructureGenerationEval(OpenProtEval):
         prot = make_ca_prot(
             samp_traj[-1, -1].cpu().numpy(),
             batch["aatype"].cpu().numpy()[0],
-            batch["frame_mask"].cpu().numpy()[0],
+            batch["struct_mask"].cpu().numpy()[0],
         )
 
         ref_str = protein.to_pdb(prot)
