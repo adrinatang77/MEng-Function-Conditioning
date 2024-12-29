@@ -111,8 +111,16 @@ class OpenProtWrapper(Wrapper):
         self.evals = evals
 
         
-        
+    def on_save_checkpoint(self, checkpoint):
+        esm_keys = {k for k in checkpoint['state_dict'].items() if "model.esm." in k}
+        checkpoint['state_dict'] = {k: v for k, v in checkpoint['state_dict'].items() if k not in esm_keys}
 
+    def on_load_checkpoint(self, checkpoint):
+        state_dict = self.state_dict()
+        esm_keys = {k for k in state_dict.items() if "model.esm." in k}
+        checkpoint['state_dict'] |= {k: state_dict[k] for k in esm_keys}
+        
+            
         
     def transfer_batch_to_device(self, batch, device, dataloader_idx):
         return batch.to(device)

@@ -379,10 +379,20 @@ class OpenProtModel(nn.Module):
             pair_ff_expand=cfg.pair_ff_expand,
             tri_mul=cfg.tri_mul,
         )
+        relpos_args = dict(
+            relpos_attn=cfg.relpos,
+            relpos_values=cfg.relpos,
+            relpos_freqs=cfg.trunk_relpos[0],
+            relpos_min=cfg.trunk_relpos[1],
+            relpos_max=cfg.trunk_relpos[2],
+        )
 
         self.blocks = nn.ModuleList()
         pair_block_idx = list(
             range(cfg.pair_blocks.start, cfg.pair_blocks.end, cfg.pair_blocks.interval)
+        )
+        relpos_block_idx = list(
+            range(cfg.relpos_blocks.start, cfg.relpos_blocks.end, cfg.relpos_blocks.interval)
         )
 
         for i in range(cfg.blocks):
@@ -397,12 +407,8 @@ class OpenProtModel(nn.Module):
                     adaLN=cfg.trunk_adaLN,
                     pairwise_dim=cfg.pairwise_dim,
                     pair_bias=cfg.block_pair_bias,
-                    relpos_attn=cfg.relpos,
-                    relpos_values=cfg.relpos,
-                    relpos_freqs=cfg.trunk_relpos[0],
-                    relpos_min=cfg.trunk_relpos[1],
-                    relpos_max=cfg.trunk_relpos[2],
                     **(pair_args if i in pair_block_idx else {}),
+                    **(relpos_args if i in relpos_block_idx else {}),
                 )
             )
 

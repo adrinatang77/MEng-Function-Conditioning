@@ -165,6 +165,7 @@ class SequenceTrack(OpenProtTrack):
             model.esm, self.esm_dict = esm_registry.get(self.cfg.esm)()
             model.esm.requires_grad_(False)
             model.esm.half()
+            model.esm.eval()
             esm_dim = model.esm.layers[0].final_layer_norm.bias.shape[0]
             # model.esm_in = nn.Linear(esm_dim, model.cfg.dim)
             model.esm_s_combine = nn.Parameter(torch.zeros(model.esm.num_layers + 1))

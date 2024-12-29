@@ -3,16 +3,16 @@ pretrained: null  #  load weights from here first
 validate: false # if true, only validate the model, don't train
 logger:
     # set to true to log to neptune.ai
-    neptune: true
+    neptune: false
     run_id: null 
     # please change "test" to something unique to your task
     project: openprot/struct-merge
     # will log to workdir and neptune.ai with this name
-    name: merge-test-330M-reweight # invfold-1e3-relpos-256-bs4
+    name: default # merge-test-330M-reweight # invfold-1e3-relpos-256-bs4
     # if not null, will duplicate stdout and stderr to workdir/{name}/{logfile}
-    logfile: std.out
+    logfile: null # std.out
     # if null, will log every epoch, otherwise every this number of steps
-    train_log_freq: 10
+    train_log_freq: 100
     val_log_freq: null 
     ckpt_freq: 50000000000
     save_freq: 5000
@@ -27,7 +27,7 @@ trainer:
     num_sanity_val_steps: 0
     gradient_clip_val: 1.0
     accumulate_grad_batches: 1
-    val_check_interval: 5000
+    val_check_interval: 10000
     check_val_every_n_epoch: 1
     logger: false
 
@@ -230,18 +230,18 @@ tracks:
             data_sigma: 15
             aligned_loss: true
     SequenceTrack:
-        esm: null # esm2_3B # esm2_650M # esm2_8M_270K
+        esm: esm2_3B # esm2_650M # esm2_8M_270K
         loss_weight: 1.0 
         embed_t: false
 
 
 model: # custom args
     checkpoint: false
-    dim: 1024
+    dim: 640
     pairwise_dim: 128
-    heads: 16
+    heads: 20
     pairwise_heads: 4
-    blocks: 12
+    blocks: 30
 
     relpos: true
     trunk_relpos: [32, 1, 1000]
@@ -251,6 +251,10 @@ model: # custom args
         start: 0
         end: 0
         interval: 1
+    relpos_blocks:
+        start: 0
+        end: 30
+        interval: 4
     struct_module: true
     sm_block_idx: 12
     
