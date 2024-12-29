@@ -8,9 +8,9 @@ logger:
     # please change "test" to something unique to your task
     project: openprot/struct-merge
     # will log to workdir and neptune.ai with this name
-    name: merge-test-330M-normal-masking # invfold-1e3-relpos-256-bs4
+    name: merge-test-330M-reweight # invfold-1e3-relpos-256-bs4
     # if not null, will duplicate stdout and stderr to workdir/{name}/{logfile}
-    logfile: null # std.out
+    logfile: std.out
     # if null, will log every epoch, otherwise every this number of steps
     train_log_freq: 10
     val_log_freq: null 
@@ -20,7 +20,7 @@ trainer:
     accelerator: auto
     devices: 1
     max_epochs: 1
-    max_steps: 1000000
+    max_steps: 3000 # 1000000
     enable_progress_bar: true
     limit_train_batches: 1.0
     limit_val_batches: 1.0
@@ -48,11 +48,14 @@ features:
     # sequence feats
     seq_mask: [-1]
     seq_noise: [-1]
+    seq_weight: [-1]
     # structure feats are unconventional
     # because they really mix 3 modalities
     atom37: [-1, 37, 3]
     atom37_mask: [-1, 37]
     struct_noise: [-1]
+    struct_weight: [-1]
+    
     
 datasets:
     pdb:
@@ -83,6 +86,7 @@ datasets:
 tasks:
     InverseFolding:
         fraction: 0.25
+        weight: 1.0
         beta: [1, 2]
         uniform_prob: 1.0
         seed: 137
@@ -99,6 +103,7 @@ tasks:
                 seed: 38
     SequenceUnmasking: 
         fraction: 0.25
+        weight: 1.0
         # beta: [1, 2]
         # uniform_prob: 0.0
         beta: [3, 9]
@@ -111,6 +116,7 @@ tasks:
                 seed: 39
     StructurePrediction:
         fraction: 0.25
+        weight: 1.0
         beta: [1, 2]
         uniform_prob: 0.0
         max_noise_prob: 1.0
@@ -130,6 +136,7 @@ tasks:
                 seed: 41
     StructureGeneration:
         fraction: 0.25
+        weight: 1.0
         beta: [1, 2]
         uniform_prob: 0.5
         seed: 137
@@ -226,7 +233,7 @@ tracks:
         esm: null # esm2_3B # esm2_650M # esm2_8M_270K
         loss_weight: 1.0 
         embed_t: false
-        loss_reweight: var
+
 
 model: # custom args
     checkpoint: false
@@ -267,10 +274,7 @@ model: # custom args
     separate_ipa_blocks: false
     ipa_pair_values: false
     ipa_pair_bias: false
-    embed_trans: false
-    detach_rots: true
     detach_trans: true
-    detach_x: false
     trunk_adaLN: true
     sm_adaLN: true
     readout_adaLN: true

@@ -7,7 +7,7 @@ class SequenceUnmasking(OpenProtTask):
     def register_loss_masks(self):
         return ["/seq_gen"]
         
-    def prep_data(self, data, crop=None, inf=1e5):
+    def prep_data(self, data, crop=None, eps=1e-5, inf=1e5):
 
         if crop is not None:
             data.crop(crop)
@@ -19,6 +19,10 @@ class SequenceUnmasking(OpenProtTask):
 
         L = len(data["seqres"])
         data["seq_noise"] = (np.random.rand(L) < noise_level).astype(np.float32)
+        t = (data["seq_mask"] * data["seq_noise"]).sum() / (eps + data["seq_mask"].sum())
+        data["seq_weight"] = np.ones(L, dtype=np.float32) / t * self.cfg.weight
+        
+        
         data["struct_noise"] = np.ones(L, dtype=np.float32) * inf
         
         data["/seq_gen"] = np.ones((), dtype=np.float32)

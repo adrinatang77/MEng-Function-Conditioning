@@ -32,10 +32,11 @@ class StructureGeneration(OpenProtTask):
         ) ** p
         #####
         
-        data["struct_noise"] = np.ones(L, dtype=np.float32) * noise_level
+        
         data["seq_noise"] = np.ones(L, dtype=np.float32)
 
-        # data["torsion_noise"] = np.ones(len(data["seqres"]))
+        data["struct_noise"] = np.ones(L, dtype=np.float32) * noise_level
+        data["struct_weight"] = np.ones(L, dtype=np.float32) * self.cfg.weight
 
         # center the structures
         pos = data["atom37"][..., rc.atom_order["CA"], :]

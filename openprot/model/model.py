@@ -316,7 +316,6 @@ class StructureModule(nn.Module):
             relpos_freqs=cfg.sm_relpos[0],
             relpos_min=cfg.sm_relpos[1],
             relpos_max=cfg.sm_relpos[2],
-            embed_trans=cfg.embed_trans,
         )
         if cfg.separate_ipa_blocks:
             self.ipa_blocks = nn.ModuleList()
@@ -345,9 +344,7 @@ class StructureModule(nn.Module):
 
             if self.cfg.detach_trans:
                 trans = trans.detach()
-            if self.cfg.detach_x:
-                x = x.detach()
-
+            
             if self.cfg.separate_ipa_blocks:
                 block = self.ipa_blocks[i]
             else:

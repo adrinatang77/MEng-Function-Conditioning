@@ -16,23 +16,23 @@ class StructurePrediction(OpenProtTask):
 
         rand = np.random.rand()
         if rand < self.cfg.max_noise_prob:
-            noise_level = self.cfg.sigma_max
+            t = 1.1 # has to be greater than one otherwise the masking will fail
+        elif rand < self.cfg.max_noise_prob + self.cfg.uniform_prob:
+            t = np.random.rand()
         else:
-            if rand < self.cfg.max_noise_prob + self.cfg.uniform_prob:
-                t = np.random.rand()
-            else:
-                t = np.random.beta(*self.cfg.beta)
+            t = np.random.beta(*self.cfg.beta)
 
-            ####
-            p = self.cfg.sched_p
-            noise_level = (
-                self.cfg.sigma_min ** (1 / p)
-                + t * (self.cfg.sigma_max ** (1 / p) - self.cfg.sigma_min ** (1 / p))
-            ) ** p
-            ####
+        ####
+        p = self.cfg.sched_p
+        noise_level = (
+            self.cfg.sigma_min ** (1 / p)
+            + t * (self.cfg.sigma_max ** (1 / p) - self.cfg.sigma_min ** (1 / p))
+        ) ** p
+        ####
 
         L = len(data["seqres"])
         data["struct_noise"] = np.ones(L, dtype=np.float32) * noise_level
+        data["struct_weight"] = np.ones(L, dtype=np.float32) * self.cfg.weight
         
         # center the structures
         pos = data["atom37"][..., rc.atom_order["CA"], :]
@@ -45,7 +45,7 @@ class StructurePrediction(OpenProtTask):
             data["atom37"] @= randrot.T
 
         data["/struct_pred"] = np.ones((), dtype=np.float32)
-        if noise_level == inf:
+        if noise_level >= self.cfg.sigma_max:
             data["/struct_pred/t1"] = np.ones((), dtype=np.float32)
         else:
             data["/struct_pred/t1"] = np.zeros((), dtype=np.float32)

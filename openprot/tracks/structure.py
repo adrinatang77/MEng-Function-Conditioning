@@ -105,9 +105,11 @@ class StructureTrack(OpenProtTrack):
         noisy_batch["struct"] = noisy
 
         # training targets
-        target["struct_noise"] = batch["struct_noise"]
-        target["struct_supervise"] = batch["struct_mask"]
-        target["struct"] = target_tensor #
+        target["struct_noise"] = batch["struct_noise"] # used to compute diffusion loss
+        target["struct_supervise"] = batch["struct_mask"] # torch.where(
+            # batch["struct_mask"].bool(), batch["struct_weight"], 0.0
+        # )
+        target["struct"] = target_tensor 
 
         # needed for computing distogram loss
         target["beta"], target["beta_mask"] = pseudo_beta_fn(
@@ -242,7 +244,7 @@ class StructureTrack(OpenProtTrack):
 
         pred = readout["trans"]
         gt = target["struct"]
-        mask = target["struct_supervise"]
+        mask = target["struct_supervise"]#.bool().float() # lddt loss is binary
         soft_lddt = compute_lddt(pred, gt, mask, soft=True, reduce=(-1,))
 
         soft_lddt_loss = 1 - soft_lddt  # [9, B, L]
@@ -258,7 +260,7 @@ class StructureTrack(OpenProtTrack):
 
         pred = readout["trans"]
         gt = target["struct"]
-        mask = target["struct_supervise"]
+        mask = target["struct_supervise"] # weighted mse!
         t = target["struct_noise"]
 
         

@@ -20,7 +20,10 @@ class InverseFolding(OpenProtTask):
 
         L = len(data["seqres"])
         data["seq_noise"] = (np.random.rand(L) < noise_level).astype(np.float32)
-
+        
+        t = (data["seq_mask"] * data["seq_noise"]).sum() / (eps + data["seq_mask"].sum())
+        data["seq_weight"] = np.ones(L, dtype=np.float32) / t * self.cfg.weight
+        
         data["struct_noise"] = np.ones(L, dtype=np.float32) * self.cfg.sigma
 
         # center the structures
