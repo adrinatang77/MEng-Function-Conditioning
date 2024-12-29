@@ -73,7 +73,8 @@ class StructureTrack(OpenProtTrack):
         """
 
     def add_modules(self, model):
-        # model.frame_mask = nn.Parameter(torch.zeros(model.cfg.dim))
+        model.frame_mask = nn.Parameter(torch.zeros(model.cfg.dim))
+        model.frame_mask_cond = nn.Parameter(torch.zeros(model.cfg.dim))
         if self.cfg.embed_trans:
             model.trans_in = nn.Linear(3, model.cfg.dim)
         if self.cfg.embed_pairwise:
@@ -134,7 +135,16 @@ class StructureTrack(OpenProtTrack):
         # linear embed coords if specified
         if self.cfg.embed_trans:
             precond = self.diffusion.precondition(coords, noise)
-            inp["x"] += model.trans_in(precond)
+            inp["x"] += torch.where(
+                embed_as_mask[...,None],
+                0.0,
+                model.trans_in(precond)
+            )
+        inp["x"] += torch.where(
+            embed_as_mask[...,None],
+            model.frame_mask[None,None],
+            0.0,
+        )
 
         # embed sigma
         def sigma_transform(noise_level):
@@ -144,8 +154,12 @@ class StructureTrack(OpenProtTrack):
             
         t_emb = sigma_transform(noise) 
         t_emb = sinusoidal_embedding(t_emb, model.cfg.dim // 2, 1, 0.01).float()
-        inp["x_cond"] += t_emb
-
+        inp["x_cond"] += torch.where(
+            embed_as_mask[...,None],
+            model.frame_mask_cond[None,None],
+            t_emb,
+        )
+            
         if self.cfg.embed_pairwise:
             raise Exception("This hasn't been touched in a while, should fix")
             dmat = inp["struct"][..., None, :, :] - inp["struct"][..., None, :]
@@ -155,7 +169,8 @@ class StructureTrack(OpenProtTrack):
             )
 
         # finally provide the raw struct for relpos
-        inp["struct"] = coords 
+        inp["struct"] = coords
+        inp["struct_mask"] = ~embed_as_mask
         inp["postcond_fn"] = lambda x: self.diffusion.postcondition(
             coords, x, noise,
         )

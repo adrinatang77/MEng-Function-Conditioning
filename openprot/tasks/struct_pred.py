@@ -9,7 +9,7 @@ class StructurePrediction(OpenProtTask):
     def register_loss_masks(self):
         return ["/struct_pred", "/struct_pred/t1"]
 
-    def prep_data(self, data, crop=None, eps=1e-6, inf=1e5):
+    def prep_data(self, data, crop=None, eps=1e-6):
 
         if crop is not None:
             data.crop(crop)
