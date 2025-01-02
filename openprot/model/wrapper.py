@@ -58,7 +58,7 @@ class Wrapper(pl.LightningModule):
         cls = getattr(torch.optim, self.cfg.optimizer.type)
         all_params = filter(lambda p: p.requires_grad, self.model.parameters())
         # TEMPORARY AND HACKY
-        post_params = self.model.blocks[12:].parameters()
+        # post_params = self.model.blocks[12:].parameters()
         optimizer = cls(
             # [
             #     {"params": list(set(all_params) - set(post_params))},
@@ -97,17 +97,22 @@ class Wrapper(pl.LightningModule):
 class OpenProtWrapper(Wrapper):
     def __init__(self, cfg, tracks: OpenProtTrackManager, evals: dict):
         super().__init__(cfg)
-        self.model = OpenProtModel(cfg.model)
-
-        # from byprot.models.lm.dplm import DiffusionProteinLanguageModel
-        # os.environ['HF_HOME'] = "/scratch/10165/bjing"
-        # self.dplm = DiffusionProteinLanguageModel.from_pretrained("airkingbd/dplm_150m")
-
         
+        if cfg.model.dplm_ckpt:
+            from byprot.models.lm.dplm import DiffusionProteinLanguageModel
+            os.environ['HF_HOME'] = "/scratch/10165/bjing"
+            self.model = DiffusionProteinLanguageModel.from_pretrained(self.cfg.model.dplm_ckpt)
+            
+            ours_to_dplm = [self.model.tokenizer._token_to_id[c] for c in rc.restypes] + [32]
+            self.register_buffer("ours_to_dplm", torch.tensor(ours_to_dplm))
+            del self.model.net.esm.embeddings.position_embeddings.weight
+            del self.model.net.esm.contact_head.regression.weight
+            del self.model.net.esm.contact_head.regression.bias
+        else:
+            self.model = OpenProtModel(cfg.model)
+            tracks.add_modules(self.model)
+
         self.tracks = tracks
-
-        tracks.add_modules(self.model)
-
         self.evals = evals
 
         
@@ -132,21 +137,26 @@ class OpenProtWrapper(Wrapper):
     def forward(self, noisy_batch):
         
         
-        # ours_to_dplm = [self.dplm.tokenizer._token_to_id[c] for c in rc.restypes] + [32]
-        
-        # inp = torch.tensor(ours_to_dplm).cuda()[noisy_batch['aatype']]
-        # inp = torch.where(noisy_batch['pad_mask'].bool(), inp, self.dplm.tokenizer._token_to_id["<pad>"])
-        # B, L = inp.shape
-        # inp_ = inp.new_zeros(B, L+2)
-        # inp_[:,0] = self.dplm.tokenizer._token_to_id["<cls>"]
-        # inp_[:,-1] = self.dplm.tokenizer._token_to_id["<eos>"]
-        # inp_[:,1:-1] = inp
+        if self.cfg.model.dplm_ckpt:
+            #breakpoint()
+            inp = self.ours_to_dplm[noisy_batch['aatype']]
+            inp = torch.where(noisy_batch['pad_mask'].bool(), inp, self.model.tokenizer._token_to_id["<pad>"])
+            B, L = inp.shape
+            inp_ = inp.new_zeros(B, L+2) + self.model.tokenizer._token_to_id["<pad>"]
+            inp_[:,0] = self.model.tokenizer._token_to_id["<cls>"]
+            inp_[:,1:-1] = inp
+            inp_[torch.arange(B), noisy_batch['pad_mask'].sum(-1).long()+1] = self.model.tokenizer._token_to_id["<eos>"]
+            
+            out = None
+            readout = {}
+            logits = self.model.net(input_ids=inp_)['logits'][:,1:-1]
+            # logits[:,0,self.model.tokenizer._token_to_id["M"]] += 1e5
+            readout['aatype'] = logits[:,:,self.ours_to_dplm]
+            
+            ##### 
 
-        # out = None
-        # readout = {}
-        # logits = self.dplm.net(input_ids=inp_)['logits'][:,1:-1]
-        # readout['aatype'] = logits[:,:,torch.tensor(ours_to_dplm).cuda()]
-        # return out, readout
+
+            return out, readout
         
         ## embed the tracks into an input dict
         inp = self.tracks.embed(self.model, noisy_batch)

@@ -183,16 +183,26 @@ class SequenceTrack(OpenProtTrack):
 
     def corrupt(self, batch, noisy_batch, target, logger=None):
         eps = 1e-6
+
         
         tokens = batch["aatype"]
         
         mask = batch["seq_noise"].bool() | ~batch["seq_mask"].bool() # these will be input as MASK
         sup = batch["seq_noise"].bool() & batch["seq_mask"].bool() # these will be actually supervised
 
-        noisy_batch["aatype"] = torch.where(mask, MASK_IDX, tokens)
+        rand = torch.rand_like(batch['seq_noise'])
+        randaa = torch.randint(0, 20, rand.shape, device=rand.device)
+        randaa = torch.where(rand < self.cfg.mask_rate, MASK_IDX, randaa)
+        randaa = torch.where(
+            rand < (self.cfg.mask_rate + self.cfg.rand_rate),
+            randaa,
+            tokens
+        )
+        noisy_batch["aatype"] = torch.where(mask, randaa, tokens)
         noisy_batch["seq_noise"] = batch["seq_noise"]
 
         target["aatype"] = tokens
+        target["noisy_aatype"] = noisy_batch["aatype"] # temporary
         target["seq_supervise"] = torch.where(sup, batch["seq_weight"], 0.0)
 
         if logger:
@@ -227,8 +237,12 @@ class SequenceTrack(OpenProtTrack):
     def predict(self, model, inp, out, readout, inf=1e5):
         readout["aatype"] = model.seq_out(out["x"])
         readout["aatype"][...,-1] = -inf # ban X
-
+        
     def compute_loss(self, readout, target, logger=None, eps=1e-6, **kwargs):
+
+        
+
+        
         loss = torch.nn.functional.cross_entropy(
             readout["aatype"].transpose(1, 2), target["aatype"], reduction="none"
         )
@@ -238,5 +252,20 @@ class SequenceTrack(OpenProtTrack):
         if logger:
             logger.masked_log("seq/loss", loss, mask=mask)
             logger.masked_log("seq/perplexity", loss, mask=mask, post=np.exp)
-       
+
+        logits = readout["aatype"]
+        logits[...,-1] -= 1e5
+        ## extract the pseudo-mask likelihoods
+        probs = logits.softmax(-1)
+        oh = torch.nn.functional.one_hot(target['noisy_aatype'])
+        denom = 0.5 * oh + 0.05
+        new_probs = probs / denom
+        new_probs /= new_probs.sum(-1, keepdims=True)
+        is_mask_prob = ((probs - oh) / (new_probs - oh))[...,0]
+        is_unmask = (target['noisy_aatype'] != 20)
+        # print((is_mask_prob * is_unmask).sum(-1) / is_unmask.sum(-1))
+        # print((is_mask_prob * is_unmask).sum() / is_unmask.sum())
+        if logger:
+            logger.masked_log("seq/is_mask_prob", is_mask_prob, mask=is_unmask)
+        
         return loss * mask

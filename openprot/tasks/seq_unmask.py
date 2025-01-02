@@ -5,7 +5,7 @@ import numpy as np
 class SequenceUnmasking(OpenProtTask):
 
     def register_loss_masks(self):
-        return ["/seq_gen"]
+        return ["/seq_gen"] # + [f"/seq_gen_{i}" for i in range(21)]
         
     def prep_data(self, data, crop=None, eps=1e-5, inf=1e5):
 
@@ -20,11 +20,14 @@ class SequenceUnmasking(OpenProtTask):
         L = len(data["seqres"])
         data["seq_noise"] = (np.random.rand(L) < noise_level).astype(np.float32)
         t_inv = data["seq_mask"].sum() / (eps + (data["seq_mask"] * data["seq_noise"]).sum()) 
+        t = (data["seq_mask"] * data["seq_noise"]).sum()  / (eps + data["seq_mask"].sum()) 
         data["seq_weight"] = np.ones(L, dtype=np.float32) * t_inv * self.cfg.weight
         
         data["struct_noise"] = np.ones(L, dtype=np.float32) * inf
         
         data["/seq_gen"] = np.ones((), dtype=np.float32)
+        # i = int(20 * noise_level)
+        # data[f"/seq_gen_{i}"] = np.ones((), dtype=np.float32)
         
         return data
 

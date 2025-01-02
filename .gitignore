@@ -1,6 +1,7 @@
 byprot
 cameo
 fasta
+*.pyc
 workdir
 .ipynb_checkpoints
 *.ipynb
