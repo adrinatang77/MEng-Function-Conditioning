@@ -76,8 +76,9 @@ class SequenceGenerationEval(OpenProtEval):
             if logger is not None:
                 logger.log(f"{self.cfg.name}/plddt", plddt)
 
-
+    
     def run_batch(self, model, batch: dict, savedir=".", device=None, logger=None, inf=1e6):
+        
         os.makedirs(savedir, exist_ok=True)
 
         noisy_batch = batch.copy("name", "pad_mask")
@@ -86,7 +87,7 @@ class SequenceGenerationEval(OpenProtEval):
 
         L = len(batch["seqres"][0])
 
-        sched = np.linspace(1.0, 0, self.cfg.steps+1)**3 
+        sched = np.linspace(1.0, 0, self.cfg.steps+1)
         is_mask_probs = []
         curr_tok_probs = []
         
@@ -167,7 +168,7 @@ class SequenceGenerationEval(OpenProtEval):
                 scores_ = Categorical(logits=logits).log_prob(sample_)
             elif self.cfg.logits == 'gumbel':
                 gumbel_noise = -torch.log(-torch.log(torch.rand_like(logits) + 1e-8) + 1e-8)
-                logits = logits + gumbel_noise
+                logits = logits + gumbel_noise / self.cfg.temp
                 scores_, sample_ = logits.log_softmax(dim=-1).max(dim=-1) # softmax AFTER gumbel!
 
             new_num_mask = round(s * self.cfg.sample_length)
