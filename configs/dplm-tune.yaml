@@ -1,0 +1,173 @@
+ckpt: null # workdir/dplm-finetune-3e5/last.ckpt # 
+pretrained: null  #  load weights from here first
+validate: false # if true, only validate the model, don't train
+logger:
+    # set to true to log to neptune.ai
+    neptune: true
+    run_id: null 
+    # please change "test" to something unique to your task
+    project: openprot/struct-merge
+    # will log to workdir and neptune.ai with this name
+    name: dplm-finetune-sanity # merge-std-inv-fold-linear-no-reweight # invfold-1e3-relpos-256-bs4
+    # if not null, will duplicate stdout and stderr to workdir/{name}/{logfile}
+    logfile: null # std.out
+    # if null, will log every epoch, otherwise every this number of steps
+    train_log_freq: 100
+    val_log_freq: null 
+    ckpt_freq: 50000000000
+    save_freq: 100
+trainer:
+    accelerator: auto
+    devices: 1
+    max_epochs: 1
+    max_steps: 100
+    enable_progress_bar: true
+    limit_train_batches: 1.0
+    limit_val_batches: 1.0
+    num_sanity_val_steps: 0
+    gradient_clip_val: 1.0
+    accumulate_grad_batches: 1
+    val_check_interval: 200000000
+    check_val_every_n_epoch: 1
+    logger: false
+
+# custom args to OpenProtDataset and elsewhere
+data: 
+    num_workers: 32
+    batch: 32
+    crop: 256
+    seed: 137
+
+# These are the raw features which are expected to be supplied by the Datasets
+# before they are TOKENIZED by the Tracks.
+# We specify them and their shapes so that datasets can supply default values if missing
+# for example, a structure dataset will not supply any dynamics information.
+# We also need to set defaults for the "mask" and "noise" because not all Tasks will set them.
+# -1 means this is the LEGNTH dim. 
+features:
+    # sequence feats
+    seq_mask: [-1]
+    seq_noise: [-1]
+    seq_weight: [-1]
+    # structure feats are unconventional
+    # because they really mix 3 modalities
+    atom37: [-1, 37, 3]
+    atom37_mask: [-1, 37]
+    struct_noise: [-1]
+    struct_weight: [-1]
+    
+    
+datasets:
+    uniref:
+        type: UnirefDataset
+        path: /scratch/projects/cgai/openprot/data/uniref50.fasta
+        index: /scratch/projects/cgai/openprot/data/uniref50.index  
+
+tasks:
+    SequenceUnmasking: 
+        fraction: 1.0
+        weight: 1.0
+        # beta: [1, 2]
+        # uniform_prob: 0.0
+        beta: [3, 9]
+        # uniform_prob: 0.2 
+        uniform_prob: 1.0
+        seed: 137
+        datasets:
+            uniref:
+                fraction: 1.0
+                start: 0
+                seed: 39
+
+            
+evals: 
+    seq_gen_dplm: 
+        type: SequenceGenerationEval
+        num_samples: 10
+        sample_length: 128
+        steps: 128
+        temp: 1.0
+        strategy: dplm
+        logits: gumbel
+        remask: 0.0
+        topk_temp: 0.0
+        allow_mutation: true
+        
+
+tracks:
+    SequenceTrack:
+        esm: null # esm2_3B # esm2_650M # esm2_8M_270K
+        loss_weight: 1.0 
+        mask_rate: 1.0
+        rand_rate: 0.0
+        embed_t: false
+
+
+model: # custom args
+    # dplm_ckpt: zhangzhi/EvoFlow-150M-fs 
+    dplm_ckpt: airkingbd/dplm_150m
+    checkpoint: false
+    dim: 640
+    pairwise_dim: 128
+    heads: 16
+    pairwise_heads: 4
+    blocks: 30
+
+    trunk_relpos: [32, 1, 1000]
+    sm_relpos: [32, 1, 100]
+    # topology of the network
+    pair_blocks:
+        start: 0
+        end: 0
+        interval: 1
+    relpos_blocks:
+        start: 0
+        end: 0
+        interval: 1
+    struct_module: false
+    
+    pairwise_pos_emb: false
+    block_pair_bias: false
+    ff_expand: 4
+    position_bins: 32
+    pair_ffn: true
+    pair_values: false
+    pair_bias: true
+    pair_ff_expand: 4
+    tri_mul: false
+    rope: false
+    custom_rope: true
+
+    ### ipa args
+    readout_trans_before_sm: false
+    zero_frames_before_ipa: true
+    
+    ipa_blocks: 8
+    separate_ipa_blocks: false
+    ipa_pair_values: false
+    ipa_pair_bias: false
+    detach_trans: true
+    trunk_adaLN: false
+    sm_adaLN: false
+    readout_adaLN: false
+    
+    move_x_to_xcond: true
+    ipa_relpos: true
+    ipa_nipa: false
+    ipa_rope: false
+    ipa_frame_update: true
+    zero_x_before_ipa: false
+
+
+optimizer:
+    type: AdamW
+    lr: 3e-5
+    # betas: [0.9, 0.98]
+    # eps: 1e-8
+    # weight_decay: 0.01
+    # fused: true
+    scheduler: 
+        total_steps: 1000000
+        warmup_steps: 10000
+        start_decay: 10000
+        end_factor: 1.00
