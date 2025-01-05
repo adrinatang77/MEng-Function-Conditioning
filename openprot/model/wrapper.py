@@ -140,20 +140,19 @@ class OpenProtWrapper(Wrapper):
         
         
         if self.cfg.model.dplm_ckpt:
-            # inp = self.ours_to_dplm[noisy_batch['aatype']]
-            inp = noisy_batch['aatype']
+            inp = self.ours_to_dplm[noisy_batch['aatype']]
             inp = torch.where(noisy_batch['pad_mask'].bool(), inp, self.model.tokenizer._token_to_id["<pad>"])
-            # B, L = inp.shape
-            inp_ = inp#.new_zeros(B, L+2) + self.model.tokenizer._token_to_id["<pad>"]
-            # inp_[:,0] = self.model.tokenizer._token_to_id["<cls>"]
-            # inp_[:,1:-1] = inp
-            # inp_[torch.arange(B), noisy_batch['pad_mask'].sum(-1).long()+1] = self.model.tokenizer._token_to_id["<eos>"]
+            B, L = inp.shape
+            inp_ = inp.new_zeros(B, L+2) + self.model.tokenizer._token_to_id["<pad>"]
+            inp_[:,0] = self.model.tokenizer._token_to_id["<cls>"]
+            inp_[:,1:-1] = inp
+            inp_[torch.arange(B), noisy_batch['pad_mask'].sum(-1).long()+1] = self.model.tokenizer._token_to_id["<eos>"]
             
             out = None
             readout = {}
             
-            logits = self.model.net(input_ids=inp_)['logits']#[:,1:-1]
-            readout['aatype'] = logits#[:,:,self.ours_to_dplm]
+            logits = self.model.net(input_ids=inp_)['logits'][:,1:-1]
+            readout['aatype'] = logits[:,:,self.ours_to_dplm]
             
             ##### 
 
