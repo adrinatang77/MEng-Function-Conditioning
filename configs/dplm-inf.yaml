@@ -1,4 +1,4 @@
-ckpt: workdir/dplm-continue/last.ckpt # 
+ckpt: workdir/dplm-continue2/last.ckpt # 
 #ckpt: /data/cb/bjing/dplm/byprot-checkpoints/dplm_150m/checkpoints/last.ckpt
 pretrained: null #workdir/dplm-esm/last.ckpt # /data/cb/bjing/dplm/byprot-checkpoints/dplm_150m/checkpoints/last.ckpt   #  load weights from here first
 # x_t = torch.load('/data/cb/bjing/x_t.pt')
@@ -126,8 +126,8 @@ tracks:
 
 model: # custom args
     # dplm_ckpt: zhangzhi/EvoFlow-150M-fs 
-    # dplm_ckpt: airkingbd/dplm_150m
-    dplm_ckpt: facebook/esm2_t30_150M_UR50D
+    dplm_ckpt: airkingbd/dplm_150m
+    # dplm_ckpt: facebook/esm2_t30_150M_UR50D
     checkpoint: false
     dim: 640
     pairwise_dim: 128

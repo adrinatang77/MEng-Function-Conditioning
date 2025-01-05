@@ -43,8 +43,6 @@ class OpenProtDatasetManager(torch.utils.data.IterableDataset):
             if key not in data:
                 data[key] = np.zeros((), dtype=np.float32)
 
-        # data.pad(self.cfg.data.crop)
-
         self.tracks.tokenize(data)
 
         return data
@@ -64,7 +62,11 @@ class OpenProtDatasetManager(torch.utils.data.IterableDataset):
         return batches
         
     def __iter__(self):
+        
         it = self.unbuffered_iter()
+        if not self.cfg.buffer:
+            return it
+            
         batches = []
         buf = []
         for _ in range(self.cfg.data.buffer):

@@ -140,6 +140,7 @@ class OpenProtWrapper(Wrapper):
         
         
         if self.cfg.model.dplm_ckpt:
+            
             inp = self.ours_to_dplm[noisy_batch['aatype']]
             inp = torch.where(noisy_batch['pad_mask'].bool(), inp, self.model.tokenizer._token_to_id["<pad>"])
             B, L = inp.shape
@@ -171,8 +172,6 @@ class OpenProtWrapper(Wrapper):
         return out, readout
 
     def general_step(self, batch):
-
-        batch.trim()
 
         self._logger.register_masks(batch)
         self._logger.masked_log("toks", batch["pad_mask"], sum=True)

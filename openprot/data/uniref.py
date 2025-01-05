@@ -90,7 +90,7 @@ class UnirefDataset(OpenProtDataset):
             seq_mask=seq_mask,
         )
 
-
+"""
 class KevinUnirefDataset(OpenProtDataset):
     def setup(self):
         self.path = self.cfg.path
@@ -124,3 +124,4 @@ class KevinUnirefDataset(OpenProtDataset):
             seqres=seqres,
             seq_mask=seq_mask,
         )
+"""

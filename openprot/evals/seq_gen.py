@@ -37,9 +37,9 @@ class SequenceGenerationEval(OpenProtEval):
         L = self.cfg.sample_length
         data = self.make_data(
             name=f"sample{idx}",
-            seqres='[' + "A" * L + ']',
-            seq_mask=np.ones(L+2, dtype=np.float32),
-            seq_noise=np.ones(L+2, dtype=np.float32),
+            seqres="A" * L,
+            seq_mask=np.ones(L, dtype=np.float32),
+            seq_noise=np.ones(L, dtype=np.float32),
         )
         return data
 
@@ -83,8 +83,6 @@ class SequenceGenerationEval(OpenProtEval):
 
     
     def run_batch(self, model, batch: dict, savedir=".", device=None, logger=None, inf=1e6):
-        # print(model)
-        # breakpoint()
         
         os.makedirs(savedir, exist_ok=True)
 
@@ -102,19 +100,6 @@ class SequenceGenerationEval(OpenProtEval):
         sched = np.linspace(1.0, 0, self.cfg.steps+1)
         is_mask_probs = []
         curr_tok_probs = []
-
-        # model.forward(noisy_batch)
-        # ckpt = torch.load("workdir/dplm-sanity-bs1M/last.ckpt", map_location='cpu')
-        # model = model.cpu()
-        # model.load_state_dict(ckpt["state_dict"], strict=True)
-        # model = model.cuda()
-        # print(model.model.net.esm.encoder.layer[-1].LayerNorm.bias[:100])
-        # _, out = model.forward(noisy_batch)
-        # print(out['aatype'][0,0])
-        
-        # exit()
-        
-        i = 0
         
         for t, s in zip(sched[:-1], sched[1:]):#, total=self.cfg.steps): # t > s
                 
@@ -128,8 +113,6 @@ class SequenceGenerationEval(OpenProtEval):
             _, out = model.forward(noisy_batch)
             
             logits = out['aatype'] 
-            logits[...,:4] = -np.inf
-            logits[...,24:] = -np.inf
             
             # ## extract the pseudo-mask likelihoods
             # probs = logits.softmax(-1)
@@ -144,8 +127,8 @@ class SequenceGenerationEval(OpenProtEval):
             # curr_tok_probs.append(curr_tok_prob.cpu().numpy())
 
             # # # rewrite the is mask prob
-            is_unmask = (noisy_batch['aatype'] != 32) & (noisy_batch['aatype'] > 2)
-            is_mask = (noisy_batch['aatype'] == 32)
+            is_unmask = (noisy_batch['aatype'] != MASK_IDX)
+            is_mask = (noisy_batch['aatype'] == MASK_IDX)
             # # # target_prob = s**0.5
             # # # is_mask_prob = torch.ones_like(is_mask_prob)
             # is_mask_prob = torch.clamp(2 * is_mask_prob, max=1)
@@ -208,7 +191,7 @@ class SequenceGenerationEval(OpenProtEval):
                
                 topk = topk_masking(-curr_tok_prob, num_remask, is_unmask, temp=self.cfg.topk_temp)
                 
-                noisy_batch['aatype'] = torch.where(topk, 32, noisy_batch['aatype'])
+                noisy_batch['aatype'] = torch.where(topk, MASK_IDX, noisy_batch['aatype'])
                 
                 topk = topk_masking(scores_, num_mask - new_num_mask, is_mask, temp=self.cfg.topk_temp)
                 noisy_batch['aatype'] = torch.where(topk, sample_, noisy_batch['aatype'])
@@ -218,7 +201,6 @@ class SequenceGenerationEval(OpenProtEval):
                 topk = topk_masking(
                     scores_,
                     self.cfg.sample_length - new_num_mask, 
-                    noisy_batch['aatype'] > 2, # not cls, pad, or eos
                     temp=self.cfg.topk_temp
                 )
                 
@@ -226,32 +208,22 @@ class SequenceGenerationEval(OpenProtEval):
                     sample = sample_
                 else:
                     sample = torch.where(is_mask, sample_, noisy_batch['aatype'])
-                #breakpoint()
                     
-                noisy_batch['aatype'] = torch.where(topk, sample, 32)
-                noisy_batch['aatype'][:,0] = 0 # restore cls
-                noisy_batch['aatype'][:,-1] = 2 # restore eos
-
-            i+=1
+                noisy_batch['aatype'] = torch.where(topk, sample, MASK_IDX)
+     
             
-            #seq = "".join([ (rc.restypes_with_x + ['-'])[aa] for aa in noisy_batch["aatype"][0]])
-            seq = "".join([model.model.tokenizer._id_to_token[aa.item()] for aa in noisy_batch["aatype"][0]])
-            seq = seq.replace("<mask>", "-")
+            seq = "".join([rc.restypes_with_x[aa] for aa in noisy_batch["aatype"][0]])
+            seq = seq.replace("X", "-")
             print(seq)    
         
-
-        # breakpoint()
 
         # np.save(f"{savedir}/{batch['name'][0]}.npz", np.stack(is_mask_probs))
         # np.save(f"{savedir}/{batch['name'][0]}_tok.npz", np.stack(curr_tok_probs))
         # print(f"{savedir}/{batch['name'][0]}.npz")
         for i in range(B):
-            #seq = "".join([rc.restypes_with_x[aa] for aa in noisy_batch["aatype"][i]]) # in case there is still mask
-            aatype = noisy_batch["aatype"][i][1:-1] # strip cls, eos
-            seq = "".join([model.model.tokenizer._id_to_token[aa.item()] for aa in aatype])
-            seq = seq.replace("<mask>", "-")
-            # if logger is not None:
-            #     logger.log(f"{self.cfg.name}/seqent", self.compute_sequence_entropy(seq))
+            seq = "".join([rc.restypes_with_x[aa] for aa in noisy_batch["aatype"][i]]) # in case there is still mask
+            if logger is not None:
+                logger.log(f"{self.cfg.name}/seqent", self.compute_sequence_entropy(seq))
             
             with open(f"{savedir}/{batch['name'][0]}_{i}.fasta", "w") as f:
                 f.write(f">{batch['name'][0]}_{i}\n")  # FASTA format header
