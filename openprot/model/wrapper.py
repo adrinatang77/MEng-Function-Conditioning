@@ -5,6 +5,7 @@ from .model import OpenProtModel
 from abc import abstractmethod
 from ..utils.misc_utils import autoimport
 import os
+import tqdm
 from ..tracks.manager import OpenProtTrackManager
 from ..utils import residue_constants as rc
 
@@ -103,6 +104,7 @@ class OpenProtWrapper(Wrapper):
             os.environ['HF_HOME'] = "/scratch/10165/bjing"
             self.model = DiffusionProteinLanguageModel.from_pretrained(self.cfg.model.dplm_ckpt)
             
+            
             ours_to_dplm = [self.model.tokenizer._token_to_id[c] for c in rc.restypes] + [32]
             self.register_buffer("ours_to_dplm", torch.tensor(ours_to_dplm))
             del self.model.net.esm.embeddings.position_embeddings.weight
@@ -116,14 +118,14 @@ class OpenProtWrapper(Wrapper):
         self.evals = evals
 
         
-    def on_save_checkpoint(self, checkpoint):
-        esm_keys = {k for k in checkpoint['state_dict'].items() if "model.esm." in k}
-        checkpoint['state_dict'] = {k: v for k, v in checkpoint['state_dict'].items() if k not in esm_keys}
+    # def on_save_checkpoint(self, checkpoint):
+    #     esm_keys = {k for k in checkpoint['state_dict'].items() if "model.esm." in k}
+    #     checkpoint['state_dict'] = {k: v for k, v in checkpoint['state_dict'].items() if k not in esm_keys}
 
-    def on_load_checkpoint(self, checkpoint):
-        state_dict = self.state_dict()
-        esm_keys = {k for k in state_dict.items() if "model.esm." in k}
-        checkpoint['state_dict'] |= {k: state_dict[k] for k in esm_keys}
+    # def on_load_checkpoint(self, checkpoint):
+    #     state_dict = self.state_dict()
+    #     esm_keys = {k for k in state_dict.items() if "model.esm." in k}
+    #     checkpoint['state_dict'] |= {k: state_dict[k] for k in esm_keys}
         
             
         
@@ -139,19 +141,20 @@ class OpenProtWrapper(Wrapper):
         
         if self.cfg.model.dplm_ckpt:
             
-            inp = self.ours_to_dplm[noisy_batch['aatype']]
+            # inp = self.ours_to_dplm[noisy_batch['aatype']]
+            inp = noisy_batch['aatype']
             inp = torch.where(noisy_batch['pad_mask'].bool(), inp, self.model.tokenizer._token_to_id["<pad>"])
-            B, L = inp.shape
-            inp_ = inp.new_zeros(B, L+2) + self.model.tokenizer._token_to_id["<pad>"]
-            inp_[:,0] = self.model.tokenizer._token_to_id["<cls>"]
-            inp_[:,1:-1] = inp
-            inp_[torch.arange(B), noisy_batch['pad_mask'].sum(-1).long()+1] = self.model.tokenizer._token_to_id["<eos>"]
+            # B, L = inp.shape
+            inp_ = inp#.new_zeros(B, L+2) + self.model.tokenizer._token_to_id["<pad>"]
+            # inp_[:,0] = self.model.tokenizer._token_to_id["<cls>"]
+            # inp_[:,1:-1] = inp
+            # inp_[torch.arange(B), noisy_batch['pad_mask'].sum(-1).long()+1] = self.model.tokenizer._token_to_id["<eos>"]
             
             out = None
             readout = {}
-            logits = self.model.net(input_ids=inp_)['logits'][:,1:-1]
-            # logits[:,0,self.model.tokenizer._token_to_id["M"]] += 1e5
-            readout['aatype'] = logits[:,:,self.ours_to_dplm]
+            
+            logits = self.model.net(input_ids=inp_)['logits']#[:,1:-1]
+            readout['aatype'] = logits#[:,:,self.ours_to_dplm]
             
             ##### 
 
@@ -171,7 +174,7 @@ class OpenProtWrapper(Wrapper):
 
     def general_step(self, batch):
 
-        breakpoint()
+        batch.trim()
 
         self._logger.register_masks(batch)
         self._logger.masked_log("toks", batch["pad_mask"], sum=True)

@@ -3,6 +3,7 @@ import torch
 import pytorch_lightning as pl
 import importlib
 import sys
+import tqdm
 
 from .. import tracks
 from ..tracks.manager import OpenProtTrackManager
@@ -42,13 +43,49 @@ class OpenProtDatasetManager(torch.utils.data.IterableDataset):
             if key not in data:
                 data[key] = np.zeros((), dtype=np.float32)
 
-        data.pad(self.cfg.data.crop)
+        # data.pad(self.cfg.data.crop)
 
         self.tracks.tokenize(data)
 
         return data
 
+    def form_batches(self, buf):
+        lens = [len(data['seqres']) for data in buf]
+        batches = []
+        buf = [buf[i] for i in np.argsort(lens)]
+        curr = []
+        for data in buf:
+            if (len(curr)+1) * len(data['seqres']) > self.cfg.data.max_toks:
+                batches.append(curr)
+                curr = []
+            curr.append(data)
+        if len(curr) > 0:
+            batches.append(curr)
+        return batches
+        
     def __iter__(self):
+        it = self.unbuffered_iter()
+        batches = []
+        buf = []
+        for _ in range(self.cfg.data.buffer):
+            buf.append(next(it))
+        
+        while True:
+            if len(batches) == 0:
+                assert len(buf) == self.cfg.data.buffer
+                batches = self.form_batches(buf)
+                buf = []
+            idx = np.random.randint(0, len(batches))
+            
+            batch = batches[idx]
+            batches = batches[:idx] + batches[idx+1:]
+            yield batch
+            
+            for _ in range(len(batch)): buf.append(next(it))
+            
+
+            
+    def unbuffered_iter(self):
         worker_info = torch.utils.data.get_worker_info()
         if not worker_info:
             world_size = self.world_size

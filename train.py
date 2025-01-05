@@ -18,6 +18,7 @@ setup_logging(cfg.logger)
 
 import torch
 import os
+import tqdm
 import pytorch_lightning as pl
 from pytorch_lightning.callbacks import ModelCheckpoint, ModelSummary
 
@@ -57,7 +58,7 @@ dataset = OpenProtDatasetManager(cfg, tracks, trainer.global_rank, trainer.world
 
 train_loader = torch.utils.data.DataLoader(
     dataset,
-    batch_size=cfg.data.batch,
+    batch_size=None,
     num_workers=cfg.data.num_workers,
     collate_fn=OpenProtData.batch,
 )

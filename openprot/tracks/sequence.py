@@ -10,9 +10,10 @@ from functools import partial
 
 import pandas as pd
 import math
+from transformers import EsmTokenizer
 
-MASK_IDX = 20
-NUM_TOKENS = 21
+MASK_IDX = 21
+NUM_TOKENS = MASK_IDX+1
 
 
 # processes a sequence (integers) into its class distribution representation (one-hot encoding)
@@ -66,13 +67,24 @@ class SequenceTrack(OpenProtTrack):
         # rate_matrix = pd.read_csv(self.cfg.rate_matrix_path, index_col=0)
         # flow = torch.from_numpy(rate_matrix.values).float()
         # self.flow = flow[:-1, :-1]
-        pass
+        self.alphabet = EsmTokenizer.from_pretrained('facebook/esm2_t30_150M_UR50D')
 
     def tokenize(self, data):
 
-        data["aatype"] = np.array(
-            [rc.restype_order.get(c, rc.unk_restype_index) for c in data["seqres"]]
-        )
+        seqres = data['seqres']
+        if seqres[0] == '[':
+            seq = ['<cls>']
+        seq += list(seqres[1:-1])
+        if seqres[-1] == ']':
+            seq += ['<eos>']
+        else:
+            seq += [seq[-1]]
+        
+        
+        data['aatype'] = self.alphabet.batch_encode_plus(seq, add_special_tokens=False, padding="do_not_pad", return_tensors='np')['input_ids'][:,0]
+        # data["aatype"] = np.array(
+        #     [rc.restype_order.get(c, rc.unk_restype_index) for c in data["seqres"]]
+        # )
 
     @staticmethod
     def _af2_to_esm(d: Alphabet):
@@ -111,7 +123,7 @@ class SequenceTrack(OpenProtTrack):
         
         raise ValueError("Invalid noise schedule")
 
-    """
+    
 
     def apply_flow(self, tokens, t):
 
@@ -128,6 +140,7 @@ class SequenceTrack(OpenProtTrack):
         new_toks = torch.distributions.categorical.Categorical(probs).sample()
 
         return torch.where(tokens == MASK_IDX, MASK_IDX, new_toks)
+    """
 
     def _compute_language_model_representations(self, esmaa):
         """Adds bos/eos tokens for the language model, since the structure module doesn't use these."""
@@ -157,8 +170,8 @@ class SequenceTrack(OpenProtTrack):
         return esm_s, esm_z
 
     def add_modules(self, model):
-        model.seq_embed = nn.Embedding(21, model.cfg.dim)
-        model.seq_out = nn.Linear(model.cfg.dim, 21)
+        model.seq_embed = nn.Embedding(NUM_TOKENS, model.cfg.dim)
+        model.seq_out = nn.Linear(model.cfg.dim, NUM_TOKENS)
 
         if self.cfg.esm is not None:
 
@@ -187,26 +200,38 @@ class SequenceTrack(OpenProtTrack):
         
         tokens = batch["aatype"]
         
-        mask = batch["seq_noise"].bool() | ~batch["seq_mask"].bool() # these will be input as MASK
-        sup = batch["seq_noise"].bool() & batch["seq_mask"].bool() # these will be actually supervised
+        mask = batch["seq_noise"].bool() & batch['pad_mask'].bool() # | ~batch["seq_mask"].bool() # these will be input as MASK
+        mask &= (tokens != 0) # not cls
+        mask &= (tokens != 2) # not eos
+        sup = mask
+        
+        # sup = batch["seq_noise"].bool() # & batch["seq_mask"].bool() # these will be actually supervised
+        # sup &= (tokens != 
 
-        rand = torch.rand_like(batch['seq_noise'])
-        randaa = torch.randint(0, 20, rand.shape, device=rand.device)
-        randaa = torch.where(rand < self.cfg.mask_rate, MASK_IDX, randaa)
-        randaa = torch.where(
-            rand < (self.cfg.mask_rate + self.cfg.rand_rate),
-            randaa,
-            tokens
-        )
-        noisy_batch["aatype"] = torch.where(mask, randaa, tokens)
+        
+        # rand = torch.rand_like(batch['seq_noise'])
+        # randaa = torch.randint(0, 32, rand.shape, device=rand.device)
+        # randaa = torch.where(rand < self.cfg.mask_rate, 32, randaa)
+        # randaa = torch.where(
+        #     rand < (self.cfg.mask_rate + self.cfg.rand_rate),
+        #     randaa,
+        #     tokens
+        # )
+        noisy_batch["aatype"] = torch.where(mask, 32, tokens)
         noisy_batch["seq_noise"] = batch["seq_noise"]
 
         target["aatype"] = tokens
         target["noisy_aatype"] = noisy_batch["aatype"] # temporary
         target["seq_supervise"] = torch.where(sup, batch["seq_weight"], 0.0)
 
+        oh = torch.nn.functional.one_hot(tokens, num_classes=33)[4:24]
+        dist = oh.float().mean(1)
+        dist /= dist.sum(-1, keepdims=True)
+        ppl = (-torch.nansum(dist * dist.log(), -1)).exp()
+
         if logger:
             logger.masked_log("seq/toks", batch["seq_mask"], sum=True)
+            logger.log("seq/data_ppl", ppl)
 
     def embed(self, model, batch, inp):
         def _af2_idx_to_esm_idx(aa, mask):
@@ -240,9 +265,6 @@ class SequenceTrack(OpenProtTrack):
         
     def compute_loss(self, readout, target, logger=None, eps=1e-6, **kwargs):
 
-        
-
-        
         loss = torch.nn.functional.cross_entropy(
             readout["aatype"].transpose(1, 2), target["aatype"], reduction="none"
         )
@@ -253,19 +275,19 @@ class SequenceTrack(OpenProtTrack):
             logger.masked_log("seq/loss", loss, mask=mask)
             logger.masked_log("seq/perplexity", loss, mask=mask, post=np.exp)
 
-        logits = readout["aatype"]
-        logits[...,-1] -= 1e5
-        ## extract the pseudo-mask likelihoods
-        probs = logits.softmax(-1)
-        oh = torch.nn.functional.one_hot(target['noisy_aatype'])
-        denom = 0.5 * oh + 0.05
-        new_probs = probs / denom
-        new_probs /= new_probs.sum(-1, keepdims=True)
-        is_mask_prob = ((probs - oh) / (new_probs - oh))[...,0]
-        is_unmask = (target['noisy_aatype'] != 20)
+        # logits = readout["aatype"]
+        # # logits[...,-1] -= 1e5
+        # ## extract the pseudo-mask likelihoods
+        # probs = logits.softmax(-1)
+        # oh = torch.nn.functional.one_hot(target['noisy_aatype'])
+        # denom = 0.5 * oh + 0.05
+        # new_probs = probs / denom
+        # new_probs /= new_probs.sum(-1, keepdims=True)
+        # is_mask_prob = ((probs - oh) / (new_probs - oh))[...,0]
+        # is_unmask = (target['noisy_aatype'] != 32)
         # print((is_mask_prob * is_unmask).sum(-1) / is_unmask.sum(-1))
         # print((is_mask_prob * is_unmask).sum() / is_unmask.sum())
-        if logger:
-            logger.masked_log("seq/is_mask_prob", is_mask_prob, mask=is_unmask)
+        # if logger:
+        #     logger.masked_log("seq/is_mask_prob", is_mask_prob, mask=is_unmask)
         
         return loss * mask

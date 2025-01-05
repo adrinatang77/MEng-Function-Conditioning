@@ -59,7 +59,7 @@ class OpenProtData(dict):
         L = len(self["seqres"])
         ### todo support tensors!
         if L >= crop_len:  # needs crop
-            start = np.random.randint(0, L - crop_len + 1)
+            start = 0 # np.random.randint(0, L - crop_len + 1)
             end = start + crop_len
             for key in self.keys():
                 # special attribute
@@ -94,7 +94,7 @@ class OpenProtData(dict):
             for key in self.keys():
                 # special attribute
                 if key == "seqres":
-                    self[key] = self[key] + "X" * pad
+                    self[key] = self[key] + " " * pad
 
                 # non-array attribute
                 elif type(self[key]) not in [torch.Tensor, np.ndarray]:
@@ -126,7 +126,12 @@ class OpenProtData(dict):
         self["pad_mask"] = pad_mask
         return self
 
-    def batch(datas):
+    def batch(datas, pad=True):
+        if pad:
+            lens = [len(data['seqres']) for data in datas]
+            for data in datas:
+                data.pad(max(lens))
+                
         batch = OpenProtData()
         key_union = list(set(sum([list(data.keys()) for data in datas], [])))
         for key in key_union:
@@ -143,6 +148,10 @@ class OpenProtData(dict):
             except Exception as e:
                 raise Exception(f"Key {key} exception: {e}")
         return batch
+
+    def trim(self):
+        pass
+        
 
     def to(self, device):
         for key in self.keys():

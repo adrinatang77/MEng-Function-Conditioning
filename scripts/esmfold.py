@@ -54,4 +54,4 @@ with torch.no_grad():
         if args.print:
             print(seq, plddt, np.mean(res), flush=True)
         
-if args.print: print(np.mean(res))
+print(np.mean(res))
