@@ -101,12 +101,12 @@ class OpenProtWrapper(Wrapper):
         
         if cfg.model.dplm_ckpt:
             from byprot.models.lm.dplm import DiffusionProteinLanguageModel
-            os.environ['HF_HOME'] = "/scratch/10165/bjing"
-            self.model = DiffusionProteinLanguageModel.from_pretrained(self.cfg.model.dplm_ckpt)
+            # os.environ['HF_HOME'] = "/scratch/10165/bjing"
+            self.model = DiffusionProteinLanguageModel.from_pretrained(self.cfg.model.dplm_ckpt).train()
             
             
-            ours_to_dplm = [self.model.tokenizer._token_to_id[c] for c in rc.restypes] + [32]
-            self.register_buffer("ours_to_dplm", torch.tensor(ours_to_dplm))
+            # ours_to_dplm = [self.model.tokenizer._token_to_id[c] for c in rc.restypes] + [32]
+            # self.register_buffer("ours_to_dplm", torch.tensor(ours_to_dplm))
             del self.model.net.esm.embeddings.position_embeddings.weight
             del self.model.net.esm.contact_head.regression.weight
             del self.model.net.esm.contact_head.regression.bias
@@ -140,7 +140,6 @@ class OpenProtWrapper(Wrapper):
         
         
         if self.cfg.model.dplm_ckpt:
-            
             # inp = self.ours_to_dplm[noisy_batch['aatype']]
             inp = noisy_batch['aatype']
             inp = torch.where(noisy_batch['pad_mask'].bool(), inp, self.model.tokenizer._token_to_id["<pad>"])

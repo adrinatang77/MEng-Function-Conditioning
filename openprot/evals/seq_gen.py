@@ -103,11 +103,11 @@ class SequenceGenerationEval(OpenProtEval):
         is_mask_probs = []
         curr_tok_probs = []
 
-        model.forward(noisy_batch)
-        ckpt = torch.load("workdir/dplm-sanity-bs1M/last.ckpt", map_location='cpu')
-        model = model.cpu()
-        model.load_state_dict(ckpt["state_dict"], strict=True)
-        model = model.cuda()
+        # model.forward(noisy_batch)
+        # ckpt = torch.load("workdir/dplm-sanity-bs1M/last.ckpt", map_location='cpu')
+        # model = model.cpu()
+        # model.load_state_dict(ckpt["state_dict"], strict=True)
+        # model = model.cuda()
         # print(model.model.net.esm.encoder.layer[-1].LayerNorm.bias[:100])
         # _, out = model.forward(noisy_batch)
         # print(out['aatype'][0,0])
@@ -126,8 +126,7 @@ class SequenceGenerationEval(OpenProtEval):
             new_num_mask = int(round(s * self.cfg.sample_length))
             
             _, out = model.forward(noisy_batch)
-            if i == 0:
-                torch.save(out['aatype'], "sanity-fred.pt")
+            
             logits = out['aatype'] 
             logits[...,:4] = -np.inf
             logits[...,24:] = -np.inf
@@ -140,12 +139,12 @@ class SequenceGenerationEval(OpenProtEval):
             # new_probs /= new_probs.sum(-1, keepdims=True)
 
             # is_mask_prob = ((probs - oh) / (new_probs - oh))[...,0]
-            # curr_tok_prob = Categorical(logits=logits).log_prob(noisy_batch['aatype'])
+            curr_tok_prob = Categorical(logits=logits).log_prob(noisy_batch['aatype'])
             # is_mask_probs.append(is_mask_prob.cpu().numpy())
             # curr_tok_probs.append(curr_tok_prob.cpu().numpy())
 
             # # # rewrite the is mask prob
-            # is_unmask = (noisy_batch['aatype'] != MASK_IDX)
+            is_unmask = (noisy_batch['aatype'] != 32) & (noisy_batch['aatype'] > 2)
             is_mask = (noisy_batch['aatype'] == 32)
             # # # target_prob = s**0.5
             # # # is_mask_prob = torch.ones_like(is_mask_prob)
@@ -209,7 +208,7 @@ class SequenceGenerationEval(OpenProtEval):
                
                 topk = topk_masking(-curr_tok_prob, num_remask, is_unmask, temp=self.cfg.topk_temp)
                 
-                noisy_batch['aatype'] = torch.where(topk, sample_, noisy_batch['aatype'])
+                noisy_batch['aatype'] = torch.where(topk, 32, noisy_batch['aatype'])
                 
                 topk = topk_masking(scores_, num_mask - new_num_mask, is_mask, temp=self.cfg.topk_temp)
                 noisy_batch['aatype'] = torch.where(topk, sample_, noisy_batch['aatype'])

@@ -36,7 +36,7 @@ if args.fasta:
     names = list(open(args.fasta))[::2]
     names = [name.strip()[1:] for name in names]
 if args.dir:
-    files = glob.glob(f"{args.dir}/*.fasta")
+    files = sorted(glob.glob(f"{args.dir}/*.fasta"))
     seqs = [list(open(f))[1].strip() for f in files]
     names = [list(open(f))[0].strip()[1:] for f in files]
 # print(seqs)

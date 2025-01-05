@@ -1,7 +1,7 @@
 import torch
 import numpy as np
 import pandas as pd
-import foldcomp
+# import foldcomp
 import os
 from ..utils import protein
 from ..utils import residue_constants as rc

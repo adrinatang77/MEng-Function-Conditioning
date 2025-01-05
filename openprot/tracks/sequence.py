@@ -273,6 +273,7 @@ class SequenceTrack(OpenProtTrack):
         
         if logger:
             logger.masked_log("seq/loss", loss, mask=mask)
+            logger.masked_log("seq/dplm_loss", loss * mask, mask=mask.bool().float())
             logger.masked_log("seq/perplexity", loss, mask=mask, post=np.exp)
 
         # logits = readout["aatype"]

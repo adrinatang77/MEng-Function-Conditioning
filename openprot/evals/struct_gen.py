@@ -1,5 +1,5 @@
 from .eval import OpenProtEval
-import foldcomp
+# import foldcomp
 from ..utils import protein
 from ..utils.prot_utils import make_ca_prot, write_ca_traj
 from ..utils.geometry import compute_lddt, rmsdalign

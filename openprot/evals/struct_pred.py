@@ -1,5 +1,5 @@
 from .eval import OpenProtEval
-import foldcomp
+# import foldcomp
 from ..utils import protein
 from ..utils.geometry import compute_lddt, rmsdalign, compute_rmsd
 from ..utils import residue_constants as rc

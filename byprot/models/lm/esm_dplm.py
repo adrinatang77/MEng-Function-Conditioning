@@ -27,6 +27,7 @@ class ModifiedEsmSelfAttention(EsmSelfAttention):
         past_key_value: Optional[Tuple[Tuple[torch.FloatTensor]]] = None,
         output_attentions: Optional[bool] = False,
     ) -> Tuple[torch.Tensor]:
+        
         mixed_query_layer = self.query(hidden_states)
 
         # If this is instantiated as a cross-attention module, the keys
@@ -76,8 +77,9 @@ class ModifiedEsmSelfAttention(EsmSelfAttention):
         
         context_layer = context_layer.permute(0, 2, 1, 3).contiguous()
         new_context_layer_shape = context_layer.size()[:-2] + (self.all_head_size,)
+        
         context_layer = context_layer.view(new_context_layer_shape)
-
+        
         # outputs = (context_layer, attention_probs) if output_attentions else (context_layer,)
         outputs = (context_layer,)
 
@@ -208,6 +210,7 @@ class ModifiedEsmModel(EsmModel):
             inputs_embeds=inputs_embeds,
             past_key_values_length=past_key_values_length,
         )
+        
         encoder_outputs = self.encoder(
             embedding_output,
             attention_mask=extended_attention_mask,
@@ -272,6 +275,7 @@ class EsmForDPLM(EsmForMaskedLM):
                 encoder_hidden_states=None,
                 encoder_attention_mask=None,
             ):
+        
         attention_mask = input_ids.ne(self.pad_id)
         outputs = self.esm(
             input_ids,
