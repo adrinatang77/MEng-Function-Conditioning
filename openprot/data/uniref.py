@@ -77,7 +77,7 @@ class UnirefDataset(OpenProtDataset):
         lines = item.split("\n")
         header, lines = lines[0], lines[1:]
         seqres = "".join(lines)
-        seqres = "[" + seqres + "]"
+        # seqres = "[" + seqres + "]"
         
         seq_mask = np.ones(len(seqres), dtype=np.float32)
     
@@ -112,7 +112,7 @@ class KevinUnirefDataset(OpenProtDataset):
             start = 0
             stop = len(consensus)
         seqres = consensus[start:stop]
-        seqres = "[" + seqres + "]"
+        # seqres = "[" + seqres + "]"
         
         seq_mask = np.ones(len(seqres), dtype=np.float32)
     

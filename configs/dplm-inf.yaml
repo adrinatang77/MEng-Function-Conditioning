@@ -1,11 +1,11 @@
-ckpt: null # workdir/dplm-sanity/last.ckpt # 
+ckpt: workdir/dplm-continue/last.ckpt # 
 #ckpt: /data/cb/bjing/dplm/byprot-checkpoints/dplm_150m/checkpoints/last.ckpt
 pretrained: null #workdir/dplm-esm/last.ckpt # /data/cb/bjing/dplm/byprot-checkpoints/dplm_150m/checkpoints/last.ckpt   #  load weights from here first
 # x_t = torch.load('/data/cb/bjing/x_t.pt')
 # self.model.net(input_ids=x_t)['logits'][0,0]
 # with torch.cuda.amp.autocast(False): self.esm(input_ids, attention_mask=attention_mask)[0][0,0,:16]
 # pretrained: null # workdir/dplm-esm/last.ckpt
-validate: false # if true, only validate the model, don't train
+validate: true # if true, only validate the model, don't train
 logger:
     # set to true to log to neptune.ai
     neptune: false

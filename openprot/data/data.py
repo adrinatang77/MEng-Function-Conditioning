@@ -59,7 +59,7 @@ class OpenProtData(dict):
         L = len(self["seqres"])
         ### todo support tensors!
         if L >= crop_len:  # needs crop
-            start = 0 # np.random.randint(0, L - crop_len + 1)
+            start = np.random.randint(0, L - crop_len + 1)
             end = start + crop_len
             for key in self.keys():
                 # special attribute
@@ -94,7 +94,7 @@ class OpenProtData(dict):
             for key in self.keys():
                 # special attribute
                 if key == "seqres":
-                    self[key] = self[key] + " " * pad
+                    self[key] = self[key] + "X" * pad
 
                 # non-array attribute
                 elif type(self[key]) not in [torch.Tensor, np.ndarray]:

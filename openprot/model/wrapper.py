@@ -105,8 +105,8 @@ class OpenProtWrapper(Wrapper):
             self.model = DiffusionProteinLanguageModel.from_pretrained(self.cfg.model.dplm_ckpt).train()
             
             
-            # ours_to_dplm = [self.model.tokenizer._token_to_id[c] for c in rc.restypes] + [32]
-            # self.register_buffer("ours_to_dplm", torch.tensor(ours_to_dplm))
+            ours_to_dplm = [self.model.tokenizer._token_to_id[c] for c in rc.restypes] + [32]
+            self.register_buffer("ours_to_dplm", torch.tensor(ours_to_dplm))
             del self.model.net.esm.embeddings.position_embeddings.weight
             del self.model.net.esm.contact_head.regression.weight
             del self.model.net.esm.contact_head.regression.bias
@@ -118,14 +118,14 @@ class OpenProtWrapper(Wrapper):
         self.evals = evals
 
         
-    # def on_save_checkpoint(self, checkpoint):
-    #     esm_keys = {k for k in checkpoint['state_dict'].items() if "model.esm." in k}
-    #     checkpoint['state_dict'] = {k: v for k, v in checkpoint['state_dict'].items() if k not in esm_keys}
+    def on_save_checkpoint(self, checkpoint):
+        esm_keys = {k for k in checkpoint['state_dict'].items() if "model.esm." in k}
+        checkpoint['state_dict'] = {k: v for k, v in checkpoint['state_dict'].items() if k not in esm_keys}
 
-    # def on_load_checkpoint(self, checkpoint):
-    #     state_dict = self.state_dict()
-    #     esm_keys = {k for k in state_dict.items() if "model.esm." in k}
-    #     checkpoint['state_dict'] |= {k: state_dict[k] for k in esm_keys}
+    def on_load_checkpoint(self, checkpoint):
+        state_dict = self.state_dict()
+        esm_keys = {k for k in state_dict.items() if "model.esm." in k}
+        checkpoint['state_dict'] |= {k: state_dict[k] for k in esm_keys}
         
             
         
