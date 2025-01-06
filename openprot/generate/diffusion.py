@@ -191,56 +191,35 @@ class EDMDiffusion(Diffusion):
         weight = num / (denom + eps)
         return weight * torch.square(pred - target).sum(-1)
 
-    def inference(
-        self,
-        model,
-        cfg=None,
-        seed=None,
-        mask=None,
-        shape=None,
-        device=None,
-        return_traj=False,
-    ):
+    # def inference(
+    #     self,
+    #     model,
+    #     cfg=None,
+    #     seed=None,
+    #     mask=None,
+    #     shape=None,
+    #     device=None,
+    #     return_traj=False,
+    # ):
 
-        if seed is not None:
-            x = seed
-        else:
-            if mask is not None:
-                shape = list(mask.shape) + [3]
-                device = mask.device
-            x = torch.randn(shape, device=device) * cfg.sigma_max
+    #     if seed is not None:
+    #         x = seed
+    #     else:
+    #         if mask is not None:
+    #             shape = list(mask.shape) + [3]
+    #             device = mask.device
+    #         x = torch.randn(shape, device=device) * cfg.sigma_max
 
-        out = [x]
+    #     out = [x]
         
-        p = cfg.sched_p
-        sched = np.linspace(1, 0, cfg.nsteps + 1)
-        sched = (
-            cfg.sigma_min ** (1 / p)
-            + sched * (cfg.sigma_max ** (1 / p) - cfg.sigma_min ** (1 / p))
-        ) ** p
+    #     p = cfg.sched_p
+    #     sched = np.linspace(1, 0, cfg.nsteps + 1)
+    #     sched = (
+    #         cfg.sigma_min ** (1 / p)
+    #         + sched * (cfg.sigma_max ** (1 / p) - cfg.sigma_min ** (1 / p))
+    #     ) ** p
 
         # dx = g(t) dw with g(t) = \sqrt{ (d/dt) sigma^2 } = \sqrt{ 2\dot\sigma \sigma}
         # with t = \sigma this is just \sqrt{2t}
         # hence the backward coefficient on the score should be g^2 = 2t
-        preds = []
-
-        for t2, t1 in zip(sched[:-1], sched[1:]):
-            dt = t2 - t1
-            g = np.sqrt(2 * t2)
-
-            x0 = model(x, t2)
-
-            preds.append(x0)
-            s = (x0 - x) / t2**2  # score
-
-            noise = torch.randn_like(x)
-            gamma = cfg.temp_factor
-
-            dx = g**2 * s * dt + g * gamma * np.sqrt(dt) * noise
-            x = x + dx
-            out.append(x)
-
-        if return_traj:
-            return torch.stack(out), torch.stack(preds)
-        else:
-            return x
+       

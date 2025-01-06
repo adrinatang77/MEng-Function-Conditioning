@@ -4,6 +4,8 @@ from ..utils import protein
 from ..utils.prot_utils import make_ca_prot, write_ca_traj
 from ..utils.geometry import compute_lddt, rmsdalign
 from ..utils import residue_constants as rc
+from ..generate.sampler import OpenProtSampler
+from ..generate.structure import EDMDiffusionStepper
 import numpy as np
 from ..tasks import StructurePrediction
 import torch
@@ -82,32 +84,45 @@ class StructureGenerationEval(OpenProtEval):
         logger=None
     ):
 
+        noisy_batch['struct'] = torch.randn_like(noisy_batch['struct']) * noisy_batch['struct_noise'][...,None]
+
+        def sched_fn(t):
+            p = cfg.sched_p
+            return (
+                cfg.sigma_min ** (1 / p)
+                + (1-t) * (cfg.sigma_max ** (1 / p) - cfg.sigma_min ** (1 / p))
+            ) ** p
+
+        sampler = OpenProtSampler(schedules={
+            'structure': sched_fn,
+        }, steppers=[
+            EDMDiffusionStepper(self.cfg)
+        ])
+        
+        sample_batch, extra = sampler.sample(model, noisy_batch, self.cfg.steps)
+
+        
         diffusion = self.tracks["StructureTrack"].diffusion
 
-        def model_func(pos, t):
-            noisy_batch["struct_noise"] = torch.ones_like(noisy_batch["struct_noise"]) * t
-            noisy_batch["struct"] = pos
-            _, readout = model.forward(noisy_batch)
-            
-            return readout["trans"][-1]
+        pred_traj = torch.stack(extra['preds'])
+        samp_traj = torch.stack(extra['out'])
 
-        samp_traj, pred_traj = diffusion.inference(
-            model_func, cfg=self.cfg, mask=noisy_batch["pad_mask"], return_traj=True
-        )
-
-        prot = make_ca_prot(
-            samp_traj[-1, -1].cpu().numpy(),
-            batch["aatype"].cpu().numpy()[0],
-            batch["struct_mask"].cpu().numpy()[0],
-        )
-
-        ref_str = protein.to_pdb(prot)
-        name = batch["name"][0]
-        with open(f"{savedir}/{name}.pdb", "w") as f:
-            f.write(ref_str)
-
-        with open(f"{savedir}/{name}_traj.pdb", "w") as f:
-            f.write(write_ca_traj(prot, samp_traj[:, 0].cpu().numpy()))
-
-        with open(f"{savedir}/{name}_pred_traj.pdb", "w") as f:
-            f.write(write_ca_traj(prot, pred_traj[:, 0].cpu().numpy()))
+        B = len(sample_batch['struct'])
+        
+        for i in range(B)
+            prot = make_ca_prot(
+                sample_batch['struct'][i].cpu().numpy(),
+                batch["aatype"][i].cpu().numpy(),
+                batch["struct_mask"][i].cpu().numpy(),
+            )
+    
+            ref_str = protein.to_pdb(prot)
+            name = batch["name"][i]
+            with open(f"{savedir}/{name}.pdb", "w") as f:
+                f.write(ref_str)
+    
+            with open(f"{savedir}/{name}_traj.pdb", "w") as f:
+                f.write(write_ca_traj(prot, samp_traj[:, i].cpu().numpy()))
+    
+            with open(f"{savedir}/{name}_pred_traj.pdb", "w") as f:
+                f.write(write_ca_traj(prot, pred_traj[:, i].cpu().numpy()))

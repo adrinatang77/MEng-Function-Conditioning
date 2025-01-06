@@ -5,7 +5,7 @@ pretrained: null #workdir/dplm-esm/last.ckpt # /data/cb/bjing/dplm/byprot-checkp
 # self.model.net(input_ids=x_t)['logits'][0,0]
 # with torch.cuda.amp.autocast(False): self.esm(input_ids, attention_mask=attention_mask)[0][0,0,:16]
 # pretrained: null # workdir/dplm-esm/last.ckpt
-validate: false # if true, only validate the model, don't train
+validate: true # if true, only validate the model, don't train
 logger:
     # set to true to log to neptune.ai
     neptune: false
@@ -41,6 +41,7 @@ trainer:
 data: 
     num_workers: 4
     max_toks: 8192
+    batch: null
     buffer: 1000
     crop: 1024
     seed: 137
@@ -67,10 +68,10 @@ features:
 datasets:
     uniref:
         type: UnirefDataset
-        path: /scratch/projects/cgai/openprot/data/uniref50.fasta
-        # path: /data/cb/scratch/datasets/uniref50.fasta
-        index: /scratch/projects/cgai/openprot/data/uniref50.index  
-        # index: /data/cb/scratch/datasets/uniref50.idx.npy
+        # path: /scratch/projects/cgai/openprot/data/uniref50.fasta
+        path: /data/cb/scratch/datasets/uniref50.fasta
+        # index: /scratch/projects/cgai/openprot/data/uniref50.index  
+        index: /data/cb/scratch/datasets/uniref50.idx.npy
         
 
 tasks:
@@ -116,9 +117,9 @@ tracks:
 
 model: # custom args
     # dplm_ckpt: zhangzhi/EvoFlow-150M-fs 
-    # dplm_ckpt: airkingbd/dplm_150m
+    dplm_ckpt: airkingbd/dplm_150m
     # dplm_ckpt: facebook/esm2_t30_150M_UR50D
-    dplm_ckpt: null
+    # dplm_ckpt: null
     checkpoint: false
     dim: 640
     pairwise_dim: 128

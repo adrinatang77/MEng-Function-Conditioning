@@ -42,9 +42,8 @@ class InverseFoldingEval(OpenProtEval):
         )
 
         L = len(seqres)
-        data["seq_noise"] = np.ones(L, dtype=np.float32) * 1.0
-        
-
+        data["seq_noise"] = np.ones(L, dtype=np.float32)
+    
         return data
 
     def compute_sequence_entropy(self, seq):
@@ -113,22 +112,18 @@ class InverseFoldingEval(OpenProtEval):
     ):
         # have to maintain train-test alignment
         noisy_batch['struct_noise'].fill_(self.cfg.sigma) 
-            
-        L = len(batch["seqres"][0])
+             
+        sampler = OpenProtSampler(schedules={
+            'sequence': lambda t: 1-t,
+        }, steppers=[
+            SequenceUnmaskingStepper(self.cfg)
+        ])
         
-        mask = noisy_batch['seq_noise'].bool()
-        order = np.arange(L)
-        np.random.shuffle(order)
-        
-        for i in order:
-            _, out = model.forward(noisy_batch)
-            logits = out['aatype']
-            sample = Categorical(logits=logits / self.cfg.temp).sample()
-            noisy_batch['aatype'][:,i] = sample[:,i]
+        sample_batch, extra = sampler.sample(model, noisy_batch, self.cfg.steps)
          
-        seq = "".join([rc.restypes_with_x[aa] for aa in noisy_batch["aatype"][0]])
+        seq = "".join([rc.restypes_with_x[aa] for aa in sample["aatype"][0]])
         
-        recov = (noisy_batch['aatype'] == batch['aatype']).float()
+        recov = (sample['aatype'] == batch['aatype']).float()
         recov = (recov * batch['struct_mask']).sum() / batch['struct_mask'].sum()
         
         if logger is not None:
