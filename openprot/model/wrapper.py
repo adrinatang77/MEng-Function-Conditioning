@@ -102,7 +102,7 @@ class OpenProtWrapper(Wrapper):
         if cfg.model.dplm_ckpt:
             from byprot.models.lm.dplm import DiffusionProteinLanguageModel
             
-            os.environ['HF_HOME'] = "/scratch/10165/bjing"
+            # os.environ['HF_HOME'] = "/scratch/10165/bjing"
             self.model = DiffusionProteinLanguageModel.from_pretrained(
                 self.cfg.model.dplm_ckpt
             ).train()
@@ -115,7 +115,7 @@ class OpenProtWrapper(Wrapper):
             #     self.model.net.lm_head.decoder.weight.data
             # )
             # assert self.model.net.lm_head.decoder.weight is not self.model.net.esm.embeddings.word_embeddings.weight
-            # self.model.apply(self.model.net._init_weights)
+            self.model.apply(self.model.net._init_weights)
             
             
             ours_to_dplm = [self.model.tokenizer._token_to_id[c] for c in rc.restypes] + [32]
