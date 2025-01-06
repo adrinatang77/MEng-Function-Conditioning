@@ -220,7 +220,7 @@ class SequenceTrack(OpenProtTrack):
         target["noisy_aatype"] = noisy_batch["aatype"] # temporary
         target["seq_supervise"] = torch.where(sup, batch["seq_weight"], 0.0)
 
-        oh = torch.nn.functional.one_hot(tokens, num_classes=33)[4:24]
+        oh = torch.nn.functional.one_hot(tokens, num_classes=NUM_TOKENS)
         dist = oh.float().mean(1)
         dist /= dist.sum(-1, keepdims=True)
         ppl = (-torch.nansum(dist * dist.log(), -1)).exp()
@@ -275,7 +275,7 @@ class SequenceTrack(OpenProtTrack):
         # logits[...,-1] -= 1e5
         ## extract the pseudo-mask likelihoods
         probs = logits.softmax(-1)
-        oh = torch.nn.functional.one_hot(target['noisy_aatype'])
+        oh = torch.nn.functional.one_hot(target['noisy_aatype'], num_classes=NUM_TOKENS)
         denom = 0.5 * oh + 0.05
         new_probs = probs / denom
         new_probs /= new_probs.sum(-1, keepdims=True)

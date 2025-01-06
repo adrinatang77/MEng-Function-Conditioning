@@ -4,7 +4,7 @@ validate: false # if true, only validate the model, don't train
 logger:
     # set to true to log to neptune.ai
     neptune: true
-    run_id: STRUC1-378 
+    run_id: null # STRUC1-378 
     # please change "test" to something unique to your task
     project: openprot/struct-merge
     # will log to workdir and neptune.ai with this name
@@ -37,6 +37,7 @@ data:
     num_workers: 4
     max_toks: 8192
     buffer: 1000
+    batch: null
     crop: 1024
     seed: 137
 
