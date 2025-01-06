@@ -1,42 +1,45 @@
-ckpt: null # workdir/dplm-finetune-3e5/last.ckpt # 
+ckpt: workdir/dplm-from-scratch/last.ckpt # 
 pretrained: null  #  load weights from here first
 validate: false # if true, only validate the model, don't train
 logger:
     # set to true to log to neptune.ai
     neptune: true
-    run_id: null 
+    run_id: STRUC1-378 
     # please change "test" to something unique to your task
     project: openprot/struct-merge
     # will log to workdir and neptune.ai with this name
-    name: dplm-finetune-sanity # merge-std-inv-fold-linear-no-reweight # invfold-1e3-relpos-256-bs4
+    name: dplm-from-scratch # merge-std-inv-fold-linear-no-reweight # invfold-1e3-relpos-256-bs4
     # if not null, will duplicate stdout and stderr to workdir/{name}/{logfile}
-    logfile: null # std.out
+    logfile: std.out
     # if null, will log every epoch, otherwise every this number of steps
     train_log_freq: 100
     val_log_freq: null 
     ckpt_freq: 50000000000
-    save_freq: 100
+    save_freq: 1000
 trainer:
     accelerator: auto
     devices: 1
     max_epochs: 1
-    max_steps: 100
+    max_steps: 1000000
     enable_progress_bar: true
     limit_train_batches: 1.0
     limit_val_batches: 1.0
     num_sanity_val_steps: 0
     gradient_clip_val: 1.0
-    accumulate_grad_batches: 1
-    val_check_interval: 200000000
+    accumulate_grad_batches: 8
+    val_check_interval: 8000
     check_val_every_n_epoch: 1
     logger: false
+    precision: 16-mixed
 
 # custom args to OpenProtDataset and elsewhere
 data: 
-    num_workers: 32
-    batch: 32
-    crop: 256
+    num_workers: 4
+    max_toks: 8192
+    buffer: 1000
+    crop: 1024
     seed: 137
+
 
 # These are the raw features which are expected to be supplied by the Datasets
 # before they are TOKENIZED by the Tracks.
@@ -77,21 +80,22 @@ tasks:
             uniref:
                 fraction: 1.0
                 start: 0
-                seed: 39
+                seed: 40
 
             
 evals: 
     seq_gen_dplm: 
         type: SequenceGenerationEval
-        num_samples: 10
-        sample_length: 128
-        steps: 128
-        temp: 1.0
+        num_samples: 100
+        sample_length: 300
+        batch: 100
+        steps: 300
+        temp: 0.5
         strategy: dplm
         logits: gumbel
         remask: 0.0
         topk_temp: 0.0
-        allow_mutation: true
+        allow_mutation: false
         
 
 tracks:
@@ -105,7 +109,8 @@ tracks:
 
 model: # custom args
     # dplm_ckpt: zhangzhi/EvoFlow-150M-fs 
-    dplm_ckpt: airkingbd/dplm_150m
+    # dplm_ckpt: airkingbd/dplm_150m
+    dplm_ckpt: facebook/esm2_t30_150M_UR50D
     checkpoint: false
     dim: 640
     pairwise_dim: 128
@@ -161,7 +166,7 @@ model: # custom args
 
 optimizer:
     type: AdamW
-    lr: 3e-5
+    lr: 3e-4
     # betas: [0.9, 0.98]
     # eps: 1e-8
     # weight_decay: 0.01

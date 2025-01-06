@@ -67,12 +67,15 @@ class StructurePredictionEval(OpenProtEval):
 
         return samp_traj[-1]
 
-    def run_batch(self, model, batch: dict, savedir=".", device=None, logger=None):
-        os.makedirs(savedir, exist_ok=True)
-
-        noisy_batch = batch.copy("name", "pad_mask")
-        for track in model.tracks.values():
-            track.corrupt(batch, noisy_batch, {})
+    def run_batch(
+        self,
+        model,
+        batch: dict,
+        noisy_batch: dict,
+        savedir=".", 
+        device=None,
+        logger=None
+    ):
 
         noisy_batch["struct"] = torch.randn_like(noisy_batch["struct"]) * 160.
         if self.cfg.diffusion:

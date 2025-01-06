@@ -71,13 +71,16 @@ class StructureGenerationEval(OpenProtEval):
             #         f"{savedir}/designable"
             #     ])
 
-    def run_batch(self, model, batch: dict, savedir=".", device=None, logger=None):
 
-        os.makedirs(savedir, exist_ok=True)
-
-        noisy_batch = batch.copy("name", "pad_mask")
-        for track in model.tracks.values():
-            track.corrupt(batch, noisy_batch, {})
+    def run_batch(
+        self,
+        model,
+        batch: dict,
+        noisy_batch: dict,
+        savedir=".", 
+        device=None,
+        logger=None
+    ):
 
         diffusion = self.tracks["StructureTrack"].diffusion
 

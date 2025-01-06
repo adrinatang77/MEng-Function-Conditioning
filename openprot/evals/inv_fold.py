@@ -102,14 +102,15 @@ class InverseFoldingEval(OpenProtEval):
                 logger.log(f"{self.cfg.name}/scrmsd<2", (rmsd < 2).float())
             
 
-
-    def run_batch(self, model, batch: dict, savedir=".", device=None, logger=None):
-        os.makedirs(savedir, exist_ok=True)
-
-        noisy_batch = batch.copy("name", "pad_mask")
-        for track in model.tracks.values():
-            track.corrupt(batch, noisy_batch, {})
-
+    def run_batch(
+        self,
+        model,
+        batch: dict,
+        noisy_batch: dict,
+        savedir=".", 
+        device=None,
+        logger=None
+    ):
         # have to maintain train-test alignment
         noisy_batch['struct_noise'].fill_(self.cfg.sigma) 
             

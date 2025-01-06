@@ -65,8 +65,8 @@ class OpenProtDatasetManager(torch.utils.data.IterableDataset):
     def __iter__(self):
         
         it = self.unbuffered_iter()
-        if not self.cfg.buffer:
-            return it
+        if not self.cfg.data.buffer:
+            while True: yield next(it)
             
         batches = []
         buf = []

@@ -101,15 +101,27 @@ class OpenProtWrapper(Wrapper):
         
         if cfg.model.dplm_ckpt:
             from byprot.models.lm.dplm import DiffusionProteinLanguageModel
-            # os.environ['HF_HOME'] = "/scratch/10165/bjing"
-            self.model = DiffusionProteinLanguageModel.from_pretrained(self.cfg.model.dplm_ckpt).train()
+            
+            os.environ['HF_HOME'] = "/scratch/10165/bjing"
+            self.model = DiffusionProteinLanguageModel.from_pretrained(
+                self.cfg.model.dplm_ckpt
+            ).train()
+
+            # self.model.net.esm.embeddings.dropout.p = 0.0
+            # for i in range(30):
+            #     self.model.net.esm.encoder.layer[i].attention.output.dropout.p = 0.0
+            #     self.model.net.esm.encoder.layer[i].output.dropout.p = 0.0
+            # self.model.net.lm_head.decoder.weight = torch.nn.Parameter(
+            #     self.model.net.lm_head.decoder.weight.data
+            # )
+            # assert self.model.net.lm_head.decoder.weight is not self.model.net.esm.embeddings.word_embeddings.weight
+            # self.model.apply(self.model.net._init_weights)
             
             
             ours_to_dplm = [self.model.tokenizer._token_to_id[c] for c in rc.restypes] + [32]
             self.register_buffer("ours_to_dplm", torch.tensor(ours_to_dplm))
-            del self.model.net.esm.embeddings.position_embeddings.weight
-            del self.model.net.esm.contact_head.regression.weight
-            del self.model.net.esm.contact_head.regression.bias
+            del self.model.net.esm.embeddings.position_embeddings
+            del self.model.net.esm.contact_head.regression
         else:
             self.model = OpenProtModel(cfg.model)
             tracks.add_modules(self.model)
@@ -211,4 +223,14 @@ class OpenProtWrapper(Wrapper):
         savedir = (
             f'{os.environ["MODEL_DIR"]}/eval_step{self.trainer.global_step}/{name}'
         )
-        self.evals[name].run_batch(self, batch, savedir=savedir, logger=self._logger)
+        os.makedirs(savedir, exist_ok=True)
+        noisy_batch = batch.copy("name", "pad_mask")
+        for track in self.tracks.values():
+            track.corrupt(batch, noisy_batch, {})
+        self.evals[name].run_batch(
+            self,
+            batch,
+            noisy_batch,
+            savedir=savedir,
+            logger=self._logger
+        )

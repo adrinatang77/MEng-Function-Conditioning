@@ -255,9 +255,8 @@ class SequenceTrack(OpenProtTrack):
             )
             inp["x"] += torch.where(batch["aatype"] != MASK_IDX, noise_embed, 0.0)
 
-    def predict(self, model, inp, out, readout, inf=1e3):
+    def predict(self, model, inp, out, readout):
         readout["aatype"] = model.seq_out(out["x"])
-        readout["aatype"][...,-1] = -inf # ban X
         
     def compute_loss(self, readout, target, logger=None, eps=1e-6, **kwargs):
 
