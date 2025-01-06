@@ -109,7 +109,7 @@ class StructureGenerationEval(OpenProtEval):
 
         B = len(sample_batch['struct'])
         
-        for i in range(B)
+        for i in range(B):
             prot = make_ca_prot(
                 sample_batch['struct'][i].cpu().numpy(),
                 batch["aatype"][i].cpu().numpy(),

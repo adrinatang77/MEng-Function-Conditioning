@@ -51,9 +51,7 @@ class SequenceGenerationEval(OpenProtEval):
         os.makedirs(f"{savedir}/rank{rank}", exist_ok=True)
         for i in idx:
             cmd = ['cp', f"{savedir}/sample{i}.fasta", f"{savedir}/rank{rank}"]
-            subprocess.run(cmd, env=os.environ | {
-                'CUDA_VISIBLE_DEVICES': str(torch.cuda.current_device())
-            })
+            subprocess.run(cmd)
             
         cmd = [
             "bash",
@@ -67,7 +65,9 @@ class SequenceGenerationEval(OpenProtEval):
             f"{savedir}/rank{rank}",
             "--print",
         ]
-        out = subprocess.run(cmd)  
+        out = subprocess.run(cmd, env=os.environ | {
+            'CUDA_VISIBLE_DEVICES': str(torch.cuda.current_device())
+        })  
         for i in idx:
             plddt = PandasPdb().read_pdb(f"{savedir}/sample{i}.pdb").df['ATOM']['b_factor'].mean()
             if logger is not None:
