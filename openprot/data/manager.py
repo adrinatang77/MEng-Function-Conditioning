@@ -22,6 +22,7 @@ class OpenProtDatasetManager(torch.utils.data.IterableDataset):
         for name in cfg.datasets:  # autoload the datasets
             type_ = cfg.datasets[name].type
             ds = autoimport(f"openprot.data.{type_}")(cfg.datasets[name], cfg.features)
+            ds.cfg.name = name
             self.datasets[name] = ds
 
         self.tasks = {}

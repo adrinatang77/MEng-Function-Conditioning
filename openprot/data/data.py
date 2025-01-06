@@ -36,7 +36,7 @@ class OpenProtDataset(torch.utils.data.Dataset):
 
         data["name"] = kwargs["name"]
         data["seqres"] = kwargs["seqres"]
-
+        data["dataset"] = self.cfg.name 
         L = len(data["seqres"])
         for feat, shape in self.feats.items():
             shape = [(n if n > 0 else L) for n in shape]

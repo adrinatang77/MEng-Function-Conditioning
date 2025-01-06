@@ -13,10 +13,12 @@ class OpenProtTrackManager(dict):
     def add_modules(self, model: OpenProtModel):
         for track in self.values():
             track.add_modules(model)
+        return model
 
     def tokenize(self, data: dict):
         for track in self.values():
             track.tokenize(data)
+        return data
 
     def embed(self, model: OpenProtModel, batch: dict):
         inp = batch.copy("name", "pad_mask")

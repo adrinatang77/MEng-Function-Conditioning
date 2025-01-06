@@ -31,7 +31,7 @@ class SequenceGenerationEval(OpenProtEval):
         NotImplemented
 
     def __len__(self):
-        return self.cfg.num_samples // self.cfg.batch
+        return self.cfg.num_samples
 
     def __getitem__(self, idx):
         L = self.cfg.sample_length
@@ -58,8 +58,7 @@ class SequenceGenerationEval(OpenProtEval):
         idx = list(range(rank, self.cfg.num_samples, world_size))
         os.makedirs(f"{savedir}/rank{rank}", exist_ok=True)
         for i in idx:
-            j, k = i // self.cfg.batch, i % self.cfg.batch
-            cmd = ['cp', f"{savedir}/sample{j}_{k}.fasta", f"{savedir}/rank{rank}"]
+            cmd = ['cp', f"{savedir}/sample{i}.fasta", f"{savedir}/rank{rank}"]
             subprocess.run(cmd)
             
         cmd = [
@@ -76,13 +75,13 @@ class SequenceGenerationEval(OpenProtEval):
         ]
         out = subprocess.run(cmd)  
         for i in idx:
-            j, k = i // self.cfg.batch, i % self.cfg.batch
-            plddt = PandasPdb().read_pdb(f"{savedir}/sample{j}_{k}.pdb").df['ATOM']['b_factor'].mean()
+            plddt = PandasPdb().read_pdb(f"{savedir}/sample{i}.pdb").df['ATOM']['b_factor'].mean()
             if logger is not None:
                 logger.log(f"{self.cfg.name}/plddt", plddt)
 
     
     def run_batch(self, model, batch: dict, savedir=".", device=None, logger=None, inf=1e6):
+
         
         os.makedirs(savedir, exist_ok=True)
 
@@ -91,17 +90,12 @@ class SequenceGenerationEval(OpenProtEval):
             track.corrupt(batch, noisy_batch, {})
         
         L = len(batch["seqres"][0])
-        B = self.cfg.batch
-
-        noisy_batch['pad_mask'] = noisy_batch['pad_mask'].repeat(B, 1)
-        noisy_batch['aatype'] = noisy_batch['aatype'].repeat(B, 1)        
-        noisy_batch['seq_noise'] = noisy_batch['seq_noise'].repeat(B, 1)      
 
         sched = np.linspace(1.0, 0, self.cfg.steps+1)
         is_mask_probs = []
         curr_tok_probs = []
         
-        for t, s in zip(sched[:-1], sched[1:]):#, total=self.cfg.steps): # t > s
+        for t, s in tqdm.tqdm(zip(sched[:-1], sched[1:]), total=self.cfg.steps): # t > s
                 
             num_mask = int(round(t * self.cfg.sample_length))
             
@@ -212,21 +206,20 @@ class SequenceGenerationEval(OpenProtEval):
                 noisy_batch['aatype'] = torch.where(topk, sample, MASK_IDX)
      
             
-            seq = "".join([rc.restypes_with_x[aa] for aa in noisy_batch["aatype"][0]])
-            seq = seq.replace("X", "-")
-            print(seq)    
+            # seq = "".join([rc.restypes_with_x[aa] for aa in noisy_batch["aatype"][0]])
+            # seq = seq.replace("X", "-")
+            # print(seq)    
         
-
-        # np.save(f"{savedir}/{batch['name'][0]}.npz", np.stack(is_mask_probs))
-        # np.save(f"{savedir}/{batch['name'][0]}_tok.npz", np.stack(curr_tok_probs))
-        # print(f"{savedir}/{batch['name'][0]}.npz")
-        for i in range(B):
-            seq = "".join([rc.restypes_with_x[aa] for aa in noisy_batch["aatype"][i]]) # in case there is still mask
+        
+        for name, aatype in zip(noisy_batch['name'], noisy_batch['aatype']):
+            seq = "".join(
+                [rc.restypes_with_x[aa] for aa in aatype]
+            ) # in case there is still mask
             if logger is not None:
                 logger.log(f"{self.cfg.name}/seqent", self.compute_sequence_entropy(seq))
             
-            with open(f"{savedir}/{batch['name'][0]}_{i}.fasta", "w") as f:
-                f.write(f">{batch['name'][0]}_{i}\n")  # FASTA format header
+            with open(f"{savedir}/{name}.fasta", "w") as f:
+                f.write(f">{name}\n")  # FASTA format header
                 f.write(seq + "\n")
 
         #breakpoint()

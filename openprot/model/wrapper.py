@@ -207,7 +207,7 @@ class OpenProtWrapper(Wrapper):
         super().on_validation_epoch_end()
 
     def validation_step_extra(self, batch, batch_idx):
-        name = batch["eval"][0]
+        name = batch["dataset"][0]
         savedir = (
             f'{os.environ["MODEL_DIR"]}/eval_step{self.trainer.global_step}/{name}'
         )

@@ -5,15 +5,20 @@ from ..data.data import OpenProtData
 from ..tracks.manager import OpenProtTrackManager
 
 
-class OpenProtEvalManager(torch.utils.data.IterableDataset):
-    def __init__(self, cfg, tracks: OpenProtTrackManager, rank=0, world_size=1):
+class OpenProtEvalManager:
+    def __init__(self, cfg, tracks: OpenProtTrackManager):
         self.cfg = cfg
-        self.rank = rank
-        self.world_size = world_size
-
+        
         self.tracks = tracks
 
         self.evals = {}
+
+        self.loaders = []
+
+        collate = lambda batch: OpenProtData.batch([
+            self.tracks.tokenize(data) for data in batch
+        ])
+        
         for name in cfg.evals:  # autoload the eval tasks
             type_ = cfg.evals[name].type
             eval_ = autoimport(f"openprot.evals.{type_}")(
@@ -21,20 +26,10 @@ class OpenProtEvalManager(torch.utils.data.IterableDataset):
             )
             eval_.cfg.name = name  # know its own name
             self.evals[name] = eval_
-
-    def process(self, data: OpenProtData):
-        data.pad(None)  # just to get the pad mask
-
-        self.tracks.tokenize(data)
-
-    def __iter__(self):
-        i = 0
-        for name in self.cfg.evals:
-            ev = self.evals[name]
-            for j in range(len(ev)):
-                if i % self.world_size == self.rank:
-                    data = self.evals[name][j]
-                    self.process(data)
-                    data["eval"] = name  # :/
-                    yield data
-                i += 1
+            
+            self.loaders.append(torch.utils.data.DataLoader(
+                eval_,
+                num_workers=cfg.data.num_workers,
+                batch_size=cfg.evals[name].batch,
+                collate_fn=collate,
+            ))
