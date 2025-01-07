@@ -3,6 +3,8 @@ from ..utils import protein
 from ..utils.prot_utils import aatype_to_seqres
 from ..utils.geometry import compute_lddt, compute_rmsd
 from ..utils import residue_constants as rc
+from ..generate.sampler import OpenProtSampler
+from ..generate.sequence import SequenceUnmaskingStepper
 import numpy as np
 import torch
 import os
@@ -118,8 +120,9 @@ class InverseFoldingEval(OpenProtEval):
         }, steppers=[
             SequenceUnmaskingStepper(self.cfg)
         ])
-        
-        sample_batch, extra = sampler.sample(model, noisy_batch, self.cfg.steps)
+
+        L = len(batch['seqres'][0])
+        sample, extra = sampler.sample(model, noisy_batch, L)
          
         seq = "".join([rc.restypes_with_x[aa] for aa in sample["aatype"][0]])
         
@@ -128,7 +131,7 @@ class InverseFoldingEval(OpenProtEval):
         
         if logger is not None:
             logger.log(f"{self.cfg.name}/recov", recov.item())
-        
-        with open(f"{savedir}/{batch['name'][0]}.fasta", "w") as f:
-            f.write(f">{batch['name'][0]}\n")  # FASTA format header
+        name = batch['name'][0]
+        with open(f"{savedir}/{name}.fasta", "w") as f:
+            f.write(f">{name}\n")  # FASTA format header
             f.write(seq + "\n")

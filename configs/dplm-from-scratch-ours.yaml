@@ -1,4 +1,4 @@
-ckpt: workdir/dplm-ours-from-scratch/last.ckpt # 
+ckpt: null # workdir/dplm-ours-from-scratch/last.ckpt # 
 pretrained: null  #  load weights from here first
 validate: false # if true, only validate the model, don't train
 logger:
@@ -26,8 +26,8 @@ trainer:
     limit_val_batches: 1.0
     num_sanity_val_steps: 0
     gradient_clip_val: 1.0
-    accumulate_grad_batches: 8
-    val_check_interval: 8000
+    accumulate_grad_batches: 1
+    val_check_interval: 10000
     check_val_every_n_epoch: 1
     logger: false
     precision: 16-mixed
@@ -168,13 +168,13 @@ model: # custom args
 
 optimizer:
     type: AdamW
-    lr: 3e-4
+    lr: 3e-5
     # betas: [0.9, 0.98]
     # eps: 1e-8
     # weight_decay: 0.01
     # fused: true
     scheduler: 
         total_steps: 1000000
-        warmup_steps: 10000
+        warmup_steps: 2000
         start_decay: 10000
         end_factor: 1.00

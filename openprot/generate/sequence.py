@@ -1,6 +1,7 @@
 from ..tracks.sequence import MASK_IDX
 from torch.distributions.categorical import Categorical
 import torch
+import numpy as np
 
 def topk_masking(scores, k, mask=None, temp=1.0):
     gumbel = -torch.log(-torch.log(torch.rand_like(scores) + 1e-8) + 1e-8)
@@ -22,11 +23,12 @@ class SequenceUnmaskingStepper:
     def advance(self, batch, sched, out, extra={}):
         
         t, s = sched['sequence']
+
+        L = batch['aatype'].shape[1]
         
-        num_mask = int(round(t * self.cfg.sample_length))    
-        num_unmask = int(self.cfg.sample_length - num_mask)
-        remask = int(min(self.cfg.remask, int(0.5*num_mask), num_unmask))
-        new_num_mask = int(round(s * self.cfg.sample_length))
+        num_mask = int(round(t * L))    
+        num_unmask = int(L - num_mask)
+        new_num_mask = int(round(s * L))
         
         logits = out['aatype'] 
         
@@ -44,9 +46,7 @@ class SequenceUnmaskingStepper:
             logits = logits + gumbel_noise 
             scores_, sample_ = (logits / self.cfg.temp).log_softmax(dim=-1).max(dim=-1) 
 
-        new_num_mask = round(s * self.cfg.sample_length)
         if self.cfg.strategy == 'one_stage':            
-
             remask_prob = self.cfg.remask * max(0, 0.1 - 0.2*s)
             num_remask = int(torch.distributions.Binomial(
                 is_unmask.sum().item(), remask_prob
@@ -73,7 +73,7 @@ class SequenceUnmaskingStepper:
             
             topk = topk_masking(
                 scores_,
-                self.cfg.sample_length - new_num_mask, 
+                L - new_num_mask, 
                 temp=self.cfg.topk_temp
             )
             

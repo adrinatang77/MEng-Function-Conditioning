@@ -25,7 +25,7 @@ class Wrapper(pl.LightningModule):
         self._logger.step(self.trainer, "train")
         return out
 
-    def validation_step(self, batch, batch_idx):
+    def validation_step(self, batch, batch_idx, dataloader_idx=0):
         self._logger.prefix = "val"
         # self.general_step(batch)
         self.validation_step_extra(batch, batch_idx)

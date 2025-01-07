@@ -1,16 +1,16 @@
-ckpt: null # workdir/1e3-relpos-384-bs4+afdb/last.ckpt # 
+ckpt: workdir/merge-std-struct-gen-linear/last.ckpt # 
 pretrained: null  #  load weights from here first
-validate: false # if true, only validate the model, don't train
+validate: true # if true, only validate the model, don't train
 logger:
     # set to true to log to neptune.ai
-    neptune: true
-    run_id: null 
+    neptune: false
+    run_id: null
     # please change "test" to something unique to your task
     project: openprot/struct-merge
     # will log to workdir and neptune.ai with this name
-    name: invfold-1e3-384-0.2 # invfold-1e3-relpos-256-bs4
+    name: default # merge-std-struct-gen-linear 
     # if not null, will duplicate stdout and stderr to workdir/{name}/{logfile}
-    logfile: std.out
+    logfile: std2.out
     # if null, will log every epoch, otherwise every this number of steps
     train_log_freq: 100
     val_log_freq: null 
@@ -27,13 +27,14 @@ trainer:
     num_sanity_val_steps: 0
     gradient_clip_val: 1.0
     accumulate_grad_batches: 1
-    val_check_interval: 20000
+    val_check_interval: 10000
     check_val_every_n_epoch: 1
     logger: false
+    precision: 16-mixed
 
 # custom args to OpenProtDataset and elsewhere
 data: 
-    num_workers: 8
+    num_workers: 32
     batch: 32
     crop: 256
     seed: 137
@@ -48,14 +49,15 @@ features:
     # sequence feats
     seq_mask: [-1]
     seq_noise: [-1]
+    seq_weight: [-1]
     # structure feats are unconventional
     # because they really mix 3 modalities
     atom37: [-1, 37, 3]
     atom37_mask: [-1, 37]
-    trans_noise: [-1]
-    rots_noise: [-1]
-    # torsion_noise: [-1]
-
+    struct_noise: [-1]
+    struct_weight: [-1]
+    
+    
 datasets:
     pdb:
         type: PDBDataset
@@ -83,24 +85,26 @@ datasets:
         index: /scratch/projects/cgai/openprot/data/uniref50.index  
 
 tasks:
-    InverseFolding:
-        fraction: 1.0
-        beta: [1, 2]
-        uniform_prob: 1.0
-        seed: 137
-        random_rot: true
-        sigma: 0.2
-        datasets:
-            pdb:
-                fraction: 0.25
-                start: 0
-                seed: 37
-            afdb:
-                fraction: 0.75
-                start: 0
-                seed: 37  
-    # SequenceUnmasking: # make it impossible to predict X
-    #     fraction: 0.0
+    # InverseFolding:
+    #     fraction: 0.25
+    #     weight: 1.0
+    #     beta: [1, 2]
+    #     uniform_prob: 1.0
+    #     seed: 137
+    #     random_rot: true
+    #     sigma: 0.2
+    #     datasets:
+    #         pdb:
+    #             fraction: 0.25
+    #             start: 0
+    #             seed: 37
+    #         afdb:
+    #             fraction: 0.75
+    #             start: 0
+    #             seed: 38
+    # SequenceUnmasking: 
+    #     fraction: 0.25
+    #     weight: 1.0
     #     # beta: [1, 2]
     #     # uniform_prob: 0.0
     #     beta: [3, 9]
@@ -110,44 +114,46 @@ tasks:
     #         uniref:
     #             fraction: 1.0
     #             start: 0
-    #             seed: 678
-    # SequenceDenoising:
-    #     fraction: 0.0
-    #     seed: 137
-    #     datasets:
-    #         uniref:
-    #             fraction: 1.0
-    #             start: 0
-    #             seed: 137
-    #     sampling: beta
-    #     sampling_args: [1, 2]
+    #             seed: 39
     # StructurePrediction:
-    #     fraction: 0.0
+    #     fraction: 1.0
+    #     weight: 1.0
     #     beta: [1, 2]
     #     uniform_prob: 0.0
     #     max_noise_prob: 1.0
     #     seed: 137
     #     random_rot: true
+    #     sched_p: 7
+    #     sigma_max: 160
+    #     sigma_min: 0.05
     #     datasets:
     #         afdb:
     #             fraction: 0.75
     #             start: 0
-    #             seed: 142
+    #             seed: 40
     #         pdb:
     #             fraction: 0.25
     #             start: 0
-    #             seed: 142
-    # StructureGeneration:
-    #     fraction: 0.0
-    #     beta: [1, 2]
-    #     uniform_prob: 0.5
-    #     seed: 137
-    #     random_rot: true
-    #     datasets:
-    #         afdb_genie:
-    #             fraction: 1.0
-    #             start: 0
-    #             seed: 142
+    #             seed: 41
+    StructureGeneration:
+        fraction: 1.0
+        weight: 1.0
+        beta: [1, 2]
+        uniform_prob: 0.5
+        seed: 137
+        random_rot: true
+        sched_p: 7
+        sigma_max: 160
+        sigma_min: 0.05
+        datasets:
+            afdb_genie:
+                fraction: 0.75
+                start: 0
+                seed: 41
+            pdb:
+                fraction: 0.25
+                start: 0
+                seed: 42
             
 evals: 
     # cameo22:
@@ -158,70 +164,70 @@ evals:
     #     augmented: false
     #     align: false
     #     demean: true
-    # struct_gen_sde_0.5:
-    #     type: StructureGenerationEval
-    #     num_samples: 100
-    #     sample_length: 128
-    #     nsteps: 200
-    #     sched_type: 'log'
-    #     sde_weight: 10.0
-    #     temp_factor: 0.5
-    #     sde_cutoff_time: 0.0
-    #     sde_cutoff_width: 0.00001
-    #     run_designability: true
-    # struct_gen_sde_0.7:
-    #     type: StructureGenerationEval
-    #     num_samples: 100
-    #     sample_length: 128
-    #     nsteps: 200
-    #     sched_type: 'log'
-    #     sde_weight: 10.0
-    #     temp_factor: 0.7
-    #     sde_cutoff_time: 0.0
-    #     sde_cutoff_width: 0.00001
-    #     run_designability: true
-    # struct_gen_sde_1.0:
-    #     type: StructureGenerationEval
-    #     num_samples: 100
-    #     sample_length: 128
-    #     nsteps: 200
-    #     sched_type: 'log'
-    #     sde_weight: 10.0
-    #     temp_factor: 1.0
-    #     sde_cutoff_time: 0.0
-    #     sde_cutoff_width: 0.00001
-    #     run_designability: true
+    struct_gen_sde_0.5:
+        type: StructureGenerationEval
+        num_samples: 100
+        batch: 100
+        sample_length: 128
+        steps: 200
+        sched_p: 7
+        sigma_max: 160
+        sigma_min: 0.05
+        temp_factor: 0.5
+        run_designability: true
+    struct_gen_sde_0.7:
+        type: StructureGenerationEval
+        num_samples: 100
+        batch: 100
+        sample_length: 128
+        steps: 200
+        sched_p: 7
+        sigma_max: 160
+        sigma_min: 0.05
+        temp_factor: 0.7
+        run_designability: true
+    struct_gen_sde_1.0:
+        type: StructureGenerationEval
+        num_samples: 100
+        batch: 100
+        sample_length: 128
+        steps: 200
+        sched_p: 7
+        sigma_max: 160
+        sigma_min: 0.05
+        temp_factor: 1.0
+        run_designability: true
     # seq_gen_dplm: 
     #     type: SequenceGenerationEval
     #     num_samples: 100
     #     sample_length: 128
     #     steps: 128
     #     temp: 0.7
-    cameo22_invfold:
-        type: InverseFoldingEval
-        path: ./cameo
-        split: splits/cameo2022.csv
-        temp: 0.1
-        sigma: 0.2
+    # cameo22_invfold:
+    #     type: InverseFoldingEval
+    #     path: ./cameo
+    #     split: splits/cameo2022.csv
+    #     temp: 0.1
+    #     sigma: 0.2
         
         # order: random
 tracks:
     # register tracks here
     StructureTrack: 
-        loss_weight: 0.0
-        readout_pairwise: true
-        embed_trans: null
-        t_emb_p: 7
-        t_emb_max: 2000
-        # trunk or sm
-        readout_trans: trunk
+        loss_weight: 1.0
+        embed_trans: true
+        embed_pairwise: false
+        readout_trans: false
+        readout_pairwise: false
         postcondition: true
         int_loss_weight: 0.5
-        postcond_before_relpos: true
-        embed_pairwise: false
+        t_emb_p: 7
+        t_emb_max: 160
+        t_emb_min: 0.05
+        
         losses:
             lddt: 1.0
-            distogram: 0.3
+            # distogram: 0.3
             mse: 0.225
         diffusion:
             type: EDMDiffusion
@@ -230,25 +236,32 @@ tracks:
     SequenceTrack:
         esm: null # esm2_3B # esm2_650M # esm2_8M_270K
         loss_weight: 1.0 
+        mask_rate: 1.0
+        rand_rate: 0.0
         embed_t: false
-        loss_reweight: var
+
 
 model: # custom args
-    checkpoint: true
-    dim: 384 # 640
+    dplm_ckpt: null
+    checkpoint: false
+    dim: 640
     pairwise_dim: 128
-    heads: 4 # 20
+    heads: 16
     pairwise_heads: 4
-    blocks: 12 # 30
+    blocks: 30
 
-    relpos: true
+    trunk_relpos: [32, 1, 1000]
+    sm_relpos: [32, 1, 100]
     # topology of the network
     pair_blocks:
         start: 0
         end: 0
         interval: 1
-    struct_module: false
-    sm_block_idx: 12
+    relpos_blocks:
+        start: 0
+        end: 0
+        interval: 1
+    struct_module: true
     
     pairwise_pos_emb: false
     block_pair_bias: false
@@ -258,7 +271,7 @@ model: # custom args
     pair_values: false
     pair_bias: true
     pair_ff_expand: 4
-    tri_mul: true
+    tri_mul: false
     rope: false
     custom_rope: true
 
@@ -269,23 +282,29 @@ model: # custom args
     ipa_blocks: 8
     separate_ipa_blocks: false
     ipa_pair_values: false
-    ipa_pair_bias: true
-    detach_rots: true
+    ipa_pair_bias: false
     detach_trans: true
-    trunk_adaLN: false
-    sm_adaLN: false
+    trunk_adaLN: true
+    sm_adaLN: true
+    readout_adaLN: true
+    
+    move_x_to_xcond: true
+    ipa_relpos: true
+    ipa_nipa: false
+    ipa_rope: false
+    ipa_frame_update: true
+    zero_x_before_ipa: false
 
 
 optimizer:
     type: AdamW
-    lr: 1e-3
-    betas: [0.9, 0.98]
-    eps: 1e-8
-    weight_decay: 0.01
-    fused: true
+    lr: 1e-4
+    # betas: [0.9, 0.98]
+    # eps: 1e-8
+    # weight_decay: 0.01
+    # fused: true
     scheduler: 
         total_steps: 1000000
-        warmup_steps: 2000
+        warmup_steps: 1000
         start_decay: 10000
         end_factor: 1.00
-        

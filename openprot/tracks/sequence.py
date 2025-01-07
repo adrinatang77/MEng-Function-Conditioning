@@ -257,6 +257,8 @@ class SequenceTrack(OpenProtTrack):
 
     def predict(self, model, inp, out, readout):
         readout["aatype"] = model.seq_out(out["x"])
+        if not model.training:
+            readout["aatype"][...,MASK_IDX] = -np.inf
         
     def compute_loss(self, readout, target, logger=None, eps=1e-6, **kwargs):
 

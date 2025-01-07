@@ -30,6 +30,7 @@ class StructureGenerationEval(OpenProtEval):
             seqres="A" * L,
             seq_mask=np.ones(L, dtype=np.float32),
             seq_noise=np.ones(L, dtype=np.float32),
+            struct_noise=np.ones(L, dtype=np.float32) * self.cfg.sigma_max,
             atom37=np.zeros((L, 37, 3), dtype=np.float32),
             atom37_mask=np.ones((L, 37), dtype=np.float32),
         )
@@ -84,13 +85,14 @@ class StructureGenerationEval(OpenProtEval):
         logger=None
     ):
 
+        
         noisy_batch['struct'] = torch.randn_like(noisy_batch['struct']) * noisy_batch['struct_noise'][...,None]
 
         def sched_fn(t):
-            p = cfg.sched_p
+            p = self.cfg.sched_p
             return (
-                cfg.sigma_min ** (1 / p)
-                + (1-t) * (cfg.sigma_max ** (1 / p) - cfg.sigma_min ** (1 / p))
+                self.cfg.sigma_min ** (1 / p)
+                + (1-t) * (self.cfg.sigma_max ** (1 / p) - self.cfg.sigma_min ** (1 / p))
             ) ** p
 
         sampler = OpenProtSampler(schedules={
@@ -101,11 +103,8 @@ class StructureGenerationEval(OpenProtEval):
         
         sample_batch, extra = sampler.sample(model, noisy_batch, self.cfg.steps)
 
-        
-        diffusion = self.tracks["StructureTrack"].diffusion
-
         pred_traj = torch.stack(extra['preds'])
-        samp_traj = torch.stack(extra['out'])
+        samp_traj = torch.stack(extra['traj'])
 
         B = len(sample_batch['struct'])
         

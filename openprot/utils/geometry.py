@@ -5,7 +5,7 @@ from .rigid_utils import Rigid, Rotation
 from . import residue_constants as rc
 from .tensor_utils import batched_gather
 
-
+@torch.cuda.amp.autocast(False)
 def compute_rmsd(a, b, weights=None):
     B = a.shape[:-2]
     N = a.shape[-2]
@@ -18,6 +18,7 @@ def compute_rmsd(a, b, weights=None):
 
 
 # https://github.com/scipy/scipy/blob/main/scipy/spatial/transform/_rotation.pyx
+@torch.cuda.amp.autocast(False)
 def rmsdalign(
     a, b, weights=None, demean=True, a_origin=None, b_origin=None
 ):  # alignes B to A  # [*, N, 3]

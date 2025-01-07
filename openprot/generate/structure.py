@@ -1,3 +1,5 @@
+import torch
+import numpy as np
 
 class EDMDiffusionStepper:
     def __init__(self, cfg=None):
@@ -8,14 +10,17 @@ class EDMDiffusionStepper:
         batch["struct_noise"] = torch.ones_like(batch["struct_noise"]) * t
         
     def advance(self, batch, sched, out, extra={}):
-       
+
+        if 'traj' not in extra: extra['traj'] = []
+        if 'preds' not in extra: extra['preds'] = []
+            
         x = batch['struct']
-        t2, t1 = sched['sequence']
+        t2, t1 = sched['structure']
         
         dt = t2 - t1
         g = np.sqrt(2 * t2)
 
-        x0 = out['trans']
+        x0 = out['trans'][-1]
         extra['preds'].append(x0)
         
         s = (x0 - x) / t2**2  # score
@@ -25,4 +30,4 @@ class EDMDiffusionStepper:
         dx = g**2 * s * dt + g * gamma * np.sqrt(dt) * noise
         
         batch['struct'] = x + dx
-        extra['out'].append(batch['struct'])
+        extra['traj'].append(batch['struct'])

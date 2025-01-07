@@ -1,7 +1,10 @@
 import torch
 import numpy as np
 import pandas as pd
-# import foldcomp
+try:
+    import foldcomp
+except:
+    print("Could not import foldcomp")
 from ..utils import protein
 from ..utils import residue_constants as rc
 from .data import OpenProtDataset

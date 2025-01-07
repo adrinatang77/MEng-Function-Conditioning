@@ -1,18 +1,18 @@
-ckpt: null # workdir/1e3-relpos-384-bs4+afdb/last.ckpt # 
+ckpt: workdir/merge-std-inv-fold-relpos-no-reweight/last.ckpt # 
 pretrained: null  #  load weights from here first
-validate: false # if true, only validate the model, don't train
+validate: true # if true, only validate the model, don't train
 logger:
     # set to true to log to neptune.ai
     neptune: false
-    run_id: null 
+    run_id: null # STRUC1-289
     # please change "test" to something unique to your task
     project: openprot/struct-merge
     # will log to workdir and neptune.ai with this name
-    name: default #  merge-test-330M # invfold-1e3-relpos-256-bs4
+    name: default-eval # merge-std-inv-fold-relpos-no-reweight # invfold-1e3-relpos-256-bs4
     # if not null, will duplicate stdout and stderr to workdir/{name}/{logfile}
-    logfile: null # std.out
+    logfile: std.out
     # if null, will log every epoch, otherwise every this number of steps
-    train_log_freq: 10
+    train_log_freq: 100
     val_log_freq: null 
     ckpt_freq: 50000000000
     save_freq: 5000
@@ -30,11 +30,12 @@ trainer:
     val_check_interval: 10000
     check_val_every_n_epoch: 1
     logger: false
+    precision: 16-mixed
 
 # custom args to OpenProtDataset and elsewhere
 data: 
-    num_workers: 8
-    batch: 8
+    num_workers: 32
+    batch: 32
     crop: 256
     seed: 137
 
@@ -48,55 +49,63 @@ features:
     # sequence feats
     seq_mask: [-1]
     seq_noise: [-1]
+    seq_weight: [-1]
     # structure feats are unconventional
     # because they really mix 3 modalities
     atom37: [-1, 37, 3]
     atom37_mask: [-1, 37]
     struct_noise: [-1]
-
+    struct_weight: [-1]
+    
+    
 datasets:
     pdb:
         type: PDBDataset
-        path: /data/cb/scratch/datasets/pdb_npz
+        path: /scratch/projects/cgai/openprot/data/pdb_npz
         cutoff: 2018-05-01
-        clusters:  /data/cb/scratch/datasets/pdb_npz/pdb_clusters
-        blacklist: null # 
+        clusters: /scratch/projects/cgai/openprot/data/pdb_clusters
+        blacklist: /scratch/projects/cgai/openprot/cameo_pdb_blacklist.tsv
     afdb_genie:
-        type: PDBDataset
-        path: /data/cb/scratch/datasets/pdb_npz
-        cutoff: 2018-05-01
-        clusters: /data/cb/scratch/datasets/pdb_npz/pdb_clusters
-        blacklist: null # 
+        type: AFDBDataset
+        path: /scratch/projects/cgai/openprot/data/afdb_rep_v4/afdb_rep_v4
+        annotations: /scratch/projects/cgai/openprot/data/afdb_rep_v4.pkl.gz
+        blacklist: null 
+        plddt_thresh: null 
+        index: /scratch/projects/cgai/openprot/afdbreps_l-256_plddt_80.txt
     afdb:
-        type: PDBDataset
-        path: /data/cb/scratch/datasets/pdb_npz
-        cutoff: 2018-05-01
-        clusters: /data/cb/scratch/datasets/pdb_npz/pdb_clusters
-        blacklist: null # 
+        type: AFDBDataset
+        path: /scratch/projects/cgai/openprot/data/afdb_rep_v4/afdb_rep_v4
+        annotations: /scratch/projects/cgai/openprot/data/afdb_rep_v4.pkl.gz
+        blacklist: /scratch/projects/cgai/openprot/cameo_afdb_blacklist.tsv
+        plddt_thresh: 80
+        index: null
     uniref:
         type: UnirefDataset
-        path: /data/cb/scratch/datasets/uniref50.fasta
-        index: /data/cb/scratch/datasets/uniref50.idx.npy
+        path: /scratch/projects/cgai/openprot/data/uniref50.fasta
+        index: /scratch/projects/cgai/openprot/data/uniref50.index  
 
 tasks:
-    # InverseFolding:
-    #     fraction: 0.25
-    #     beta: [1, 2]
-    #     uniform_prob: 1.0
-    #     seed: 137
-    #     random_rot: true
-    #     sigma: 0.2
-    #     datasets:
-    #         pdb:
-    #             fraction: 0.25
-    #             start: 0
-    #             seed: 37
-    #         afdb:
-    #             fraction: 0.75
-    #             start: 0
-    #             seed: 38
+    InverseFolding:
+        fraction: 1.0
+        weight: 1.0
+        beta: [1, 2]
+        uniform_prob: 1.0
+        seed: 137
+        random_rot: true
+        sigma: 0.2
+        reweight: false
+        datasets:
+            pdb:
+                fraction: 0.25
+                start: 0
+                seed: 37
+            afdb:
+                fraction: 0.75
+                start: 0
+                seed: 38
     # SequenceUnmasking: 
     #     fraction: 0.25
+    #     weight: 1.0
     #     # beta: [1, 2]
     #     # uniform_prob: 0.0
     #     beta: [3, 9]
@@ -107,27 +116,29 @@ tasks:
     #             fraction: 1.0
     #             start: 0
     #             seed: 39
-    StructurePrediction:
-        fraction: 1.0
-        beta: [1, 2]
-        uniform_prob: 0.0
-        max_noise_prob: 1.0
-        seed: 137
-        random_rot: true
-        sched_p: 7
-        sigma_max: 160
-        sigma_min: 0.05
-        datasets:
-            afdb:
-                fraction: 0.75
-                start: 0
-                seed: 40
-            pdb:
-                fraction: 0.25
-                start: 0
-                seed: 41
+    # StructurePrediction:
+    #     fraction: 1.0
+    #     weight: 1.0
+    #     beta: [1, 2]
+    #     uniform_prob: 0.0
+    #     max_noise_prob: 1.0
+    #     seed: 137
+    #     random_rot: true
+    #     sched_p: 7
+    #     sigma_max: 160
+    #     sigma_min: 0.05
+    #     datasets:
+    #         afdb:
+    #             fraction: 0.75
+    #             start: 0
+    #             seed: 40
+    #         pdb:
+    #             fraction: 0.25
+    #             start: 0
+    #             seed: 41
     # StructureGeneration:
-    #     fraction: 0.25
+    #     fraction: 1.0
+    #     weight: 1.0
     #     beta: [1, 2]
     #     uniform_prob: 0.5
     #     seed: 137
@@ -146,56 +157,59 @@ tasks:
     #             seed: 42
             
 evals: 
-    cameo22:
-        type: StructurePredictionEval
-        path: /scratch/projects/cgai/openprot/data/pdb_npz
-        split: splits/cameo2022.csv
-        diffusion: false
-        augmented: false
-        align: false
-        demean: true
-    struct_gen_sde_0.5:
-        type: StructureGenerationEval
-        num_samples: 100
-        sample_length: 128
-        nsteps: 200
-        sched_p: 7
-        sigma_max: 160
-        sigma_min: 0.05
-        temp_factor: 0.5
-        run_designability: true
-    struct_gen_sde_0.7:
-        type: StructureGenerationEval
-        num_samples: 100
-        sample_length: 128
-        nsteps: 200
-        sched_p: 7
-        sigma_max: 160
-        sigma_min: 0.05
-        temp_factor: 0.7
-        run_designability: true
-    struct_gen_sde_1.0:
-        type: StructureGenerationEval
-        num_samples: 100
-        sample_length: 128
-        nsteps: 200
-        sched_p: 7
-        sigma_max: 160
-        sigma_min: 0.05
-        temp_factor: 1.0
-        run_designability: true
-    seq_gen_dplm: 
-        type: SequenceGenerationEval
-        num_samples: 100
-        sample_length: 128
-        steps: 128
-        temp: 0.7
+    # cameo22:
+    #     type: StructurePredictionEval
+    #     path: /scratch/projects/cgai/openprot/data/pdb_npz
+    #     split: splits/cameo2022.csv
+    #     diffusion: false
+    #     augmented: false
+    #     align: false
+    #     demean: true
+    # struct_gen_sde_0.5:
+    #     type: StructureGenerationEval
+    #     num_samples: 100
+    #     sample_length: 128
+    #     nsteps: 200
+    #     sched_p: 7
+    #     sigma_max: 160
+    #     sigma_min: 0.05
+    #     temp_factor: 0.5
+    #     run_designability: true
+    # struct_gen_sde_0.7:
+    #     type: StructureGenerationEval
+    #     num_samples: 100
+    #     sample_length: 128
+    #     nsteps: 200
+    #     sched_p: 7
+    #     sigma_max: 160
+    #     sigma_min: 0.05
+    #     temp_factor: 0.7
+    #     run_designability: true
+    # struct_gen_sde_1.0:
+    #     type: StructureGenerationEval
+    #     num_samples: 100
+    #     sample_length: 128
+    #     nsteps: 200
+    #     sched_p: 7
+    #     sigma_max: 160
+    #     sigma_min: 0.05
+    #     temp_factor: 1.0
+    #     run_designability: true
+    # seq_gen_dplm: 
+    #     type: SequenceGenerationEval
+    #     num_samples: 100
+    #     sample_length: 128
+    #     steps: 128
+    #     temp: 0.7
     cameo22_invfold:
         type: InverseFoldingEval
         path: ./cameo
         split: splits/cameo2022.csv
         temp: 0.1
         sigma: 0.2
+        batch: 1
+        logits: standard
+        strategy: random
         
         # order: random
 tracks:
@@ -223,18 +237,20 @@ tracks:
     SequenceTrack:
         esm: null # esm2_3B # esm2_650M # esm2_8M_270K
         loss_weight: 1.0 
+        mask_rate: 1.0
+        rand_rate: 0.0
         embed_t: false
-        loss_reweight: var
+
 
 model: # custom args
+    dplm_ckpt: null
     checkpoint: false
-    dim: 1024
+    dim: 640
     pairwise_dim: 128
     heads: 16
     pairwise_heads: 4
-    blocks: 12
+    blocks: 30
 
-    relpos: true
     trunk_relpos: [32, 1, 1000]
     sm_relpos: [32, 1, 100]
     # topology of the network
@@ -242,8 +258,11 @@ model: # custom args
         start: 0
         end: 0
         interval: 1
+    relpos_blocks:
+        start: 0
+        end: 12
+        interval: 1
     struct_module: true
-    sm_block_idx: 12
     
     pairwise_pos_emb: false
     block_pair_bias: false
@@ -265,10 +284,7 @@ model: # custom args
     separate_ipa_blocks: false
     ipa_pair_values: false
     ipa_pair_bias: false
-    embed_trans: false
-    detach_rots: true
     detach_trans: true
-    detach_x: false
     trunk_adaLN: true
     sm_adaLN: true
     readout_adaLN: true
@@ -283,13 +299,13 @@ model: # custom args
 
 optimizer:
     type: AdamW
-    lr: 1e-4
+    lr: 3e-4
     # betas: [0.9, 0.98]
     # eps: 1e-8
     # weight_decay: 0.01
     # fused: true
     scheduler: 
         total_steps: 1000000
-        warmup_steps: 2000
+        warmup_steps: 1000
         start_decay: 10000
         end_factor: 1.00
