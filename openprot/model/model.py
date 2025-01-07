@@ -142,6 +142,7 @@ class OpenProtTransformerBlock(nn.Module):
         adaLN=False,
         readout_adaLN=False,
         rots_type="quat",
+        dropout=0.0,
     ):
         super().__init__()
         self.mha = GeometricMultiHeadAttention(
@@ -165,6 +166,7 @@ class OpenProtTransformerBlock(nn.Module):
             embed_trans=embed_trans,
             no_qk_points=no_qk_points,
             no_v_points=no_v_points,
+            dropout=dropout,
         )
         self.ff = FeedForward(dim, ff_expand * dim, layers=ff_layers)
 
@@ -180,6 +182,8 @@ class OpenProtTransformerBlock(nn.Module):
         self.readout_adaLN = readout_adaLN
         self.mha_norm = nn.LayerNorm(dim, elementwise_affine=not adaLN)
         self.ff_norm = nn.LayerNorm(dim, elementwise_affine=not adaLN)
+        self.mha_dropout = nn.Dropout(p=dropout)
+        self.ff_dropout = nn.Dropout(p=dropout)
 
         if adaLN:
             self.adaLN_modulation = nn.Sequential(nn.SiLU(), nn.Linear(dim, 6 * dim))
@@ -248,7 +252,7 @@ class OpenProtTransformerBlock(nn.Module):
 
         x_in = x
 
-        x = x + gate(
+        x = x + self.mha_dropout(gate(
             self.mha(
                 x=modulate(self.mha_norm(x), shift_mha, scale_mha),
                 z=self.pair_norm(z) if hasattr(self, "pair_norm") else None,
@@ -258,9 +262,11 @@ class OpenProtTransformerBlock(nn.Module):
                 relpos_mask=relpos_mask,
             ),
             gate_mha,
-        )
+        ))
 
-        x = x + gate(self.ff(modulate(self.ff_norm(x), shift_mlp, scale_mlp)), gate_mlp)
+        x = x + self.ff_dropout(gate(self.ff(modulate(
+            self.ff_norm(x), shift_mlp, scale_mlp
+        )), gate_mlp))
 
         if self.pair_updates:
             z = z + self.sequence_to_pair(x)
@@ -409,6 +415,7 @@ class OpenProtModel(nn.Module):
                     pair_bias=cfg.block_pair_bias,
                     **(pair_args if i in pair_block_idx else {}),
                     **(relpos_args if i in relpos_block_idx else {}),
+                    dropout=cfg.dropout,
                 )
             )
 

@@ -57,7 +57,7 @@ class CodesignEval(OpenProtEval):
                 "-m",
                 "scripts.esmfold",
                 "--outdir",
-                savedir,
+                f"{savedir}/rank{rank}",
                 "--dir",
                 f"{savedir}/rank{rank}",
                 # "--print",
@@ -69,7 +69,7 @@ class CodesignEval(OpenProtEval):
                 
                 with open(f"{savedir}/sample{i}.pdb") as f:
                     prot = protein.from_pdb_string(f.read())
-                with open(f"{savedir}/sample{i}.pdb") as f:
+                with open(f"{savedir}/rank{rank}/sample{i}.pdb") as f:
                     pred = protein.from_pdb_string(f.read())
                 lddt = compute_lddt(
                     torch.from_numpy(pred.atom_positions[:,1]), 

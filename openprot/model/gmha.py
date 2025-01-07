@@ -82,6 +82,7 @@ class GeometricMultiHeadAttention(nn.Module):
         embed_trans=False,
         no_qk_points=4,
         no_v_points=8,
+        dropout=0.0,
     ):
         super().__init__()
         self.dim = dim
@@ -146,6 +147,8 @@ class GeometricMultiHeadAttention(nn.Module):
 
         if pair_values:
             self.w_z = Linear(heads * pairwise_dim, dim)
+
+        self.dropout = nn.Dropout(dropout)
 
     def forward(self, x, z, mask, trans, rots, relpos_mask=None):
 
@@ -222,6 +225,10 @@ class GeometricMultiHeadAttention(nn.Module):
             
 
         attn = torch.softmax(attn, dim=-1)
+        
+        # This is actually dropping out entire tokens to attend to, which might
+        # seem a bit unusual, but is taken from the original Transformer paper.
+        attn = self.dropout(attn) 
 
         ## scalar values
         value = self.w_v(x).view(B, L, self.heads, -1).transpose(1, 2)
