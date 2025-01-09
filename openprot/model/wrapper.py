@@ -102,20 +102,12 @@ class OpenProtWrapper(Wrapper):
         if cfg.model.dplm_ckpt:
             from byprot.models.lm.dplm import DiffusionProteinLanguageModel
             
-            # os.environ['HF_HOME'] = "/scratch/10165/bjing"
             self.model = DiffusionProteinLanguageModel.from_pretrained(
                 self.cfg.model.dplm_ckpt
             ).train()
 
-            # self.model.net.esm.embeddings.dropout.p = 0.0
-            # for i in range(30):
-            #     self.model.net.esm.encoder.layer[i].attention.output.dropout.p = 0.0
-            #     self.model.net.esm.encoder.layer[i].output.dropout.p = 0.0
-            # self.model.net.lm_head.decoder.weight = torch.nn.Parameter(
-            #     self.model.net.lm_head.decoder.weight.data
-            # )
-            # assert self.model.net.lm_head.decoder.weight is not self.model.net.esm.embeddings.word_embeddings.weight
-            self.model.apply(self.model.net._init_weights)
+            if cfg.model.dplm_reinit:
+                self.model.apply(self.model.net._init_weights)
             
             
             ours_to_dplm = [self.model.tokenizer._token_to_id[c] for c in rc.restypes] + [32]

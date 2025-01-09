@@ -10,6 +10,7 @@ import torch
 import os
 import math
 import tqdm
+import shutil
 import torch.nn.functional as F
 import subprocess
 
@@ -50,9 +51,9 @@ class SequenceGenerationEval(OpenProtEval):
         idx = list(range(rank, self.cfg.num_samples, world_size))
         os.makedirs(f"{savedir}/rank{rank}", exist_ok=True)
         for i in idx:
-            cmd = ['cp', f"{savedir}/sample{i}.fasta", f"{savedir}/rank{rank}"]
-            subprocess.run(cmd)
-            
+            # cmd = ['cp', f"{savedir}/sample{i}.fasta", f"{savedir}/rank{rank}"]
+            # subprocess.run(cmd)
+            shutil.copy(f"{savedir}/sample{i}.fasta", f"{savedir}/rank{rank}")
         cmd = [
             "bash",
             "scripts/switch_conda_env.sh",

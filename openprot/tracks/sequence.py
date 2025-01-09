@@ -60,7 +60,34 @@ esm_registry = {
     "esm2_15B": esm.pretrained.esm2_t48_15B_UR50D,
 }
 
+def gelu(x):
+    """
+    This is the gelu implementation from the original ESM repo. Using F.gelu yields subtly wrong results.
+    """
+    return x * 0.5 * (1.0 + torch.erf(x / math.sqrt(2.0)))
 
+class EsmLMHead(nn.Module):
+    """ESM Head for masked language modeling."""
+
+    def __init__(self, in_dim, out_dim):
+        super().__init__()
+        self.layer_norm1 = nn.LayerNorm(in_dim)
+        self.dense = nn.Linear(in_dim, in_dim)
+        self.layer_norm2 = nn.LayerNorm(in_dim)
+
+        self.decoder = nn.Linear(in_dim, out_dim, bias=False)
+        self.bias = nn.Parameter(torch.zeros(out_dim))
+
+    def forward(self, x):
+        x = self.layer_norm1(x)
+        x = self.dense(x)
+        x = gelu(x)
+        x = self.layer_norm2(x)
+
+        # project back to size of vocabulary with bias
+        x = self.decoder(x) + self.bias
+        return x
+        
 class SequenceTrack(OpenProtTrack):
 
     def setup(self):
@@ -171,8 +198,14 @@ class SequenceTrack(OpenProtTrack):
 
     def add_modules(self, model):
         model.seq_embed = nn.Embedding(NUM_TOKENS, model.cfg.dim)
-        model.seq_out = nn.Linear(model.cfg.dim, NUM_TOKENS)
-
+        torch.nn.init.normal_(model.seq_embed.weight, std=0.02)
+        if self.cfg.esm_lm_head:
+            model.seq_out = EsmLMHead(model.cfg.dim, NUM_TOKENS)
+            if self.cfg.tied_weights:
+                model.seq_out.decoder.weight = model.seq_embed.weight
+        else:
+            model.seq_out = nn.Linear(model.cfg.dim, NUM_TOKENS)
+        
         if self.cfg.esm is not None:
 
             model.esm, self.esm_dict = esm_registry.get(self.cfg.esm)()
@@ -201,7 +234,7 @@ class SequenceTrack(OpenProtTrack):
         tokens = batch["aatype"]
         
         mask = batch["seq_noise"].bool() | ~batch["seq_mask"].bool() # these will be input as MASK
-        sup = batch["seq_noise"].bool() # & batch["seq_mask"].bool() # these will be actually supervised
+        sup = batch["seq_noise"].bool() & batch["seq_mask"].bool() # these will be actually supervised
         # sup &= (tokens != 
 
         
@@ -261,7 +294,7 @@ class SequenceTrack(OpenProtTrack):
             readout["aatype"][...,MASK_IDX] = -np.inf
         
     def compute_loss(self, readout, target, logger=None, eps=1e-6, **kwargs):
-
+        
         loss = torch.nn.functional.cross_entropy(
             readout["aatype"].transpose(1, 2), target["aatype"], reduction="none"
         )
@@ -282,7 +315,7 @@ class SequenceTrack(OpenProtTrack):
         new_probs = probs / denom
         new_probs /= new_probs.sum(-1, keepdims=True)
         is_mask_prob = ((probs - oh) / (new_probs - oh))[...,0]
-        is_unmask = (target['noisy_aatype'] != 32)
+        is_unmask = (target['noisy_aatype'] != MASK_IDX)
         # print((is_mask_prob * is_unmask).sum(-1) / is_unmask.sum(-1))
         # print((is_mask_prob * is_unmask).sum() / is_unmask.sum())
         if logger:

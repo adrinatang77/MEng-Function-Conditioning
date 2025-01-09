@@ -1,4 +1,4 @@
-from ..tracks.sequence import MASK_IDX
+from ..tracks.sequence import MASK_IDX, NUM_TOKENS
 from torch.distributions.categorical import Categorical
 import torch
 import numpy as np
@@ -32,9 +32,29 @@ class SequenceUnmaskingStepper:
         
         logits = out['aatype'] 
         
-        curr_tok_prob = Categorical(logits=logits).log_prob(batch['aatype'])
+        
         is_unmask = (batch['aatype'] != MASK_IDX)
         is_mask = (batch['aatype'] == MASK_IDX)
+
+        probs = logits.softmax(-1)
+        oh = torch.nn.functional.one_hot(batch['aatype'], num_classes=NUM_TOKENS)
+        denom = 0.5 * oh + 0.05
+        new_probs = probs / denom
+        new_probs /= new_probs.sum(-1, keepdims=True)
+        if self.cfg.logits == 'standard':
+            curr_tok_logits = Categorical(
+                logits=new_probs.log() / self.cfg.temp
+            ).log_prob(batch['aatype'])
+        elif self.cfg.logits == 'gumbel':
+            gumbel_noise = -torch.log(-torch.log(torch.rand_like(logits) + 1e-8) + 1e-8)
+            curr_tok_logits = Categorical(
+                logits = (new_probs.log() + gumbel_noise) / self.cfg.temp
+            ).log_prob(batch['aatype'])
+        
+        # is_mask_prob = ((probs - oh) / (new_probs - oh))[...,0]
+
+        if self.cfg.adjust_unmasked:
+            logits = torch.where(is_unmask[...,None], new_probs.log(), logits)
         
         if self.cfg.logits == 'standard':
             cat = Categorical(logits=logits / self.cfg.temp)
@@ -53,7 +73,7 @@ class SequenceUnmaskingStepper:
             ).sample().item())
            
             topk = topk_masking(
-                -curr_tok_prob,
+                -curr_tok_logits,
                 num_remask, 
                 is_unmask,
                 temp=self.cfg.topk_temp
@@ -70,6 +90,10 @@ class SequenceUnmaskingStepper:
             batch['aatype'] = torch.where(topk, sample_, batch['aatype'])
 
         elif self.cfg.strategy == 'dplm':
+
+            if self.cfg.replace_unmasked:
+                scores_ = torch.where(is_unmask, curr_tok_logits, scores_)
+                sample_ = torch.where(is_unmask, batch['aatype'], sample_)
             
             topk = topk_masking(
                 scores_,
