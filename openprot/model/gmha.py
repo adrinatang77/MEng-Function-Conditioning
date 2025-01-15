@@ -219,6 +219,7 @@ class GeometricMultiHeadAttention(nn.Module):
             relpos_query = self.linear_relpos_query(x)
             relpos_query = relpos_query.view(B, L, self.heads, -1).transpose(1, 2)
 
+            
             relpos_attn = torch.einsum("bhid,bijd->bhij", relpos_query, relpos_emb)
             relpos_attn = relpos_attn / math.sqrt(6 * self.relpos_freqs)
             attn = attn + relpos_attn # this is already 0 for masked pairs

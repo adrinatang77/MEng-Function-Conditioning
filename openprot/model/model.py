@@ -143,6 +143,7 @@ class OpenProtTransformerBlock(nn.Module):
         readout_adaLN=False,
         rots_type="quat",
         dropout=0.0,
+        token_dropout=0.0,
     ):
         super().__init__()
         self.mha = GeometricMultiHeadAttention(
@@ -166,7 +167,7 @@ class OpenProtTransformerBlock(nn.Module):
             embed_trans=embed_trans,
             no_qk_points=no_qk_points,
             no_v_points=no_v_points,
-            dropout=dropout,
+            dropout=token_dropout,
         )
         self.ff = FeedForward(dim, ff_expand * dim, layers=ff_layers)
 
@@ -285,13 +286,6 @@ class OpenProtTransformerBlock(nn.Module):
             else:
                 update = self.linear_frame_update(x)
             trans = trans + update
-
-        # if self.readout_rots:
-        #     rotvec = self.linear_rots_out(x)
-        #     if self.rots_type == "quat":
-        #         rots = Rotation(quats=rotvec, normalize_quats=True).get_rot_mats()
-        #     elif self.rots_type == "vec":
-        #         rots = axis_angle_to_matrix(rotvec)
 
         if not self.update_x:
             x = x_in
@@ -416,6 +410,7 @@ class OpenProtModel(nn.Module):
                     **(pair_args if i in pair_block_idx else {}),
                     **(relpos_args if i in relpos_block_idx else {}),
                     dropout=cfg.dropout,
+                    token_dropout=cfg.token_dropout,
                 )
             )
 

@@ -1,6 +1,9 @@
+import os
+os.environ["TORCH_HOME"] = '/scratch/10165/bjing'
+os.environ["HF_HOME"] = '/scratch/10165/bjing'
+
 import torch
 import esm
-import os
 import sys
 import argparse
 import numpy as np
@@ -37,8 +40,17 @@ if args.fasta:
     names = [name.strip()[1:] for name in names]
 if args.dir:
     files = sorted(glob.glob(f"{args.dir}/*.fasta"))
-    seqs = [list(open(f))[1].strip() for f in files]
-    names = [list(open(f))[0].strip()[1:] for f in files]
+    seqs = []
+    names = []
+    for f in files:
+        try:
+            seq = list(open(f))[1].strip()
+            name = list(open(f))[0].strip()[1:]
+            seqs.append(seq)
+            names.append(name)
+        except:
+            print("Corrupted file", f)
+            
 # print(seqs)
 with torch.no_grad():
     for seq, name in tqdm.tqdm(zip(seqs, names), total=len(seqs)):

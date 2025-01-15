@@ -161,6 +161,12 @@ class StructureTrack(OpenProtTrack):
             model.frame_mask_cond[None,None],
             t_emb,
         )
+        if self.cfg.embed_sigma:
+            inp["x"] += torch.where(
+                embed_as_mask[...,None],
+                model.frame_mask_cond[None,None],
+                t_emb,
+            )
             
         if self.cfg.embed_pairwise:
             raise Exception("This hasn't been touched in a while, should fix")

@@ -1,4 +1,4 @@
-ckpt: null # workdir/dplm-ours-from-scratch/last.ckpt # 
+ckpt: null #
 pretrained: null  #  load weights from here first
 validate: false # if true, only validate the model, don't train
 logger:
@@ -8,7 +8,7 @@ logger:
     # please change "test" to something unique to your task
     project: openprot/struct-merge
     # will log to workdir and neptune.ai with this name
-    name: dplm-ours-from-scratch # merge-std-inv-fold-linear-no-reweight # invfold-1e3-relpos-256-bs4
+    name: dplm-normal-dropout # merge-std-inv-fold-linear-no-reweight # invfold-1e3-relpos-256-bs4
     # if not null, will duplicate stdout and stderr to workdir/{name}/{logfile}
     logfile: std.out
     # if null, will log every epoch, otherwise every this number of steps
@@ -96,6 +96,8 @@ evals:
         logits: gumbel
         remask: 0.0
         topk_temp: 0.0
+        replace_unmasked: false
+        adjust_unmasked: false
         allow_mutation: false
         
 
@@ -106,6 +108,8 @@ tracks:
         mask_rate: 1.0
         rand_rate: 0.0
         embed_t: false
+        tied_weights: true
+        esm_lm_head: true
 
 
 model: # custom args
@@ -119,6 +123,8 @@ model: # custom args
     heads: 16
     pairwise_heads: 4
     blocks: 30
+    dropout: 0.1
+    token_dropout: 0.0
 
     trunk_relpos: [32, 1, 1000]
     sm_relpos: [32, 1, 100]

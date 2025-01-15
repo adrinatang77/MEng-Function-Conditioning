@@ -70,9 +70,12 @@ class SequenceGenerationEval(OpenProtEval):
             'CUDA_VISIBLE_DEVICES': str(torch.cuda.current_device())
         })  
         for i in idx:
-            plddt = PandasPdb().read_pdb(f"{savedir}/sample{i}.pdb").df['ATOM']['b_factor'].mean()
-            if logger is not None:
-                logger.log(f"{self.cfg.name}/plddt", plddt)
+            try:
+                plddt = PandasPdb().read_pdb(f"{savedir}/sample{i}.pdb").df['ATOM']['b_factor'].mean()
+                if logger is not None:
+                    logger.log(f"{self.cfg.name}/plddt", plddt)
+            except:
+                pass
 
     
 

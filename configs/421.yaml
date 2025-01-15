@@ -1,14 +1,14 @@
-ckpt: null # workdir/dplm-from-scratch/last.ckpt 
+ckpt: workdir/dplm-421-replica/last.ckpt
 pretrained: null  #  load weights from here first
 validate: false # if true, only validate the model, don't train
 logger:
     # set to true to log to neptune.ai
     neptune: true
-    run_id: null
+    run_id: STRUC1-440
     # please change "test" to something unique to your task
     project: openprot/struct-merge
     # will log to workdir and neptune.ai with this name
-    name: dplm-from-scratch # merge-std-inv-fold-linear-no-reweight # invfold-1e3-relpos-256-bs4
+    name: dplm-421-replica # merge-std-inv-fold-linear-no-reweight # invfold-1e3-relpos-256-bs4
     # if not null, will duplicate stdout and stderr to workdir/{name}/{logfile}
     logfile: std.out
     # if null, will log every epoch, otherwise every this number of steps
@@ -37,7 +37,7 @@ data:
     num_workers: 4
     max_toks: 8192
     buffer: 1000
-    batch: null
+    batch: null # 32
     crop: 1024
     seed: 137
 
@@ -65,9 +65,7 @@ datasets:
     uniref:
         type: UnirefDataset
         path: /scratch/projects/cgai/openprot/data/uniref50.fasta
-        # th: /data/cb/scratch/datasets/uniref50.fasta
         index: /scratch/projects/cgai/openprot/data/uniref50.index  
-        # index: /data/cb/scratch/datasets/uniref50.idx.npy
 
 tasks:
     SequenceUnmasking: 
@@ -98,6 +96,8 @@ evals:
         logits: gumbel
         remask: 0.0
         topk_temp: 0.0
+        replace_unmasked: false
+        adjust_unmasked: false
         allow_mutation: false
         
 
@@ -105,21 +105,26 @@ tracks:
     SequenceTrack:
         esm: null # esm2_3B # esm2_650M # esm2_8M_270K
         loss_weight: 1.0 
-        mask_rate: 1.0
-        rand_rate: 0.0
+        mask_rate: 0.9
+        rand_rate: 0.05
         embed_t: false
+        tied_weights: true
+        esm_lm_head: true
 
 
 model: # custom args
     # dplm_ckpt: zhangzhi/EvoFlow-150M-fs 
     # dplm_ckpt: airkingbd/dplm_150m
-    dplm_ckpt: facebook/esm2_t30_150M_UR50D
+    # dplm_ckpt: facebook/esm2_t30_150M_UR50D
+    dplm_ckpt: null
     checkpoint: false
     dim: 640
     pairwise_dim: 128
     heads: 16
     pairwise_heads: 4
     blocks: 30
+    dropout: 0.1
+    token_dropout: 0.1
 
     trunk_relpos: [32, 1, 1000]
     sm_relpos: [32, 1, 100]
