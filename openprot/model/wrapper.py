@@ -122,7 +122,7 @@ class OpenProtWrapper(Wrapper):
             self.model = MultiflowWrapper(mf_cfg)
             if cfg.model.multiflow_ckpt:
                 ckpt = torch.load(cfg.model.multiflow_ckpt, map_location=self.device)
-            self.model.load_state_dict(ckpt['state_dict'], strict=True)
+                self.model.load_state_dict(ckpt['state_dict'], strict=True)
         
             
         else:
