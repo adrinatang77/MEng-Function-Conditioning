@@ -1,16 +1,16 @@
-ckpt: null # workdir/merge-std-struct-gen-linear/last.ckpt # 
+ckpt: null
 pretrained: null  #  load weights from here first
-validate: false # if true, only validate the model, don't train
+validate: true # if true, only validate the model, don't train
 logger:
     # set to true to log to neptune.ai
-    neptune: true
+    neptune: false
     run_id: null
     # please change "test" to something unique to your task
     project: openprot/struct-merge
     # will log to workdir and neptune.ai with this name
-    name: merge-std-struct-gen-linear-dynamic-crop
+    name: fm-struct-gen-linear 
     # if not null, will duplicate stdout and stderr to workdir/{name}/{logfile}
-    logfile: std2.out
+    logfile: null
     # if null, will log every epoch, otherwise every this number of steps
     train_log_freq: 100
     val_log_freq: null 
@@ -34,11 +34,11 @@ trainer:
 
 # custom args to OpenProtDataset and elsewhere
 data: 
-    num_workers: 32
+    num_workers: 0
     buffer: 1000
-    max_toks: 8192
+    max_toks: 4096
     batch: null
-    crop: 512 
+    crop: 256
     seed: 137
 
 # These are the raw features which are expected to be supplied by the Datasets
@@ -58,6 +58,7 @@ features:
     atom37_mask: [-1, 37]
     struct_noise: [-1]
     struct_weight: [-1]
+    residx: [-1]
     
     
 datasets:
@@ -67,150 +68,70 @@ datasets:
         cutoff: 2018-05-01
         clusters: /scratch/projects/cgai/openprot/data/pdb_clusters
         blacklist: /scratch/projects/cgai/openprot/cameo_pdb_blacklist.tsv
-    afdb_genie:
-        type: AFDBDataset
-        path: /scratch/projects/cgai/openprot/data/afdb_rep_v4/afdb_rep_v4
-        annotations: /scratch/projects/cgai/openprot/data/afdb_rep_v4.pkl.gz
-        blacklist: null 
-        plddt_thresh: null 
-        index: /scratch/projects/cgai/openprot/afdbreps_l-256_plddt_80.txt
-    afdb:
-        type: AFDBDataset
-        path: /scratch/projects/cgai/openprot/data/afdb_rep_v4/afdb_rep_v4
-        annotations: /scratch/projects/cgai/openprot/data/afdb_rep_v4.pkl.gz
-        blacklist: /scratch/projects/cgai/openprot/cameo_afdb_blacklist.tsv
-        plddt_thresh: 80
-        index: null
-    uniref:
-        type: UnirefDataset
-        path: /scratch/projects/cgai/openprot/data/uniref50.fasta
-        index: /scratch/projects/cgai/openprot/data/uniref50.index  
-
+        struct_mask: false
+    # afdb_genie:
+    #     type: AFDBDataset
+    #     path: /scratch/projects/cgai/openprot/data/afdb_rep_v4/afdb_rep_v4
+    #     annotations: /scratch/projects/cgai/openprot/data/afdb_rep_v4.pkl.gz
+    #     blacklist: null 
+    #     plddt_thresh: null 
+    #     index: /scratch/projects/cgai/openprot/afdbreps_l-256_plddt_80.txt
+    synthetic: 
+        type: MultiflowDataset
+        path: /scratch/projects/cgai/openprot/processed_synthetic
+        struct_mask: false
 tasks:
-    # InverseFolding:
-    #     fraction: 0.25
-    #     weight: 1.0
-    #     beta: [1, 2]
-    #     uniform_prob: 1.0
-    #     seed: 137
-    #     random_rot: true
-    #     sigma: 0.2
-    #     datasets:
-    #         pdb:
-    #             fraction: 0.25
-    #             start: 0
-    #             seed: 37
-    #         afdb:
-    #             fraction: 0.75
-    #             start: 0
-    #             seed: 38
-    # SequenceUnmasking: 
-    #     fraction: 0.25
-    #     weight: 1.0
-    #     # beta: [1, 2]
-    #     # uniform_prob: 0.0
-    #     beta: [3, 9]
-    #     uniform_prob: 0.2 
-    #     seed: 137
-    #     datasets:
-    #         uniref:
-    #             fraction: 1.0
-    #             start: 0
-    #             seed: 39
-    # StructurePrediction:
-    #     fraction: 1.0
-    #     weight: 1.0
-    #     beta: [1, 2]
-    #     uniform_prob: 0.0
-    #     max_noise_prob: 1.0
-    #     seed: 137
-    #     random_rot: true
-    #     sched_p: 7
-    #     sigma_max: 160
-    #     sigma_min: 0.05
-    #     datasets:
-    #         afdb:
-    #             fraction: 0.75
-    #             start: 0
-    #             seed: 40
-    #         pdb:
-    #             fraction: 0.25
-    #             start: 0
-    #             seed: 41
-    StructureGeneration:
+    Codesign:
         fraction: 1.0
         weight: 1.0
-        beta: [1, 2]
-        uniform_prob: 0.5
+        
+        seq_weight: 1.0
+        seq_beta: [1, 2]
+        seq_max_noise_prob: 0.0
+        seq_uniform_prob: 1.0
+        
+        struct_weight: 1.0
+        struct_beta: [1, 2]
+        struct_max_noise_prob: 0.0
+        struct_uniform_prob: 0.5
+        
         seed: 137
         random_rot: true
-        sched_p: 7
-        sigma_max: 160
-        sigma_min: 0.05
+        sched_p: ${tracks.StructureTrack.t_emb_p}
+        sigma_max: ${tracks.StructureTrack.t_emb_max}
+        sigma_min: ${tracks.StructureTrack.t_emb_min}
+        
         datasets:
-            afdb_genie:
-                fraction: 0.75
+            synthetic:
+                fraction: 0.25
                 start: 0
                 seed: 41
             pdb:
-                fraction: 0.25
+                fraction: 0.75
                 start: 0
                 seed: 42
             
 evals: 
-    # cameo22:
-    #     type: StructurePredictionEval
-    #     path: /scratch/projects/cgai/openprot/data/pdb_npz
-    #     split: splits/cameo2022.csv
-    #     diffusion: false
-    #     augmented: false
-    #     align: false
-    #     demean: true
-    struct_gen_sde_0.5:
-        type: StructureGenerationEval
-        num_samples: 100
-        batch: 100
+    codesign_random:
+        type: MultiflowEval
+        num_samples: 10
+        batch: 10
         sample_length: 128
         steps: 200
-        sched_p: 7
-        sigma_max: 160
-        sigma_min: 0.05
-        temp_factor: 0.5
+        sched_p: ${tracks.StructureTrack.t_emb_p}
+        sigma_max: ${tracks.StructureTrack.t_emb_max}
+        sigma_min: ${tracks.StructureTrack.t_emb_min}
+        struct:
+            temp_factor: 0.5
+        seq:
+            temp: 0.1
+            strategy: purity
+            noise: 20
+            logits: standard
+            adjust_unmasked: false
+            replace_unmasked: false
         run_designability: true
-    struct_gen_sde_0.7:
-        type: StructureGenerationEval
-        num_samples: 100
-        batch: 100
-        sample_length: 128
-        steps: 200
-        sched_p: 7
-        sigma_max: 160
-        sigma_min: 0.05
-        temp_factor: 0.7
-        run_designability: true
-    struct_gen_sde_1.0:
-        type: StructureGenerationEval
-        num_samples: 100
-        batch: 100
-        sample_length: 128
-        steps: 200
-        sched_p: 7
-        sigma_max: 160
-        sigma_min: 0.05
-        temp_factor: 1.0
-        run_designability: true
-    # seq_gen_dplm: 
-    #     type: SequenceGenerationEval
-    #     num_samples: 100
-    #     sample_length: 128
-    #     steps: 128
-    #     temp: 0.7
-    # cameo22_invfold:
-    #     type: InverseFoldingEval
-    #     path: ./cameo
-    #     split: splits/cameo2022.csv
-    #     temp: 0.1
-    #     sigma: 0.2
+
         
         # order: random
 tracks:
@@ -223,9 +144,9 @@ tracks:
         readout_pairwise: false
         postcondition: true
         int_loss_weight: 0.5
-        t_emb_p: 7
-        t_emb_max: 160
-        t_emb_min: 0.05
+        t_emb_p: 1
+        t_emb_max: 1
+        t_emb_min: 0
         embed_sigma: false
         
         losses:
@@ -233,9 +154,10 @@ tracks:
             # distogram: 0.3
             mse: 0.225
         diffusion:
-            type: EDMDiffusion
+            type: GaussianFM
             data_sigma: 15
             aligned_loss: true
+            train_align: false
     SequenceTrack:
         esm: null # esm2_3B # esm2_650M # esm2_8M_270K
         loss_weight: 1.0 
@@ -247,8 +169,11 @@ tracks:
 
 model: # custom args
     dplm_ckpt: null
+    multiflow: true
+    multiflow_cfg: multiflow_config.yaml
+    multiflow_ckpt: ./weights/last.ckpt
     checkpoint: false
-    dim: 640
+    dim: 512
     pairwise_dim: 128
     heads: 16
     pairwise_heads: 4
@@ -256,6 +181,7 @@ model: # custom args
     dropout: 0.0
     token_dropout: 0.0
 
+    
     trunk_relpos: [32, 1, 1000]
     sm_relpos: [32, 1, 100]
     # topology of the network
@@ -266,7 +192,7 @@ model: # custom args
     relpos_blocks:
         start: 0
         end: 0
-        interval: 1
+        interval: 4
     struct_module: true
     
     pairwise_pos_emb: false
@@ -280,6 +206,7 @@ model: # custom args
     tri_mul: false
     rope: false
     custom_rope: true
+    
 
     ### ipa args
     readout_trans_before_sm: false

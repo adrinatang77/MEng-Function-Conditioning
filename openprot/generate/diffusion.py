@@ -14,18 +14,14 @@ class Diffusion:
         # return noisy, target
         NotImplemented
 
-    @abstractmethod
-    def inference(self, model, seed=None, mask=None):
-        NotImplemented
-
     def precondition(self, inp, t):
         return inp
 
     def postcondition(self, inp, out, t):
         return out
-
+        
     @abstractmethod
-    def compute_loss(self, pred, gt, t, mask=None):
+    def compute_loss(self, pred, target, t, mask):
         NotImplemented
 
 
@@ -43,34 +39,27 @@ def masked_center(x, mask=None, eps=1e-5):
 
 class GaussianFM(Diffusion):
     def add_noise(self, pos, t, mask=None):
-        noise = torch.randn_like(pos) * self.cfg.prior_sigma
-        if self.cfg.center_noise:
-            noise = masked_center(noise, mask)
-
-        if self.cfg.center_pos:
-            pos = masked_center(pos, mask)
-
+        noise = torch.randn_like(pos) * self.cfg.data_sigma
+        pos = masked_center(pos, mask)
         if self.cfg.train_align:
             pos = rmsdalign(noise, pos, weights=mask)
 
         t = t[..., None]
         noisy = t * noise + (1 - t) * pos
-        if self.cfg.prediction == "velocity":
-            target = pos - noise
-        elif self.cfg.prediction == "target":
-            target = pos
-
+        target = pos
+        
         return noisy, target
 
     def precondition(self, inp, t):
-        return inp  # / self.cfg.prior_sigma
+        return inp / self.cfg.data_sigma
 
     def postcondition(self, inp, out, t):
-        return out  # * self.cfg.prior_sigma
+        return inp + out * t.unsqueeze(-1) * self.cfg.data_sigma
 
-    def compute_loss(self, pred, target, t):
-        return torch.square(pred - target).sum(-1)  # / self.cfg.prior_sigma**2
+    def compute_loss(self, pred, target, t, mask, eps=1e-6):
+        return torch.square(pred - target).sum(-1) / (t**2+eps) / self.cfg.data_sigma**2
 
+    """
     def inference(
         self,
         model,
@@ -139,23 +128,13 @@ class GaussianFM(Diffusion):
         else:
             return x
 
+    """
+
 
 class EDMDiffusion(Diffusion):
 
     def get_sigma(self, t):
         return t 
-        
-    #     p = self.cfg.sched_p
-    #     return (
-    #         self.cfg.sigma_min ** (1 / p)
-    #         + t * (self.cfg.sigma_max ** (1 / p) - self.cfg.sigma_min ** (1 / p))
-    #     ) ** p
-
-    # def sigma_to_t(self, sigma):
-    #     p = self.cfg.sched_p
-    #     num = sigma ** (1 / p) - self.cfg.sigma_min ** (1 / p)
-    #     denom = self.cfg.sigma_max ** (1 / p) - self.cfg.sigma_min ** (1 / p)
-    #     return num / denom
 
     def add_noise(self, pos, t, mask=None):
 
@@ -190,36 +169,3 @@ class EDMDiffusion(Diffusion):
         denom = (sigma * self.cfg.data_sigma) ** 2
         weight = num / (denom + eps)
         return weight * torch.square(pred - target).sum(-1)
-
-    # def inference(
-    #     self,
-    #     model,
-    #     cfg=None,
-    #     seed=None,
-    #     mask=None,
-    #     shape=None,
-    #     device=None,
-    #     return_traj=False,
-    # ):
-
-    #     if seed is not None:
-    #         x = seed
-    #     else:
-    #         if mask is not None:
-    #             shape = list(mask.shape) + [3]
-    #             device = mask.device
-    #         x = torch.randn(shape, device=device) * cfg.sigma_max
-
-    #     out = [x]
-        
-    #     p = cfg.sched_p
-    #     sched = np.linspace(1, 0, cfg.nsteps + 1)
-    #     sched = (
-    #         cfg.sigma_min ** (1 / p)
-    #         + sched * (cfg.sigma_max ** (1 / p) - cfg.sigma_min ** (1 / p))
-    #     ) ** p
-
-        # dx = g(t) dw with g(t) = \sqrt{ (d/dt) sigma^2 } = \sqrt{ 2\dot\sigma \sigma}
-        # with t = \sigma this is just \sqrt{2t}
-        # hence the backward coefficient on the score should be g^2 = 2t
-       

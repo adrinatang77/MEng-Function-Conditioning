@@ -14,7 +14,7 @@ import os, tqdm, math, subprocess
 import pandas as pd
 
 
-class CodesignEval(OpenProtEval):
+class MultiflowEval(OpenProtEval):
     def setup(self):
         pass
 
@@ -96,33 +96,14 @@ class CodesignEval(OpenProtEval):
         logger=None
     ):
 
-        def sched_fn(t):
-            p = self.cfg.sched_p
-            return (
-                self.cfg.sigma_min ** (1 / p)
-                + (1-t) * (self.cfg.sigma_max ** (1 / p) - self.cfg.sigma_min ** (1 / p))
-            ) ** p
-
-        sampler = OpenProtSampler(schedules={
-            'structure': sched_fn,
-            'sequence': lambda t: 1-t
-        }, steppers=[
-            EDMDiffusionStepper(self.cfg.struct),
-            SequenceUnmaskingStepper(self.cfg.seq)
-        ])
+        mf_batch = {'res_mask': batch['pad_mask']}
+        bb, aa = model.model.inference(mf_batch)
         
-        sample, extra = sampler.sample(model, noisy_batch, self.cfg.steps)
-
-        pred_traj = torch.stack(extra['preds'])
-        samp_traj = torch.stack(extra['traj'])
-
-        B = len(sample['struct'])
+        B = len(bb)
         
         for i in range(B):
             prot = make_ca_prot(
-                sample['struct'][i].cpu().numpy(),
-                batch["aatype"][i].cpu().numpy(),
-                batch["struct_mask"][i].cpu().numpy(),
+                bb[i,:,1], aa[i], batch["struct_mask"][i].cpu().numpy(),
             )
     
             ref_str = protein.to_pdb(prot)
@@ -130,13 +111,7 @@ class CodesignEval(OpenProtEval):
             with open(f"{savedir}/{name}.pdb", "w") as f:
                 f.write(ref_str)
     
-            with open(f"{savedir}/{name}_traj.pdb", "w") as f:
-                f.write(write_ca_traj(prot, samp_traj[:, i].cpu().numpy()))
-    
-            with open(f"{savedir}/{name}_pred_traj.pdb", "w") as f:
-                f.write(write_ca_traj(prot, pred_traj[:, i].cpu().numpy()))
-
-            seq = "".join([rc.restypes_with_x[aa] for aa in sample["aatype"][i]])
+            seq = "".join([rc.restypes_with_x[aaa] for aaa in aa[i]])
             with open(f"{savedir}/{name}.fasta", "w") as f:
                 f.write(f">{name}\n")  # FASTA format header
                 f.write(seq + "\n")

@@ -122,13 +122,13 @@ class SequenceUnmaskingStepper:
 
         elif self.cfg.strategy == 'purity':
             
-            # logits_1_wo_mask = logits[:, :, 0:-1] # (B, D, S-1)
-            # pt_x1_probs = torch.softmax(logits_1_wo_mask / self.cfg.temp, dim=-1) # (B, D, S-1)
-            # # step_probs = (d_t * pt_x1_probs * (1/(1-t))).clamp(max=1) # (B, D, S-1)
-            # max_logprob = torch.max(torch.log(pt_x1_probs), dim=-1)[0] # (B, D)
-            # # bias so that only currently masked positions get chosen to be unmasked
+            logits_1_wo_mask = logits[:, :, 0:-1] # (B, D, S-1)
+            pt_x1_probs = torch.softmax(logits_1_wo_mask / self.cfg.temp, dim=-1) # (B, D, S-1)
+            # step_probs = (d_t * pt_x1_probs * (1/(1-t))).clamp(max=1) # (B, D, S-1)
+            max_logprob = torch.max(torch.log(pt_x1_probs), dim=-1)[0] # (B, D)
+            # bias so that only currently masked positions get chosen to be unmasked
 
-            max_logprob = scores_ 
+            # max_logprob = scores_ 
             max_logprob = max_logprob - is_unmask.float() * 1e9
             sorted_max_logprobs_idcs = torch.argsort(max_logprob, dim=-1, descending=True) # (B, D)
 
@@ -158,14 +158,15 @@ class SequenceUnmaskingStepper:
             batch['aatype'] = batch['aatype'] * (1 - mask2) + unmasked_samples * mask2
     
             # re-mask
-            u = torch.rand(B, L, device=logits.device)
-            re_mask_mask = (u < (t-s) * self.cfg.noise).float()
-            batch['aatype'] = batch['aatype'] * (1 - re_mask_mask) + MASK_IDX * re_mask_mask
+            if s > 0:
+                u = torch.rand(B, L, device=logits.device)
+                re_mask_mask = (u < (t-s) * self.cfg.noise).float()
+                batch['aatype'] = batch['aatype'] * (1 - re_mask_mask) + MASK_IDX * re_mask_mask
 
         batch['aatype'] = batch['aatype'].long()
 
         seq = "".join([rc.restypes_with_x[aa] for aa in batch["aatype"][0]])
         seq = seq.replace("X", "-")
-        
+        print(seq)
         return batch
         

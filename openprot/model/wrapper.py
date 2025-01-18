@@ -8,7 +8,8 @@ import os
 import tqdm
 from ..tracks.manager import OpenProtTrackManager
 from ..utils import residue_constants as rc
-
+from .multiflow_wrapper import MultiflowWrapper
+from omegaconf import OmegaConf
 # from ..evals.manager import OpenProtEvalManager
 
 
@@ -114,6 +115,16 @@ class OpenProtWrapper(Wrapper):
             self.register_buffer("ours_to_dplm", torch.tensor(ours_to_dplm))
             del self.model.net.esm.embeddings.position_embeddings
             del self.model.net.esm.contact_head.regression
+
+        elif cfg.model.multiflow:
+            
+            mf_cfg = OmegaConf.load(cfg.model.multiflow_cfg)
+            self.model = MultiflowWrapper(mf_cfg)
+            if cfg.model.multiflow_ckpt:
+                ckpt = torch.load(cfg.model.multiflow_ckpt, map_location=self.device)
+            self.model.load_state_dict(ckpt['state_dict'], strict=True)
+        
+            
         else:
             self.model = OpenProtModel(cfg.model)
             tracks.add_modules(self.model)
@@ -177,9 +188,26 @@ class OpenProtWrapper(Wrapper):
 
     def general_step(self, batch):
 
+        
+        if self.cfg.model.multiflow:
+            L = batch['pad_mask'].shape[1]
+            mf_batch = {
+                'trans': batch['struct'],
+                'rots': batch['rots'],
+                'seqres': batch['aatype'],
+                'res_mask': batch['struct_mask'],
+                'diffuse_mask': batch['struct_mask'],
+                'mask': batch['pad_mask'],
+                'chain_idx': torch.zeros_like(batch['pad_mask'], dtype=torch.long),
+                'res_idx': batch['residx'],
+            }
+            loss = self.model.general_step(mf_batch)
+            self._logger.log("loss", loss.mean())
+            return torch.nanmean(loss)
+            
         self._logger.register_masks(batch)
         self._logger.masked_log("toks", batch["pad_mask"], sum=True)
-
+    
         ## corrupt all the tracks
         noisy_batch, target = self.tracks.corrupt(batch, logger=self._logger)
 

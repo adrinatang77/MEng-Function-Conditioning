@@ -1,16 +1,16 @@
-ckpt: null 
+ckpt: workdir/codesign-test2/last.ckpt
 pretrained: null  #  load weights from here first
 validate: false # if true, only validate the model, don't train
 logger:
     # set to true to log to neptune.ai
-    neptune: false
-    run_id: null
+    neptune: true
+    run_id: STRUC1-450
     # please change "test" to something unique to your task
     project: openprot/struct-merge
     # will log to workdir and neptune.ai with this name
-    name: codesign-eval # merge-std-struct-gen-linear 
+    name: codesign-test2 # merge-std-struct-gen-linear 
     # if not null, will duplicate stdout and stderr to workdir/{name}/{logfile}
-    logfile: null
+    logfile: std.out
     # if null, will log every epoch, otherwise every this number of steps
     train_log_freq: 100
     val_log_freq: null 
@@ -36,9 +36,9 @@ trainer:
 data: 
     num_workers: 32
     buffer: 1000
-    max_toks: 4096
+    max_toks: 8192
     batch: null
-    crop: 1024
+    crop: 512 
     seed: 137
 
 # These are the raw features which are expected to be supplied by the Datasets
@@ -133,7 +133,7 @@ evals:
     #     run_designability: true
     codesign_random:
         type: CodesignEval
-        num_samples: 10
+        num_samples: 100
         batch: 100
         sample_length: 128
         steps: 200
@@ -157,7 +157,7 @@ tracks:
     # register tracks here
     StructureTrack: 
         loss_weight: 1.0
-        embed_trans: false
+        embed_trans: true
         embed_pairwise: false
         readout_trans: false
         readout_pairwise: false
@@ -206,7 +206,7 @@ model: # custom args
         interval: 1
     relpos_blocks:
         start: 0
-        end: 30
+        end: 0
         interval: 4
     struct_module: true
     

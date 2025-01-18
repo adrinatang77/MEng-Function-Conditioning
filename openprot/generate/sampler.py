@@ -1,6 +1,7 @@
 from ..tracks.sequence import MASK_IDX
 from torch.distributions.categorical import Categorical
 import torch
+import tqdm
 
 
 
@@ -13,7 +14,7 @@ class OpenProtSampler:
 
         extra = {}
         
-        for i in range(steps):
+        for i in tqdm.trange(steps):
             t, s = i/steps, (i+1)/steps
             sched = {key: (sched(t), sched(s)) for key, sched in self.schedules.items()}
             noisy_batch = self.single_step(model, noisy_batch, sched, extra)

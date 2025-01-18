@@ -58,14 +58,28 @@ class PDBDataset(OpenProtDataset):
             np.load(f"{self.cfg.path}/{name[1:3]}/{name}.npz", allow_pickle=True)
         )
         seqres = self.df.seqres[name]
-
+        residx = np.arange(len(seqres), dtype=np.float32)
         seq_mask = np.ones(len(seqres), dtype=np.float32)
         seq_mask[[c not in rc.restype_order for c in seqres]] = 0
+        atom37=prot["all_atom_positions"]
+        atom37_mask=prot["all_atom_mask"]
         
+        if self.cfg.struct_mask:
+            mask = atom37_mask[:,1].astype(bool)
+            seqres = "".join([
+                seqres[i] for i, c in enumerate(mask) if c
+            ])
+            residx = residx[mask]
+            seq_mask = seq_mask[mask]
+            atom37 = atom37[mask]
+            atom37_mask = atom37_mask[mask]
+            
+            
         return self.make_data(
             name=name,
             seqres=seqres,
+            residx=residx,
             seq_mask=seq_mask,
-            atom37=prot["all_atom_positions"],
-            atom37_mask=prot["all_atom_mask"],
+            atom37=atom37,
+            atom37_mask=atom37_mask
         )

@@ -60,9 +60,10 @@ class StructureTrack(OpenProtTrack):
 
     def tokenize(self, data):
 
-        # frames, frame_mask = atom37_to_frames(data["atom37"], data["atom37_mask"])
+        frames, frame_mask = atom37_to_frames(data["atom37"], data["atom37_mask"])
         data["struct"] = data["atom37"][:,1] # frames._trans
         data["struct_mask"] = data["atom37_mask"][:,1] # frame_mask
+        data["rots"] = frames._rots._rot_mats.numpy()
         """
         aatype = np.array(
             [rc.restype_order.get(c, rc.unk_restype_index) for c in data["seqres"]]

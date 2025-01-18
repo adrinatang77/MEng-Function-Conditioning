@@ -1,14 +1,14 @@
-ckpt: null # workdir/merge-std-struct-gen-linear/last.ckpt # 
+ckpt: workdir/merge-std-struct-gen-linear/last.ckpt # 
 pretrained: null  #  load weights from here first
-validate: false # if true, only validate the model, don't train
+validate: true # if true, only validate the model, don't train
 logger:
     # set to true to log to neptune.ai
-    neptune: true
+    neptune: false
     run_id: null
     # please change "test" to something unique to your task
     project: openprot/struct-merge
     # will log to workdir and neptune.ai with this name
-    name: merge-std-struct-gen-linear-dynamic-crop
+    name: merge-std-struct-gen-inf
     # if not null, will duplicate stdout and stderr to workdir/{name}/{logfile}
     logfile: std2.out
     # if null, will log every epoch, otherwise every this number of steps
@@ -176,28 +176,6 @@ evals:
         sigma_max: 160
         sigma_min: 0.05
         temp_factor: 0.5
-        run_designability: true
-    struct_gen_sde_0.7:
-        type: StructureGenerationEval
-        num_samples: 100
-        batch: 100
-        sample_length: 128
-        steps: 200
-        sched_p: 7
-        sigma_max: 160
-        sigma_min: 0.05
-        temp_factor: 0.7
-        run_designability: true
-    struct_gen_sde_1.0:
-        type: StructureGenerationEval
-        num_samples: 100
-        batch: 100
-        sample_length: 128
-        steps: 200
-        sched_p: 7
-        sigma_max: 160
-        sigma_min: 0.05
-        temp_factor: 1.0
         run_designability: true
     # seq_gen_dplm: 
     #     type: SequenceGenerationEval
