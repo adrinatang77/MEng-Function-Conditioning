@@ -32,11 +32,16 @@ class Codesign(OpenProtTask):
         else:
             noise_level = np.random.beta(*self.cfg.seq_beta)
 
+        
         L = len(data["seqres"])
         data["seq_noise"] = (np.random.rand(L) < noise_level).astype(np.float32)
         t_inv = data["seq_mask"].sum() / (eps + (data["seq_mask"] * data["seq_noise"]).sum()) 
         t = (data["seq_mask"] * data["seq_noise"]).sum()  / (eps + data["seq_mask"].sum()) 
-        data["seq_weight"] = np.ones(L, dtype=np.float32) * (1-noise_level) * self.cfg.seq_weight
+
+        if self.cfg.seq_reweight:
+            data["seq_weight"] = np.ones(L, dtype=np.float32) * (1-noise_level) * self.cfg.seq_weight
+        else:
+            data["seq_weight"] = np.ones(L, dtype=np.float32) *  self.cfg.seq_weight
         
         
     def add_structure_noise(self, data, eps=1e-6):

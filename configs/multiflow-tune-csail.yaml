@@ -1,16 +1,16 @@
-ckpt: null
+ckpt: null # workdir/multiflow-tune/last.ckpt
 pretrained: null  #  load weights from here first
-validate: false # if true, only validate the model, don't train
+validate: true # if true, only validate the model, don't train
 logger:
     # set to true to log to neptune.ai
-    neptune: true
+    neptune: false
     run_id: null
     # please change "test" to something unique to your task
     project: openprot/struct-merge
     # will log to workdir and neptune.ai with this name
     name: multiflow-tune
     # if not null, will duplicate stdout and stderr to workdir/{name}/{logfile}
-    logfile: std.out
+    logfile: null # std.out
     # if null, will log every epoch, otherwise every this number of steps
     train_log_freq: 100
     val_log_freq: null 
@@ -18,7 +18,7 @@ logger:
     save_freq: 1000
 trainer:
     accelerator: auto
-    devices: 4
+    devices: 1
     max_epochs: 1
     max_steps: 1000000
     enable_progress_bar: true
@@ -38,7 +38,7 @@ data:
     buffer: 1000
     max_toks: 2048
     batch: null
-    crop: 256
+    crop: 1024
     seed: 137
 
 # These are the raw features which are expected to be supplied by the Datasets
@@ -58,17 +58,18 @@ features:
     atom37_mask: [-1, 37]
     struct_noise: [-1]
     struct_weight: [-1]
+    rots_noise: [-1]
     residx: [-1]
     
     
 datasets:
-    pdb:
-        type: PDBDataset
-        path: /data/cb/scratch/datasets/pdb_npz
-        cutoff: 2018-05-01
-        clusters: /data/cb/scratch/datasets/pdb_npz/pdb_clusters
-        blacklist: null 
-        struct_mask: true
+    # pdb:
+    #     type: PDBDataset
+    #     path: /data/cb/scratch/datasets/pdb_npz
+    #     cutoff: 2018-05-01
+    #     clusters: /data/cb/scratch/datasets/pdb_npz/pdb_clusters
+    #     blacklist: null 
+    #     struct_mask: true
     # afdb_genie:
     #     type: AFDBDataset
     #     path: /scratch/projects/cgai/openprot/data/afdb_rep_v4/afdb_rep_v4
@@ -76,10 +77,10 @@ datasets:
     #     blacklist: null 
     #     plddt_thresh: null 
     #     index: /scratch/projects/cgai/openprot/afdbreps_l-256_plddt_80.txt
-    synthetic: 
+    multiflow: 
         type: MultiflowDataset
-        path: /data/cb/scratch/datasets/processed_synthetic
-        struct_mask: true
+        config_path: multiflow_config.yaml # /data/cb/scratch/datasets/processed_synthetic
+        #struct_mask: true
 tasks:
     Codesign:
         fraction: 1.0
@@ -89,11 +90,13 @@ tasks:
         seq_beta: [1, 2]
         seq_max_noise_prob: 0.0
         seq_uniform_prob: 1.0
+        seq_reweight: false
         
         struct_weight: 1.0
         struct_beta: [1, 2]
         struct_max_noise_prob: 0.0
-        struct_uniform_prob: 0.5
+        struct_uniform_prob: 1.0
+        rots: true
         
         seed: 137
         random_rot: true
@@ -102,19 +105,19 @@ tasks:
         sigma_min: ${tracks.StructureTrack.t_emb_min}
         
         datasets:
-            synthetic:
-                fraction: 0.25
+            multiflow:
+                fraction: 1.0
                 start: 0
                 seed: 41
-            pdb:
-                fraction: 0.75
-                start: 0
-                seed: 42
+            # pdb:
+            #     fraction: 0.75
+            #     start: 0
+            #     seed: 42
             
 evals: 
     codesign_random:
         type: MultiflowEval
-        num_samples: 100
+        num_samples: 10
         batch: 100
         sample_length: 128
         steps: 200
@@ -148,6 +151,7 @@ tracks:
         t_emb_max: 1
         t_emb_min: 0
         embed_sigma: false
+        rots: true
         
         losses:
             lddt: 1.0
@@ -165,6 +169,7 @@ tracks:
         rand_rate: 0.0
         esm_lm_head: false
         embed_t: false
+        sup_all: true
 
 
 model: # custom args

@@ -9,9 +9,10 @@ import os
 
 from glob import glob
 from torch.utils.data import Dataset
-import proteinblobs.multiflow.utils as du
-from openfold.data import data_transforms
-from openfold.utils import rigid_utils
+import multiflow.data.utils as du
+# from openfold.data import data_transforms
+from openprot.utils.geometry import atom37_to_frames
+from openprot.utils import rigid_utils
 from sklearn.preprocessing import PolynomialFeatures
 from sklearn.linear_model import LinearRegression
 from pytorch_lightning.utilities import rank_zero_only
@@ -59,6 +60,7 @@ def _max_coil_filter(data_csv, max_coil_percent):
 
 
 def _process_csv_row(processed_file_path):
+    processed_file_path = processed_file_path.replace("./train_set/", "/data/cb/scratch/datasets/")
     processed_feats = du.read_pkl(processed_file_path)
     processed_feats = du.parse_chain_feats(processed_feats)
 
@@ -76,8 +78,9 @@ def _process_csv_row(processed_file_path):
         'all_atom_positions': torch.tensor(processed_feats['atom_positions']).double(),
         'all_atom_mask': torch.tensor(processed_feats['atom_mask']).double()
     }
-    chain_feats = data_transforms.atom37_to_frames(chain_feats)
-    rigids_1 = rigid_utils.Rigid.from_tensor_4x4(chain_feats['rigidgroups_gt_frames'])[:, 0]
+    # chain_feats = data_transforms.atom37_to_frames(chain_feats)
+    # rigids_1 = rigid_utils.Rigid.from_tensor_4x4(chain_feats['rigidgroups_gt_frames'])[:, 0]
+    rigids_1, _ = atom37_to_frames(chain_feats["all_atom_positions"], chain_feats["all_atom_mask"])
     rotmats_1 = rigids_1.get_rots().get_rot_mats()
     trans_1 = rigids_1.get_trans()
     res_plddt = processed_feats['b_factors'][:, 1]
@@ -108,6 +111,7 @@ def _process_csv_row(processed_file_path):
         'res_plddt': res_plddt,
         'aatypes_1': chain_feats['aatype'],
         'all_atom_positions': chain_feats['all_atom_positions'],
+        'all_atom_mask': chain_feats['all_atom_mask'],
         'rotmats_1': rotmats_1,
         'trans_1': trans_1,
         'res_mask': res_mask,
@@ -240,6 +244,7 @@ class BaseDataset(Dataset):
     def __getitem__(self, row_idx):
         # Process data example.
         csv_row = self.csv.iloc[row_idx]
+        
         feats = self.process_csv_row(csv_row)
 
         if self._dataset_cfg.add_plddt_mask:

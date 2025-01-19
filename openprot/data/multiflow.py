@@ -5,16 +5,31 @@ from .data import OpenProtDataset
 from ..utils import residue_constants as rc
 from ..utils.prot_utils import aatype_to_seqres
 import pickle
+from omegaconf import OmegaConf
+from multiflow.datasets import PdbDataset
 
 class MultiflowDataset(OpenProtDataset):
 
     def setup(self):
-        self.df = pd.read_csv(f"{self.cfg.path}/metadata.csv", index_col='pdb_name')
+        # self.df = pd.read_csv(f"{self.cfg.path}/metadata.csv", index_col='pdb_name')
+        with open(self.cfg.config_path) as f:
+            cfg = OmegaConf.load(f)
+        self.dataset = PdbDataset(dataset_cfg=cfg.pdb_dataset, is_training=True, task='hallucination')
 
     def __len__(self):
-        return len(self.df)
+        return len(self.dataset)
 
     def __getitem__(self, idx):
+        item = self.dataset[idx]
+        
+        return self.make_data(
+            name=item['pdb_name'],
+            seqres=aatype_to_seqres(item['aatypes_1']),
+            residx=item['res_idx'],
+            seq_mask=item['res_mask'].numpy(),
+            atom37=item['all_atom_positions'].float().numpy(),
+            atom37_mask=item['all_atom_mask'].float().numpy(),
+        )
         name = self.df.index[idx]
         with open(f"{self.cfg.path}/{name}.pkl", "rb") as f:
             data = pickle.load(f)

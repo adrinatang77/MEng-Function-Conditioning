@@ -3,7 +3,7 @@ pretrained: null  #  load weights from here first
 validate: false # if true, only validate the model, don't train
 logger:
     # set to true to log to neptune.ai
-    neptune: false
+    neptune: true
     run_id: null
     # please change "test" to something unique to your task
     project: openprot/struct-merge
@@ -18,7 +18,7 @@ logger:
     save_freq: 1000
 trainer:
     accelerator: auto
-    devices: 1
+    devices: 4
     max_epochs: 1
     max_steps: 1000000
     enable_progress_bar: true
@@ -27,7 +27,7 @@ trainer:
     num_sanity_val_steps: 0
     gradient_clip_val: 1.0
     accumulate_grad_batches: 1
-    val_check_interval: 3000
+    val_check_interval: 300000000
     check_val_every_n_epoch: 1
     logger: false
     precision: 16-mixed
@@ -89,6 +89,7 @@ tasks:
         seq_beta: [1, 2]
         seq_max_noise_prob: 0.0
         seq_uniform_prob: 1.0
+        seq_reweight: false
         
         struct_weight: 1.0
         struct_beta: [1, 2]
@@ -168,6 +169,7 @@ tracks:
         mask_rate: 1.0
         rand_rate: 0.0
         esm_lm_head: true
+        sup_all: true
         tied_weights: false
         embed_t: false
 
