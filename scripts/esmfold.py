@@ -1,7 +1,4 @@
 import os
-os.environ["TORCH_HOME"] = '/scratch/10165/bjing'
-os.environ["HF_HOME"] = '/scratch/10165/bjing'
-
 import torch
 import esm
 import sys

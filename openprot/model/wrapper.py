@@ -100,23 +100,7 @@ class OpenProtWrapper(Wrapper):
     def __init__(self, cfg, tracks: OpenProtTrackManager, evals: dict):
         super().__init__(cfg)
         
-        if cfg.model.dplm_ckpt:
-            from byprot.models.lm.dplm import DiffusionProteinLanguageModel
-            
-            self.model = DiffusionProteinLanguageModel.from_pretrained(
-                self.cfg.model.dplm_ckpt
-            ).train()
-
-            if cfg.model.dplm_reinit:
-                self.model.apply(self.model.net._init_weights)
-            
-            
-            ours_to_dplm = [self.model.tokenizer._token_to_id[c] for c in rc.restypes] + [32]
-            self.register_buffer("ours_to_dplm", torch.tensor(ours_to_dplm))
-            del self.model.net.esm.embeddings.position_embeddings
-            del self.model.net.esm.contact_head.regression
-
-        elif cfg.model.multiflow:
+        if cfg.model.multiflow:
             
             mf_cfg = OmegaConf.load(cfg.model.multiflow_cfg)
             self.model = MultiflowWrapper(mf_cfg)
@@ -153,28 +137,6 @@ class OpenProtWrapper(Wrapper):
 
     def forward(self, noisy_batch):
         
-        
-        if self.cfg.model.dplm_ckpt:
-            
-            inp = self.ours_to_dplm[noisy_batch['aatype']]
-            inp = torch.where(noisy_batch['pad_mask'].bool(), inp, self.model.tokenizer._token_to_id["<pad>"])
-            B, L = inp.shape
-            inp_ = inp.new_zeros(B, L+2) + self.model.tokenizer._token_to_id["<pad>"]
-            inp_[:,0] = self.model.tokenizer._token_to_id["<cls>"]
-            inp_[:,1:-1] = inp
-            inp_[torch.arange(B), noisy_batch['pad_mask'].sum(-1).long()+1] = self.model.tokenizer._token_to_id["<eos>"]
-            
-            out = None
-            readout = {}
-            
-            logits = self.model.net(input_ids=inp_)['logits'][:,1:-1]
-            readout['aatype'] = logits[:,:,self.ours_to_dplm]
-            
-            ##### 
-
-
-            return out, readout
-        
         ## embed the tracks into an input dict
         inp = self.tracks.embed(self.model, noisy_batch)
 
@@ -197,13 +159,17 @@ class OpenProtWrapper(Wrapper):
                 'seqres': batch['aatype'],
                 'res_mask': batch['struct_mask'],
                 'diffuse_mask': batch['struct_mask'],
-                'mask': batch['pad_mask'],
+                'mask': batch['struct_mask'],
                 'chain_idx': torch.zeros_like(batch['pad_mask'], dtype=torch.long),
                 'res_idx': batch['residx'],
             }
-            loss = self.model.general_step(mf_batch)
-            self._logger.log("loss", loss.mean())
-            return torch.nanmean(loss)
+            losses = self.model.general_step(mf_batch)
+            loss = 0
+            for key in losses:
+                loss += losses[key]
+                self._logger.log(f"mutliflow/{key}", losses[key], batch['struct_mask'])
+            self._logger.log("loss", loss, batch['struct_mask'])
+            return (loss * batch["struct_mask"]).sum() / batch["struct_mask"].sum()
             
         self._logger.register_masks(batch)
         self._logger.masked_log("toks", batch["pad_mask"], sum=True)

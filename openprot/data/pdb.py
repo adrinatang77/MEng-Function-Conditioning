@@ -73,7 +73,9 @@ class PDBDataset(OpenProtDataset):
             seq_mask = seq_mask[mask]
             atom37 = atom37[mask]
             atom37_mask = atom37_mask[mask]
-            
+
+        if len(seqres) == 0:
+            return self[(idx+1) % len(self)]
             
         return self.make_data(
             name=name,

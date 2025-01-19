@@ -141,7 +141,7 @@ class OpenProtTransformerBlock(nn.Module):
         update_x=True,
         adaLN=False,
         readout_adaLN=False,
-        rots_type="quat",
+        rots_type="vec",
         dropout=0.0,
         token_dropout=0.0,
     ):
@@ -174,8 +174,8 @@ class OpenProtTransformerBlock(nn.Module):
         self.pair_updates = pair_updates
         self.pair_ffn = pair_ffn
         self.frame_update = frame_update
-        # self.update_rots = update_rots
-        # self.rots_type = rots_type
+        self.update_rots = update_rots
+        self.rots_type = rots_type
         # self.readout_rots = readout_rots
         self.tri_mul = tri_mul
         self.update_x = update_x
@@ -211,10 +211,6 @@ class OpenProtTransformerBlock(nn.Module):
                 torch.nn.init.zeros_(self.linear_frame_update[-1].weight)
                 torch.nn.init.zeros_(self.linear_frame_update[-1].bias)
 
-        # if readout_rots:
-        #     self.linear_rots_out = nn.Sequential(
-        #         nn.LayerNorm(dim), nn.Linear(dim, rot_dim)
-        #     )
         if pair_updates:
             self.sequence_to_pair = SequenceToPair(dim, pairwise_dim // 2, pairwise_dim)
 
@@ -240,7 +236,7 @@ class OpenProtTransformerBlock(nn.Module):
             torch.nn.init.zeros_(self.sequence_to_pair.o_proj.weight)
             torch.nn.init.zeros_(self.sequence_to_pair.o_proj.bias)
 
-    def forward(self, x, z, trans, mask, x_cond=None, postcond_fn=lambda x: x, relpos_mask=None):
+    def forward(self, x, z, trans, mask, x_cond=None, postcond_fn=lambda x: x, relpos_mask=None, rots=None):
 
         ### no pair2sequence
 
@@ -253,13 +249,15 @@ class OpenProtTransformerBlock(nn.Module):
 
         x_in = x
 
+        
+
         x = x + self.mha_dropout(gate(
             self.mha(
                 x=modulate(self.mha_norm(x), shift_mha, scale_mha),
                 z=self.pair_norm(z) if hasattr(self, "pair_norm") else None,
                 mask=mask.bool(),
                 trans=postcond_fn(trans),
-                rots=None,
+                rots=rots,
                 relpos_mask=relpos_mask,
             ),
             gate_mha,
@@ -280,16 +278,22 @@ class OpenProtTransformerBlock(nn.Module):
             if self.pair_ffn:
                 z = z + self.mlp_pair(self.pair_ff_norm(z))
 
+        
         if self.frame_update:
             if self.readout_adaLN:
                 update = self.linear_frame_update(x, x_cond)
             else:
                 update = self.linear_frame_update(x)
-            trans = trans + update
+            if self.update_rots:
+                vec, rotvec = self.linear_frame_update(x).split(3, dim=-1)
+                trans = trans + torch.einsum("blij,blj->bli", rots, vec)
+                rots = rots @ axis_angle_to_matrix(rotvec).mT
+            else:
+                trans = trans + update
 
         if not self.update_x:
             x = x_in
-        return x, z, trans
+        return x, z, trans, rots
 
 
 class StructureModule(nn.Module):
@@ -350,7 +354,7 @@ class StructureModule(nn.Module):
             else:
                 block = self.ipa_block
 
-            x, z, trans = block(x, z, trans, mask, x_cond, postcond_fn, relpos_mask=relpos_mask)
+            x, z, trans, rots = block(x, z, trans, mask, x_cond, postcond_fn, relpos_mask=relpos_mask)
             all_trans.append(trans)
             all_x.append(x)
 
@@ -371,8 +375,6 @@ class OpenProtModel(nn.Module):
             )
         pair_args = dict(
             pair_updates=True,
-            # pairwise_dim=cfg.pairwise_dim,
-            # pair_bias=cfg.pair_bias,
             pair_values=cfg.pair_values,
             pairwise_heads=cfg.pairwise_heads,
             pair_ffn=cfg.pair_ffn,
@@ -380,11 +382,16 @@ class OpenProtModel(nn.Module):
             tri_mul=cfg.tri_mul,
         )
         relpos_args = dict(
-            relpos_attn=True,
-            relpos_values=True,
-            relpos_freqs=cfg.trunk_relpos[0],
-            relpos_min=cfg.trunk_relpos[1],
-            relpos_max=cfg.trunk_relpos[2],
+            relpos_attn=cfg.trunk_relpos,
+            relpos_values=cfg.trunk_relpos,
+            ipa_attn=cfg.trunk_ipa,
+            ipa_values=cfg.trunk_ipa,
+            ipa_frames=cfg.trunk_ipa,
+            frame_update=cfg.trunk_frame_update,
+            update_rots=cfg.trunk_update_rots,
+            relpos_freqs=cfg.trunk_relpos_params[0],
+            relpos_min=cfg.trunk_relpos_params[1],
+            relpos_max=cfg.trunk_relpos_params[2],
         )
 
         self.blocks = nn.ModuleList()
@@ -428,13 +435,18 @@ class OpenProtModel(nn.Module):
 
         x = inp["x"]
         B, L, _ = x.shape
-        residx = torch.arange(L, device=x.device)[None].expand(B, -1)
+        
+        residx = inp['residx']
         mask = inp["pad_mask"]
         z = inp.get("z", x.new_zeros(B, L, L, self.cfg.pairwise_dim))
         if self.cfg.pairwise_pos_emb:
-            z = z + self.pairwise_positional_embedding(residx, mask=mask)
+            z = z + self.pairwise_positional_embedding(residx.long(), mask=mask)
 
         trans = inp.get("struct", None)
+        if self.cfg.trans_rescale:
+            trans /= self.cfg.trans_rescale
+        rots = inp.get("rots", None)
+        
         x_cond = inp.get("x_cond", None)
         postcond_fn = inp.get("postcond_fn", None)
         struct_mask = inp.get("struct_mask", None)
@@ -447,11 +459,14 @@ class OpenProtModel(nn.Module):
                     block, x, z, trans, mask, x_cond, use_reentrant=False
                 )
             else:
-                x, z, trans = block(x, z, trans, mask, x_cond, relpos_mask=struct_mask)
+                x, z, trans, rots = block(x, z, trans, mask, x_cond, relpos_mask=struct_mask, rots=rots)
 
         if self.cfg.struct_module:
             sm_out = self.structure_module(x, z, trans, mask, x_cond, postcond_fn=postcond_fn)
         else:
             sm_out = None
 
-        return {"x": x, "z": z, "sm": sm_out}
+        if self.cfg.trans_rescale:
+            trans *= self.cfg.trans_rescale
+
+        return {"x": x, "z": z, "trans": trans, "rots": rots, "sm": sm_out}

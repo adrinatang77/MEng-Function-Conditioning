@@ -253,6 +253,7 @@ class SequenceTrack(OpenProtTrack):
         target["noisy_aatype"] = noisy_batch["aatype"] # temporary
         target["seq_supervise"] = torch.where(sup, batch["seq_weight"], 0.0)
 
+        noisy_batch['residx'] = batch['residx']
         oh = torch.nn.functional.one_hot(tokens, num_classes=NUM_TOKENS)
         dist = oh.float().mean(1)
         dist /= dist.sum(-1, keepdims=True)
@@ -288,6 +289,8 @@ class SequenceTrack(OpenProtTrack):
             )
             inp["x"] += torch.where(batch["aatype"] != MASK_IDX, noise_embed, 0.0)
 
+        inp['residx'] = batch['residx'] # temporary
+
     def predict(self, model, inp, out, readout):
         readout["aatype"] = model.seq_out(out["x"])
         if not model.training:
@@ -303,7 +306,6 @@ class SequenceTrack(OpenProtTrack):
         
         if logger:
             logger.masked_log("seq/loss", loss, mask=mask)
-            logger.masked_log("seq/dplm_loss", loss * mask, mask=mask.bool().float())
             logger.masked_log("seq/perplexity", loss, mask=mask, post=np.exp)
 
         logits = readout["aatype"]

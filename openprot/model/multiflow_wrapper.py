@@ -44,8 +44,6 @@ class MultiflowWrapper(pl.LightningModule):
         #     loss_mask *= noisy_batch['plddt_mask']
         
         loss_denom = torch.sum(loss_mask, dim=-1) * 3
-        # if torch.any(torch.sum(loss_mask, dim=-1) < 1):
-        #     print('Empty batch encountered')
             
         num_batch, num_res = loss_mask.shape
         # Ground truth labels
@@ -71,29 +69,13 @@ class MultiflowWrapper(pl.LightningModule):
             assert cat_norm_scale.shape == (num_batch, 1)
         else:
             cat_norm_scale = 1.0
-        # Model output predictions.
-        # if self.args.self_condition and np.random.random() > 0.5:
-        #     with torch.no_grad():
-        #         model_sc = self.model(noisy_batch)
-        #         noisy_batch['trans_sc'] = (
-        #             model_sc['pred_trans'] * noisy_batch['diffuse_mask'][..., None]
-        #             + noisy_batch['trans_1'] * (1 - noisy_batch['diffuse_mask'][..., None])
-        #         )
-        #         logits_1 = torch.nn.functional.one_hot(
-        #             batch['aatypes_1'].long(), num_classes=self.aatype_pred_num_tokens).float()
-        #         noisy_batch['aatypes_sc'] = (
-        #             model_sc['pred_logits'] * noisy_batch['diffuse_mask'][..., None]
-        #             + logits_1 * (1 - noisy_batch['diffuse_mask'][..., None])
-        #         )
+        
         model_output = self.model(noisy_batch)
         pred_trans_1 = model_output['pred_trans']
         pred_rotmats_1 = model_output['pred_rotmats']
         pred_logits = model_output['pred_logits'] # (B, N, aatype_pred_num_tokens)
         pred_rots_vf = so3_utils.calc_rot_vf(rotmats_t, pred_rotmats_1)
         
-        # if torch.any(torch.isnan(pred_rots_vf)):
-        #     print('NaN encountered in pred_rots_vf')
-        # # aatypes loss
         ce_loss = torch.nn.functional.cross_entropy(
             pred_logits.reshape(-1, self.aatype_pred_num_tokens),
             gt_aatypes_1.flatten().long(),
@@ -102,24 +84,10 @@ class MultiflowWrapper(pl.LightningModule):
         
         aatypes_loss = ce_loss * loss_mask # torch.sum(ce_loss * loss_mask, dim=-1) / (loss_denom / 3)
         aatypes_loss *= training_cfg.aatypes_loss_weight
-        # Backbone atom loss
-        pred_bb_atoms = all_atom.to_atom37(pred_trans_1, pred_rotmats_1)[:, :, :3]
-        gt_bb_atoms *= training_cfg.bb_atom_scale / r3_norm_scale[..., None]
-        pred_bb_atoms *= training_cfg.bb_atom_scale / r3_norm_scale[..., None]
-        bb_atom_loss = (gt_bb_atoms - pred_bb_atoms) ** 2 * loss_mask[..., None, None]
-        bb_atom_loss = bb_atom_loss.sum((-1, -2)) / 3
         
-        # torch.sum(
-        #     (gt_bb_atoms - pred_bb_atoms) ** 2 * loss_mask[..., None, None],
-        #     dim=(-1, -2, -3)
-        # ) / loss_denom
-
         # Translation VF loss
         trans_error = (gt_trans_1 - pred_trans_1) / r3_norm_scale * training_cfg.trans_scale
-        # trans_loss = torch.sum(
-        #     trans_error ** 2 * loss_mask[..., None],
-        #     dim=(-1, -2)
-        # ) / loss_denom
+        
         trans_loss = (trans_error**2 * loss_mask[...,None]).sum(-1) / 3
         trans_loss *= training_cfg.translation_loss_weight
         
@@ -131,49 +99,18 @@ class MultiflowWrapper(pl.LightningModule):
             dim=(-1),# -2)
         ) / 3 # loss_denom
 
-        # Pairwise distance loss
-        gt_flat_atoms = gt_bb_atoms.reshape([num_batch, num_res*3, 3])
-        gt_pair_dists = torch.linalg.norm(
-            gt_flat_atoms[:, :, None, :] - gt_flat_atoms[:, None, :, :], dim=-1)
-        pred_flat_atoms = pred_bb_atoms.reshape([num_batch, num_res*3, 3])
-        pred_pair_dists = torch.linalg.norm(
-            pred_flat_atoms[:, :, None, :] - pred_flat_atoms[:, None, :, :], dim=-1)
-
-        flat_loss_mask = torch.tile(loss_mask[:, :, None], (1, 1, 3))
-        flat_loss_mask = flat_loss_mask.reshape([num_batch, num_res*3])
-        flat_res_mask = torch.tile(loss_mask[:, :, None], (1, 1, 3))
-        flat_res_mask = flat_res_mask.reshape([num_batch, num_res*3])
-
-        gt_pair_dists = gt_pair_dists * flat_loss_mask[..., None]
-        pred_pair_dists = pred_pair_dists * flat_loss_mask[..., None]
-        pair_dist_mask = flat_loss_mask[..., None] * flat_res_mask[:, None, :]
-
         
-        dist_mat_loss = (gt_pair_dists - pred_pair_dists)**2 * pair_dist_mask
-        dist_mat_loss = dist_mat_loss.reshape(num_batch, num_res, -1).sum(-1)
-        dist_mat_loss /= (1 + pair_dist_mask.reshape(num_batch, num_res, -1).sum(-1))
-        # torch.sum(
-        #     (gt_pair_dists - pred_pair_dists)**2 * pair_dist_mask,
-        #     dim=(1, 2))
-        # dist_mat_loss /= (torch.sum(pair_dist_mask, dim=(1, 2)) + 1)
-
+        # trans_loss = torch.nan_to_num(trans_loss, 0.0)
+        # rots_vf_loss = torch.nan_to_num(rots_vf_loss, 0.0)
+        # aatypes_loss = torch.nan_to_num(aatypes_loss, 0.0)
         
-        se3_vf_loss = trans_loss + rots_vf_loss
-        
-        auxiliary_loss = (
-            bb_atom_loss * training_cfg.aux_loss_use_bb_loss
-            + dist_mat_loss * training_cfg.aux_loss_use_pair_loss
-        )
-        
-        auxiliary_loss *= (
-            (r3_t > training_cfg.aux_loss_t_pass)
-            & (so3_t > training_cfg.aux_loss_t_pass)
-        )
-        auxiliary_loss *= self._exp_cfg.training.aux_loss_weight
-        auxiliary_loss = torch.clamp(auxiliary_loss, max=5)
-
-        loss = trans_loss + rots_vf_loss + auxiliary_loss + aatypes_loss
-        return loss
+        loss = trans_loss + rots_vf_loss + aatypes_loss
+        return {
+            'trans_loss': trans_loss,
+            'rots_vf_loss': rots_vf_loss,
+            # 'auxiliary_loss': auxiliary_loss,
+            'aatypes_loss': aatypes_loss
+        }
 
   
     def inference(self, batch, trans_0=None, rotmats_0=None):

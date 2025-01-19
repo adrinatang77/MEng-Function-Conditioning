@@ -72,4 +72,8 @@ class Codesign(OpenProtTask):
             randrot = R.random().as_matrix()
             data["atom37"] @= randrot.T
 
+        if self.cfg.rots:
+            noise_level = np.random.rand()
+            data["rots_noise"] = np.ones(L, dtype=np.float32) * noise_level
+
     

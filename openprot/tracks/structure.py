@@ -16,6 +16,7 @@ from ..utils import residue_constants as rc
 from ..model.positions import PositionEmbedder, PositionDecoder, PairwiseProjectionHead
 from ..generate import diffusion
 from functools import partial
+from multiflow.data import so3_utils
 import numpy as np
 import math
 
@@ -57,13 +58,22 @@ class StructureTrack(OpenProtTrack):
 
     def setup(self):
         self.diffusion = getattr(diffusion, self.cfg.diffusion.type)(self.cfg.diffusion)
+        self._igso3 = None
+    @property
+    def igso3(self):
+        if self._igso3 is None:
+            sigma_grid = torch.linspace(0.1, 1.5, 1000)
+            self._igso3 = so3_utils.SampleIGSO3(
+                1000, sigma_grid, cache_dir='.cache')
+        return self._igso3
 
     def tokenize(self, data):
 
         frames, frame_mask = atom37_to_frames(data["atom37"], data["atom37_mask"])
         data["struct"] = data["atom37"][:,1] # frames._trans
         data["struct_mask"] = data["atom37_mask"][:,1] # frame_mask
-        data["rots"] = frames._rots._rot_mats.numpy()
+        if self.cfg.rots:
+            data["rots"] = frames._rots._rot_mats.numpy()
         """
         aatype = np.array(
             [rc.restype_order.get(c, rc.unk_restype_index) for c in data["seqres"]]
@@ -75,6 +85,7 @@ class StructureTrack(OpenProtTrack):
 
     def add_modules(self, model):
         model.frame_mask = nn.Parameter(torch.zeros(model.cfg.dim))
+        
         model.frame_mask_cond = nn.Parameter(torch.zeros(model.cfg.dim))
         if self.cfg.embed_trans:
             model.trans_in = nn.Linear(3, model.cfg.dim)
@@ -103,6 +114,8 @@ class StructureTrack(OpenProtTrack):
         noisy, target_tensor = self.diffusion.add_noise(
             batch["struct"], batch["struct_noise"], batch["struct_mask"].bool() 
         ) # the mask is used to center the coords
+
+        
         noisy_batch["struct"] = noisy
 
         # training targets
@@ -117,6 +130,26 @@ class StructureTrack(OpenProtTrack):
             batch["aatype"], batch["atom37"], batch["atom37_mask"]
         )
 
+        if self.cfg.rots:
+            num_batch, num_res = batch['struct_mask'].shape
+            dev = batch['struct_mask'].device
+            noisy_rotmats = self.igso3.sample(                torch.tensor([1.5]), num_batch*num_res).to(dev)
+            noisy_rotmats = noisy_rotmats.reshape(num_batch, num_res, 3, 3)
+            rotmats_0 = torch.einsum("...ij,...jk->...ik", batch['rots'], noisy_rotmats)
+            
+            so3_t = 1 - batch['rots_noise'] # convention flipped
+            rotmats_t = so3_utils.geodesic_t(so3_t[..., None], batch['rots'], rotmats_0)
+
+            
+            # identity = torch.eye(3, device=self._device)
+            # rotmats_t = (
+            #     rotmats_t * res_mask[..., None, None]
+            #     + identity[None, None] * (1 - res_mask[..., None, None])
+            # )
+            noisy_batch['rots'] = rotmats_t
+            target['rots'] = batch['rots']
+            target['rots_noise'] = batch['rots_noise']
+            
         if logger:
             logger.masked_log("struct/toks", batch["struct_mask"], sum=True)
 
@@ -179,10 +212,14 @@ class StructureTrack(OpenProtTrack):
 
         # finally provide the raw struct for relpos
         inp["struct"] = coords
+        inp["rots"] = batch["rots"]
         inp["struct_mask"] = ~embed_as_mask
-        inp["postcond_fn"] = lambda x: self.diffusion.postcondition(
-            coords, x, noise,
-        )
+        if self.cfg.postcondition:
+            inp["postcond_fn"] = lambda x: self.diffusion.postcondition(
+                coords, x, noise,
+            )
+        else:
+            inp['postcond_fn'] = lambda x: x
 
     def predict(self, model, inp, out, readout):
         if self.cfg.readout_trans == "trunk":
@@ -192,12 +229,15 @@ class StructureTrack(OpenProtTrack):
                 readout["trans"] = model.trans_out(out["sm"]["x"], inp["x_cond"])
             else:
                 readout["trans"] = model.trans_out(out["sm"]["x"])
-        else:
+        elif self.cfg.copy_trans == 'sm':
             readout["trans"] = inp["postcond_fn"](out["sm"]["trans"])
+        elif self.cfg.copy_trans == 'trunk':
+            readout['trans'] = inp["postcond_fn"](out['trans'])[None]
         if self.cfg.readout_pairwise:
             readout["pairwise"] = model.pairwise_out(out["z"])
 
     def compute_loss(self, readout, target, logger=None, **kwargs):
+
 
         loss = 0
 
@@ -216,6 +256,7 @@ class StructureTrack(OpenProtTrack):
                 readout, target, logger=logger
             )
 
+        
         lddt = compute_lddt(
             readout["trans"][-1], target["struct"], target["struct_supervise"]
         )
@@ -267,6 +308,7 @@ class StructureTrack(OpenProtTrack):
 
         pred = readout["trans"]
         gt = target["struct"]
+        
         mask = target["struct_supervise"] # weighted mse!
         t = target["struct_noise"]
 
@@ -276,7 +318,8 @@ class StructureTrack(OpenProtTrack):
             target=gt,
             t=t,
             mask=mask, # used for alignment
-        )
+        ) / 3
+        mse = torch.clamp(mse, max=5)
 
         if logger:
             logger.masked_log("struct/mse_loss", mse[-1], mask=mask)
