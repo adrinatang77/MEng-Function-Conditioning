@@ -54,10 +54,28 @@ class OpenProtDatasetManager(torch.utils.data.IterableDataset):
         buf = [buf[i] for i in np.argsort(lens)]
         curr = []
         for data in buf:
-            if (len(curr)+1) * len(data['seqres']) > self.cfg.data.max_toks:
+            
+            end_batch = False
+            
+            if self.cfg.data.max_toks:
+                # avoid the possibility of noncompliant singleton batches
+                assert self.cfg.data.max_toks > self.cfg.data.crop
+                
+                maybe_num_toks = (len(curr)+1) * len(data['seqres'])
+                if maybe_num_toks > self.cfg.data.max_toks:
+                    end_batch = True
+            if self.cfg.data.max_sq_toks:
+                assert self.cfg.data.max_sq_toks > self.cfg.data.crop**2
+                
+                maybe_num_sq_toks = (len(curr)+1) * len(data['seqres'])**2
+                if maybe_num_sq_toks > self.cfg.data.max_sq_toks:
+                    end_batch = True
+            if end_batch:
                 batches.append(curr)
                 curr = []
+            
             curr.append(data)
+            
         if len(curr) > 0:
             batches.append(curr)
         return batches

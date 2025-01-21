@@ -87,27 +87,27 @@ class MultiflowEval(OpenProtEval):
 
 
                ## distributed designability
-                count = math.ceil(self.cfg.num_samples / world_size)
-                start = rank * count
-                end = min((rank + 1) * count, self.cfg.num_samples)
+                # count = math.ceil(self.cfg.num_samples / world_size)
+                # start = rank * count
+                # end = min((rank + 1) * count, self.cfg.num_samples)
     
-                cmd = [
-                    "bash",
-                    "scripts/run_genie_pipeline.sh",
-                    savedir,
-                    str(start),
-                    str(end - 1),
-                ]
-                subprocess.run(cmd)  # env=os.environ | {"CUDA_VISIBLE_DEVICES")
+                # cmd = [
+                #     "bash",
+                #     "scripts/run_genie_pipeline.sh",
+                #     savedir,
+                #     str(start),
+                #     str(end - 1),
+                # ]
+                # subprocess.run(cmd)  # env=os.environ | {"CUDA_VISIBLE_DEVICES")
     
-                df = pd.read_csv(
-                    f"{savedir}/eval{start}_{end-1}/info.csv", index_col="domain"
-                )
-                df["designable"] = df["scRMSD"] < 2
-                if logger is not None:
-                    for col in df.columns:
-                        for val in df[col].tolist():
-                            logger.log(f"{self.cfg.name}/genie_{col}", val)
+                # df = pd.read_csv(
+                #     f"{savedir}/eval{start}_{end-1}/info.csv", index_col="domain"
+                # )
+                # df["designable"] = df["scRMSD"] < 2
+                # if logger is not None:
+                #     for col in df.columns:
+                #         for val in df[col].tolist():
+                #             logger.log(f"{self.cfg.name}/genie_{col}", val)
 
     def run_batch(
         self,

@@ -8,8 +8,10 @@ import os
 import tqdm
 from ..tracks.manager import OpenProtTrackManager
 from ..utils import residue_constants as rc
+from ..utils.tensor_utils import tensor_tree_map
 from .multiflow_wrapper import MultiflowWrapper
 from omegaconf import OmegaConf
+from .ema import ExponentialMovingAverage
 # from ..evals.manager import OpenProtEvalManager
 
 
@@ -19,7 +21,9 @@ class Wrapper(pl.LightningModule):
         self.save_hyperparameters("cfg")
         self.cfg = cfg
         self._logger = Logger(cfg.logger)
-
+        self.ema = None
+        self.cached_weights = None
+        
     def training_step(self, batch, batch_idx):
         self._logger.prefix = "train"
         out = self.general_step(batch)
@@ -27,6 +31,9 @@ class Wrapper(pl.LightningModule):
         return out
 
     def validation_step(self, batch, batch_idx, dataloader_idx=0):
+        if self.cfg.model.ema:
+            if self.cached_weights is None:
+                self.load_ema_weights()
         self._logger.prefix = "val"
         # self.general_step(batch)
         self.validation_step_extra(batch, batch_idx)
@@ -44,7 +51,22 @@ class Wrapper(pl.LightningModule):
 
     def on_validation_epoch_end(self):
         self._logger.epoch_end(self.trainer, prefix="val")
+        if self.cfg.model.ema:
+            self.restore_cached_weights()
 
+    def load_ema_weights(self):
+        clone_param = lambda t: t.detach().clone()
+        self.cached_weights = tensor_tree_map(clone_param, self.model.state_dict())
+        self.model.load_state_dict(self.ema.state_dict()["params"])
+
+    def restore_cached_weights(self):
+        self.model.load_state_dict(self.cached_weights)
+        self.cached_weights = None
+        
+    def on_before_zero_grad(self, *args, **kwargs):
+        if self.cfg.model.ema:
+            self.ema.update(self.model)
+            
     # uncomment this to debug
     def on_before_optimizer_step(self, optimizer):
         quit = False
@@ -115,20 +137,32 @@ class OpenProtWrapper(Wrapper):
 
         self.tracks = tracks
         self.evals = evals
+        if self.cfg.model.ema:
+            self.ema = ExponentialMovingAverage(self.model, self.cfg.model.ema_decay)
 
         
     def on_save_checkpoint(self, checkpoint):
         esm_keys = {k for k in checkpoint['state_dict'].items() if "model.esm." in k}
         checkpoint['state_dict'] = {k: v for k, v in checkpoint['state_dict'].items() if k not in esm_keys}
 
+        if self.cached_weights is not None:
+            self.restore_cached_weights()
+        if self.cfg.model.ema:
+            checkpoint["ema"] = self.ema.state_dict()
+
     def on_load_checkpoint(self, checkpoint):
         state_dict = self.state_dict()
         esm_keys = {k for k in state_dict.items() if "model.esm." in k}
         checkpoint['state_dict'] |= {k: state_dict[k] for k in esm_keys}
-        
+        if self.cfg.model.ema:
+            ema = checkpoint["ema"]
+            self.ema.load_state_dict(ema)
             
         
     def transfer_batch_to_device(self, batch, device, dataloader_idx):
+        if self.cfg.model.ema:
+            if self.ema.device != device:
+                self.ema.to(device)
         return batch.to(device)
 
     def get_lr(self):

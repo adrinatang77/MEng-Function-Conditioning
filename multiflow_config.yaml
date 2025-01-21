@@ -188,7 +188,7 @@ model:
     relpos_k: 64
     feat_dim: 64
     num_bins: 22
-    self_condition: true
+    self_condition: false
     embed_chain: false
     embed_diffuse_mask: true
   ipa:
@@ -259,7 +259,7 @@ inference:
     sampling:
       num_timesteps: 500
       do_sde: false
-    self_condition: true
+    self_condition: false
   pmpnn_dir: ./ProteinMPNN
   folding:
     seq_per_sample: 8

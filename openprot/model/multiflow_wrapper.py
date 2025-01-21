@@ -25,6 +25,7 @@ class MultiflowWrapper(pl.LightningModule):
         self.interpolant = Interpolant(cfg.interpolant)
         self.aatype_pred_num_tokens = cfg.model.aatype_pred_num_tokens
         self._exp_cfg = cfg.experiment
+        self.rng = np.random.default_rng(137)
         
     def general_step(self, batch):
         
@@ -69,7 +70,22 @@ class MultiflowWrapper(pl.LightningModule):
             assert cat_norm_scale.shape == (num_batch, 1)
         else:
             cat_norm_scale = 1.0
-        
+
+        # if self.rng.random() > 0.5:
+        #     with torch.no_grad():
+        #         with torch.cuda.amp.autocast(False):
+        #             model_sc = self.model(noisy_batch)
+        #         noisy_batch['trans_sc'] = (
+        #             model_sc['pred_trans'] * noisy_batch['diffuse_mask'][..., None]
+        #             + noisy_batch['trans_1'] * (1 - noisy_batch['diffuse_mask'][..., None])
+        #         )
+        #         logits_1 = torch.nn.functional.one_hot(
+        #             batch['aatypes_1'].long(), num_classes=self.aatype_pred_num_tokens).float()
+        #         noisy_batch['aatypes_sc'] = (
+        #             model_sc['pred_logits'] * noisy_batch['diffuse_mask'][..., None]
+        #             + logits_1 * (1 - noisy_batch['diffuse_mask'][..., None])
+        #         )
+            
         model_output = self.model(noisy_batch)
         pred_trans_1 = model_output['pred_trans']
         pred_rotmats_1 = model_output['pred_rotmats']
@@ -105,6 +121,7 @@ class MultiflowWrapper(pl.LightningModule):
         # aatypes_loss = torch.nan_to_num(aatypes_loss, 0.0)
         
         loss = trans_loss + rots_vf_loss + aatypes_loss
+        
         return {
             'trans_loss': trans_loss,
             'rots_vf_loss': rots_vf_loss,
