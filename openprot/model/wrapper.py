@@ -12,6 +12,7 @@ from ..utils.tensor_utils import tensor_tree_map
 from .multiflow_wrapper import MultiflowWrapper
 from omegaconf import OmegaConf
 from .ema import ExponentialMovingAverage
+from multiflow.data import so3_utils
 # from ..evals.manager import OpenProtEvalManager
 
 
@@ -185,33 +186,100 @@ class OpenProtWrapper(Wrapper):
     def general_step(self, batch):
 
         
-        if self.cfg.model.multiflow:
-            L = batch['pad_mask'].shape[1]
-            mf_batch = {
-                'trans': batch['struct'],
-                'rots': batch['rots'],
-                'seqres': batch['aatype'],
-                'res_mask': batch['struct_mask'],
-                'diffuse_mask': batch['struct_mask'],
-                'mask': batch['struct_mask'],
-                'chain_idx': torch.zeros_like(batch['pad_mask'], dtype=torch.long),
-                'res_idx': batch['residx'],
-            }
-            losses = self.model.general_step(mf_batch)
-            loss = 0
-            for key in losses:
-                loss += losses[key]
-                self._logger.log(f"mutliflow/{key}", losses[key], batch['struct_mask'])
-            self._logger.log("loss", loss, batch['struct_mask'])
-            return (loss * batch["struct_mask"]).sum() / batch["struct_mask"].sum()
-            
+        # if self.cfg.model.multiflow:
+        #     L = batch['pad_mask'].shape[1]
+        #     mf_batch = {
+        #         'trans': batch['struct'],
+        #         'rots': batch['rots'],
+        #         'seqres': batch['aatype'],
+        #         'res_mask': batch['struct_mask'],
+        #         'diffuse_mask': batch['struct_mask'],
+        #         'mask': batch['struct_mask'],
+        #         'chain_idx': torch.zeros_like(batch['pad_mask'], dtype=torch.long),
+        #         'res_idx': batch['residx'],
+        #     }
+        #     losses = self.model.general_step(mf_batch)
+        #     loss = 0
+        #     for key in losses:
+        #         loss += losses[key]
+        #         self._logger.log(f"mutliflow/{key}", losses[key], batch['struct_mask'])
+        #     self._logger.log("loss", loss, batch['struct_mask'])
+        #     return (loss * batch["struct_mask"]).sum() / batch["struct_mask"].sum()
+
+        batch['pad_mask'] = batch['seq_mask'] = batch['struct_mask'] # to make losses comparable
         self._logger.register_masks(batch)
         self._logger.masked_log("toks", batch["pad_mask"], sum=True)
     
         ## corrupt all the tracks
         noisy_batch, target = self.tracks.corrupt(batch, logger=self._logger)
 
-        out, readout = self.forward(noisy_batch)
+        if self.cfg.model.multiflow:
+            B = batch['pad_mask'].shape[0]
+            L = batch['pad_mask'].shape[1]
+            mf_batch = {
+                # 'trans': batch['struct'],
+                # 'rots': batch['rots'],
+                # 'seqres': batch['aatype'],
+                # 'mask': batch['struct_mask'],
+                'res_mask': batch['struct_mask'],
+                'diffuse_mask': batch['struct_mask'],
+                'chain_idx': torch.zeros_like(batch['pad_mask'], dtype=torch.long),
+                'res_idx': batch['residx']
+            } | {
+                # 'trans_t': noisy_batch['struct'],
+                # 'rotmats_t': noisy_batch['rots'],
+                'aatypes_t': noisy_batch['aatype'],
+                # 'so3_t': noisy_batch['struct_noise'],
+                # 'r3_t': noisy_batch['struct_noise'],
+                'cat_t': torch.zeros_like(noisy_batch['struct_noise']),
+                'trans_sc': torch.zeros_like(noisy_batch['struct']),
+                'aatypes_sc': noisy_batch['struct'].new_zeros(B, L, 21),
+            }
+            
+            interpolant_batch = {
+                'trans_1': batch['struct'],
+                'rotmats_1': batch['rots'],
+                'aatypes_1': batch['aatype'],
+                'res_mask': batch['struct_mask'],
+                'diffuse_mask': batch['struct_mask'],
+            }
+            # breakpoint()
+            self.model.interpolant._device = self.device
+            interpolant_out = self.model.interpolant.corrupt_batch(interpolant_batch)
+            
+            mf_batch['trans_t'] = interpolant_out['trans_t']
+            target['noisy_rots'] = mf_batch['rotmats_t'] = interpolant_out['rotmats_t']
+            mf_batch['r3_t'] = mf_batch['so3_t'] = interpolant_out['r3_t']
+
+            target['rots_noise'] = target['struct_noise'] = torch.ones_like(target['struct_noise']) - interpolant_out['r3_t']
+            
+            out = self.model.model(mf_batch)
+            readout = {
+                'trans': out['pred_trans'][None],
+                'rots': out['pred_rotmats'],
+                'aatype': out['pred_logits'],
+            }
+
+            loss_batch = {
+                'gt_trans': batch['struct'],
+                'gt_rots': batch['rots'],
+                'gt_aatype': batch['aatype'],
+                'noisy_rots': mf_batch['rotmats_t'],
+                'pred_trans': readout['trans'][0],
+                'pred_rots': readout['rots'],
+                'pred_aatype': readout['aatype'],
+                'r3_t': mf_batch['r3_t'],
+                'so3_t': mf_batch['so3_t'],
+                'cat_t': mf_batch['cat_t'],
+                'mask': batch['struct_mask'],
+            }
+
+            losses = self.multiflow_loss(loss_batch)
+            for key in losses:
+                self._logger.log(f"mutliflow/{key}", losses[key], batch['struct_mask'])
+             
+        else:
+            out, readout = self.forward(noisy_batch)
 
         ## compute the loss
         loss = self.tracks.compute_loss(
@@ -226,6 +294,67 @@ class OpenProtWrapper(Wrapper):
 
         return (loss * batch["pad_mask"]).sum() / batch["pad_mask"].sum()
 
+    def multiflow_loss(self, batch):
+        loss_mask = batch['mask']
+        gt_trans_1 = batch['gt_trans']
+        gt_rotmats_1 = batch['gt_rots']
+        gt_aatypes_1 = batch['gt_aatype']
+        rotmats_t = batch['noisy_rots']
+        gt_rot_vf = so3_utils.calc_rot_vf(
+            rotmats_t, gt_rotmats_1.type(torch.float32))
+        
+        # Timestep used for normalization.
+        r3_t = batch['r3_t'] # (B, 1)
+        so3_t = batch['so3_t'] # (B, 1)
+        cat_t = batch['cat_t'] # (B, 1)
+        r3_norm_scale = 1 - torch.min(
+            r3_t[..., None], torch.tensor(0.9)) # (B, 1, 1)
+        so3_norm_scale = 1 - torch.min(
+            so3_t[..., None], torch.tensor(0.9)) # (B, 1, 1)
+        cat_norm_scale = 1.0
+            
+        pred_trans_1 = batch['pred_trans']
+        pred_rotmats_1 = batch['pred_rots']
+        pred_logits = batch['pred_aatype'] # (B, N, aatype_pred_num_tokens)
+        pred_rots_vf = so3_utils.calc_rot_vf(rotmats_t, pred_rotmats_1)
+
+        num_batch, num_res = gt_aatypes_1.shape
+        ce_loss = torch.nn.functional.cross_entropy(
+            pred_logits.reshape(-1, 21),
+            gt_aatypes_1.flatten().long(),
+            reduction='none',
+        ).reshape(num_batch, num_res) / cat_norm_scale
+        
+        aatypes_loss = ce_loss * loss_mask # torch.sum(ce_loss * loss_mask, dim=-1) / (loss_denom / 3)
+        
+        # Translation VF loss
+        trans_error = (gt_trans_1 - pred_trans_1) / r3_norm_scale * 0.1
+        
+        trans_loss = (trans_error**2 * loss_mask[...,None]).sum(-1) / 3
+        
+        trans_loss = torch.clamp(trans_loss, max=5)
+        # Rotation VF loss
+        
+        rots_vf_error = (gt_rot_vf - pred_rots_vf) / so3_norm_scale
+        rots_vf_loss = torch.sum(
+            rots_vf_error ** 2 * loss_mask[..., None],
+            dim=(-1),# -2)
+        ) / 3 # loss_denom
+
+        
+        # trans_loss = torch.nan_to_num(trans_loss, 0.0)
+        # rots_vf_loss = torch.nan_to_num(rots_vf_loss, 0.0)
+        # aatypes_loss = torch.nan_to_num(aatypes_loss, 0.0)
+        
+        loss = trans_loss + rots_vf_loss + aatypes_loss
+        
+        return {
+            'trans_loss': trans_loss,
+            'rots_vf_loss': rots_vf_loss,
+            # 'auxiliary_loss': auxiliary_loss,
+            'aatypes_loss': aatypes_loss
+        }
+        
     def on_validation_epoch_end(self):
         savedir = f'{os.environ["MODEL_DIR"]}/eval_step{self.trainer.global_step}'
         for name, eval_ in self.evals.items():

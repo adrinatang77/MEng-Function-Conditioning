@@ -219,7 +219,7 @@ class StructureTrack(OpenProtTrack):
         inp["struct"] = coords
         if self.cfg.rots:
             inp["rots"] = batch["rots"]
-        inp["struct_mask"] = ~embed_as_mask
+        inp["struct_mask"] = (batch["struct_noise"] < tmax) & batch["struct_mask"].bool()
         if self.cfg.postcondition:
             inp["postcond_fn"] = lambda x: self.diffusion.postcondition(
                 coords, x, noise,
@@ -319,7 +319,8 @@ class StructureTrack(OpenProtTrack):
         w = self.cfg.int_loss_weight
         return w * soft_lddt_loss.mean(0) + (1 - w) * soft_lddt_loss[-1]
 
-    def compute_rots_loss(self, readout, target, logger=None, eps=1e-5, clip_t=0.01):
+    def compute_rots_loss(self, readout, target, logger=None, eps=1e-5, clip_t=0.1):
+        
         gt_rots_vf = so3_utils.calc_rot_vf(target['noisy_rots'], target['gt_rots'])
         pred_rots_vf = so3_utils.calc_rot_vf(target['noisy_rots'], readout['rots'])
         rots_vf_error = (gt_rots_vf - pred_rots_vf) 
@@ -334,7 +335,7 @@ class StructureTrack(OpenProtTrack):
             
         return rots_vf_loss * mask
         
-    def compute_mse_loss(self, readout, target, logger=None, eps=1e-5, clip_t=0.01):
+    def compute_mse_loss(self, readout, target, logger=None, eps=1e-5, clip_t=0.1):
 
         pred = readout["trans"]
         gt = target["struct"]
