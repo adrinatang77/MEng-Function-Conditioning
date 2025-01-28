@@ -141,7 +141,6 @@ class OpenProtTransformerBlock(nn.Module):
         update_x=True,
         adaLN=False,
         readout_adaLN=False,
-        rots_type="vec",
         dropout=0.0,
         token_dropout=0.0,
     ):
@@ -175,8 +174,6 @@ class OpenProtTransformerBlock(nn.Module):
         self.pair_ffn = pair_ffn
         self.frame_update = frame_update
         self.update_rots = update_rots
-        self.rots_type = rots_type
-        # self.readout_rots = readout_rots
         self.tri_mul = tri_mul
         self.update_x = update_x
         self.adaLN = adaLN
@@ -194,7 +191,7 @@ class OpenProtTransformerBlock(nn.Module):
         if pair_bias or pair_values:
             self.pair_norm = nn.LayerNorm(pairwise_dim)
 
-        rot_dim = {"quat": 4, "vec": 3}[rots_type]
+        rot_dim = 3
         if frame_update:
 
             if readout_adaLN:
@@ -285,9 +282,13 @@ class OpenProtTransformerBlock(nn.Module):
             else:
                 update = self.linear_frame_update(x)
             if self.update_rots:
-                vec, rotvec = self.linear_frame_update(x).split(3, dim=-1)
-                trans = trans + torch.einsum("blij,blj->bli", rots, vec)
-                rots = rots @ axis_angle_to_matrix(rotvec).mT
+                rigids = Rigid(trans=trans, rots=Rotation(rot_mats=rots))
+                rigids = rigids.compose_q_update_vec(update)
+                # vec, rotvec = self.linear_frame_update(x).split(3, dim=-1)
+                # trans = trans + torch.einsum("blij,blj->bli", rots, vec)
+                # rots = rots @ axis_angle_to_matrix(rotvec).mT
+                trans = rigids.get_trans()
+                rots = rigids.get_rots().get_rot_mats()
             else:
                 trans = trans + update
 
@@ -373,8 +374,23 @@ class OpenProtModel(nn.Module):
             self.pairwise_positional_embedding = RelativePosition(
                 cfg.position_bins, cfg.pairwise_dim
             )
+        default_block_args = dict(
+            dim=cfg.dim,
+            heads=cfg.heads,
+            rope=cfg.rope,
+            custom_rope=cfg.custom_rope,
+            adaLN=cfg.trunk_adaLN,
+            pairwise_dim=cfg.pairwise_dim,
+            pair_bias=cfg.block_pair_bias,
+            pair_values=cfg.block_pair_values,
+            dropout=cfg.dropout,
+            token_dropout=cfg.token_dropout,
+        )
         pair_args = dict(
             pair_updates=True,
+            pairwise_dim=cfg.pairwise_dim,
+            ff_expand=cfg.ff_expand,
+            pair_bias=cfg.pair_bias,
             pair_values=cfg.pair_values,
             pairwise_heads=cfg.pairwise_heads,
             pair_ffn=cfg.pair_ffn,
@@ -387,11 +403,13 @@ class OpenProtModel(nn.Module):
             ipa_attn=cfg.trunk_ipa,
             ipa_values=cfg.trunk_ipa,
             ipa_frames=cfg.trunk_ipa,
-            frame_update=cfg.trunk_frame_update,
-            update_rots=cfg.trunk_update_rots,
             relpos_freqs=cfg.trunk_relpos_params[0],
             relpos_min=cfg.trunk_relpos_params[1],
             relpos_max=cfg.trunk_relpos_params[2],
+        )
+        update_args = dict(
+            frame_update=cfg.trunk_frame_update,
+            update_rots=cfg.trunk_update_rots,
         )
 
         self.blocks = nn.ModuleList()
@@ -401,25 +419,19 @@ class OpenProtModel(nn.Module):
         relpos_block_idx = list(
             range(cfg.relpos_blocks.start, cfg.relpos_blocks.end, cfg.relpos_blocks.interval)
         )
+        update_block_idx = list(
+            range(cfg.update_blocks.start, cfg.update_blocks.end, cfg.update_blocks.interval)
+        )
 
+        
         for i in range(cfg.blocks):
-
-            self.blocks.append(
-                OpenProtTransformerBlock(
-                    dim=cfg.dim,
-                    heads=cfg.heads,
-                    ff_expand=cfg.ff_expand,
-                    rope=cfg.rope,
-                    custom_rope=cfg.custom_rope,
-                    adaLN=cfg.trunk_adaLN,
-                    pairwise_dim=cfg.pairwise_dim,
-                    pair_bias=cfg.block_pair_bias,
-                    **(pair_args if i in pair_block_idx else {}),
-                    **(relpos_args if i in relpos_block_idx else {}),
-                    dropout=cfg.dropout,
-                    token_dropout=cfg.token_dropout,
-                )
+            block_args = (
+                default_block_args | 
+                (pair_args if i in pair_block_idx else {}) |
+                (relpos_args if i in relpos_block_idx else {}) |
+                (update_args if i in update_block_idx else {})
             )
+            self.blocks.append(OpenProtTransformerBlock(**block_args))
 
         if cfg.readout_trans_before_sm:
             if cfg.readout_adaLN:

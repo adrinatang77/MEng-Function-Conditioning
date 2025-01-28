@@ -190,16 +190,16 @@ class GeometricMultiHeadAttention(nn.Module):
 
         if mask is None:
             mask = torch.ones(B, L, D, dtype=bool, device=x.device)
-
-        mask = mask.view(B, 1, 1, -1)
-        attn = attn + torch.where(mask, 0, -float("inf"))
-
+        
+        if relpos_mask is not None:
+            square_mask = relpos_mask[:,None,:] & relpos_mask[:,:,None]
+           
         if self.pair_bias:
             attn = attn + self.linear_b(z).permute(0, 3, 1, 2)
 
         if self.ipa_attn:
             v_pts, pt_attn = self.get_pt_attn(x, trans, rots)
-            attn = attn + pt_attn
+            attn = attn + torch.where(square_mask[:,None], pt_attn, 0.0)
             # attn = attn * math.sqrt(1/3)
 
         if self.relpos_attn or self.relpos_values:
@@ -211,20 +211,17 @@ class GeometricMultiHeadAttention(nn.Module):
                 min_period=self.relpos_min,
             )
             relpos_emb = relpos_emb.view(B, L, L, -1)
-            if relpos_mask is not None:
-                square_mask = relpos_mask[:,None,:,None] & relpos_mask[:,:,None,None]
-                relpos_emb = torch.where(square_mask, relpos_emb, 0.0)
+            relpos_emb = torch.where(square_mask, relpos_emb, 0.0)
 
         if self.relpos_attn:
             relpos_query = self.linear_relpos_query(x)
             relpos_query = relpos_query.view(B, L, self.heads, -1).transpose(1, 2)
-
-            
             relpos_attn = torch.einsum("bhid,bijd->bhij", relpos_query, relpos_emb)
             relpos_attn = relpos_attn / math.sqrt(6 * self.relpos_freqs)
             attn = attn + relpos_attn # this is already 0 for masked pairs
             
-
+        mask = mask.view(B, 1, 1, -1)
+        attn = torch.where(mask, attn, -float("inf"))
         attn = torch.softmax(attn, dim=-1)
         
         # This is actually dropping out entire tokens to attend to, which might
@@ -254,7 +251,7 @@ class GeometricMultiHeadAttention(nn.Module):
 
         if self.ipa_values:
             ipa_out = self.get_ipa_values(attn, v_pts, trans, rots)
-            out = out + self.w_pt(ipa_out)
+            out = out + self.w_pt(ipa_out) * relpos_mask[...,None].float()
 
         if self.relpos_values:
             relpos_out = torch.einsum("bhij,bijd->bihd", attn, relpos_emb)
