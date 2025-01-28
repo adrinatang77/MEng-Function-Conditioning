@@ -133,21 +133,24 @@ class StructureTrack(OpenProtTrack):
         if self.cfg.rots:
             num_batch, num_res = batch['struct_mask'].shape
             dev = batch['struct_mask'].device
-            noisy_rotmats = self.igso3.sample(                torch.tensor([1.5]), num_batch*num_res).to(dev)
+            noisy_rotmats = self.igso3.sample(
+                torch.tensor([1.5]),
+                num_batch*num_res
+            ).to(dev)
             noisy_rotmats = noisy_rotmats.reshape(num_batch, num_res, 3, 3)
             rotmats_0 = torch.einsum("...ij,...jk->...ik", batch['rots'], noisy_rotmats)
             
             so3_t = 1 - batch['rots_noise'] # convention flipped
             rotmats_t = so3_utils.geodesic_t(so3_t[..., None], batch['rots'], rotmats_0)
 
-            
             # identity = torch.eye(3, device=self._device)
             # rotmats_t = (
             #     rotmats_t * res_mask[..., None, None]
             #     + identity[None, None] * (1 - res_mask[..., None, None])
             # )
             noisy_batch['rots'] = rotmats_t
-            target['rots'] = batch['rots']
+            target['gt_rots'] = batch['rots']
+            target['noisy_rots'] = rotmats_t
             target['rots_noise'] = batch['rots_noise']
             
         if logger:
@@ -176,6 +179,7 @@ class StructureTrack(OpenProtTrack):
                 0.0,
                 model.trans_in(precond)
             )
+        # always tell model which ones are mask
         inp["x"] += torch.where(
             embed_as_mask[...,None],
             model.frame_mask[None,None],
@@ -203,16 +207,18 @@ class StructureTrack(OpenProtTrack):
             )
             
         if self.cfg.embed_pairwise:
-            raise Exception("This hasn't been touched in a while, should fix")
-            dmat = inp["struct"][..., None, :, :] - inp["struct"][..., None, :]
+            sq_mask = (~embed_as_mask[...,None]) & (~embed_as_mask[...,None,:])
+            dmat = coords[...,None,:,:] - coords[...,None,:]
             dmat = torch.square(dmat).sum(-1).sqrt()
             inp["z"] = inp.get("z", 0) + model.pairwise_in(
                 sinusoidal_embedding(dmat, model.cfg.pairwise_dim // 2, 100, 1)
-            )
+            ) * sq_mask.float()[...,None]
+            
 
         # finally provide the raw struct for relpos
         inp["struct"] = coords
-        inp["rots"] = batch["rots"]
+        if self.cfg.rots:
+            inp["rots"] = batch["rots"]
         inp["struct_mask"] = ~embed_as_mask
         if self.cfg.postcondition:
             inp["postcond_fn"] = lambda x: self.diffusion.postcondition(
@@ -236,6 +242,10 @@ class StructureTrack(OpenProtTrack):
         if self.cfg.readout_pairwise:
             readout["pairwise"] = model.pairwise_out(out["z"])
 
+        if self.cfg.rots: # temporary
+            readout['rots'] = out['rots']
+        # readout['trans'] = inp["struct"][None] + readout['trans'] * 0.0
+
     def compute_loss(self, readout, target, logger=None, **kwargs):
 
 
@@ -256,6 +266,11 @@ class StructureTrack(OpenProtTrack):
                 readout, target, logger=logger
             )
 
+        if self.cfg.rots:
+            loss = loss + self.compute_rots_loss(
+                readout, target, logger=logger
+            )
+            
         
         lddt = compute_lddt(
             readout["trans"][-1], target["struct"], target["struct_supervise"]
@@ -304,14 +319,29 @@ class StructureTrack(OpenProtTrack):
         w = self.cfg.int_loss_weight
         return w * soft_lddt_loss.mean(0) + (1 - w) * soft_lddt_loss[-1]
 
-    def compute_mse_loss(self, readout, target, logger=None, eps=1e-5):
+    def compute_rots_loss(self, readout, target, logger=None, eps=1e-5, clip_t=0.01):
+        gt_rots_vf = so3_utils.calc_rot_vf(target['noisy_rots'], target['gt_rots'])
+        pred_rots_vf = so3_utils.calc_rot_vf(target['noisy_rots'], readout['rots'])
+        rots_vf_error = (gt_rots_vf - pred_rots_vf) 
+        t = target["rots_noise"]
+        t = torch.clamp(t, min=clip_t)
+        rots_vf_loss = (rots_vf_error ** 2).sum(-1) / (t**2 + eps) / 3
+
+        mask = target["struct_supervise"]
+        
+        if logger:
+            logger.masked_log("struct/rots_loss", rots_vf_loss, mask=mask)
+            
+        return rots_vf_loss * mask
+        
+    def compute_mse_loss(self, readout, target, logger=None, eps=1e-5, clip_t=0.01):
 
         pred = readout["trans"]
         gt = target["struct"]
         
         mask = target["struct_supervise"] # weighted mse!
         t = target["struct_noise"]
-
+        t = torch.clamp(t, min=clip_t)
         
         mse = self.diffusion.compute_loss(
             pred=pred,
