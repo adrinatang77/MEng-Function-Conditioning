@@ -87,6 +87,10 @@ class MultiflowWrapper(pl.LightningModule):
         #         )
             
         model_output = self.model(noisy_batch)
+        # baseline loss
+        # 'train/mutliflow/aatypes_loss': 3.044921875,
+        # 'train/mutliflow/trans_loss': 2.8262554204463957,
+        # pred_trans_1 = noisy_batch['trans_t'] + 0.0 * model_output['pred_trans']
         pred_trans_1 = model_output['pred_trans']
         pred_rotmats_1 = model_output['pred_rotmats']
         pred_logits = model_output['pred_logits'] # (B, N, aatype_pred_num_tokens)

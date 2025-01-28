@@ -13,8 +13,8 @@ interpolant:
   provide_kappa: false
   hierarchical_t: false
   codesign_separate_t: true
-  codesign_forward_fold_prop: 0.1
-  codesign_inverse_fold_prop: 0.1
+  codesign_forward_fold_prop: 0.0
+  codesign_inverse_fold_prop: 0.0
   rots:
     corrupt: true
     train_schedule: linear
@@ -22,7 +22,7 @@ interpolant:
     exp_rate: 10
   trans:
     corrupt: true
-    batch_ot: true
+    batch_ot: false
     train_schedule: linear
     sample_schedule: linear
     sample_temp: 1.0
