@@ -55,7 +55,9 @@ class StructureGenerationEval(OpenProtEval):
                 str(start),
                 str(end - 1),
             ]
-            subprocess.run(cmd)  # env=os.environ | {"CUDA_VISIBLE_DEVICES")
+            subprocess.run(cmd, env=os.environ | {
+                'CUDA_VISIBLE_DEVICES': str(torch.cuda.current_device())
+            })  
 
             df = pd.read_csv(
                 f"{savedir}/eval{start}_{end-1}/info.csv", index_col="domain"

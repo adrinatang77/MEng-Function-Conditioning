@@ -78,7 +78,7 @@ class Interpolant:
     def _corrupt_trans(self, trans_1, t, res_mask, diffuse_mask):
         trans_nm_0 = _centered_gaussian(*res_mask.shape, self._device)
         trans_0 = trans_nm_0 * du.NM_TO_ANG_SCALE
-        if self._trans_cfg.batch_ot and False:
+        if self._trans_cfg.batch_ot:
             trans_0 = self._batch_ot(trans_0, trans_1, diffuse_mask)
         if self._trans_cfg.train_schedule == 'linear':
             trans_t = (1 - t[..., None]) * trans_0 + t[..., None] * trans_1
@@ -87,7 +87,8 @@ class Interpolant:
                 f'Unknown trans schedule {self._trans_cfg.train_schedule}')
         trans_t = _trans_diffuse_mask(trans_t, trans_1, diffuse_mask)
         return trans_t * res_mask[..., None]
-    
+
+    @torch.cuda.amp.autocast(False)
     def _batch_ot(self, trans_0, trans_1, res_mask):
         num_batch, num_res = trans_0.shape[:2]
         noise_idx, gt_idx = torch.where(
@@ -95,6 +96,7 @@ class Interpolant:
         batch_nm_0 = trans_0[noise_idx]
         batch_nm_1 = trans_1[gt_idx]
         batch_mask = res_mask[gt_idx]
+        
         aligned_nm_0, aligned_nm_1, _ = du.batch_align_structures(
             batch_nm_0, batch_nm_1, mask=batch_mask
         ) 

@@ -3,14 +3,14 @@ pretrained: null  #  load weights from here first
 validate: false # if true, only validate the model, don't train
 logger:
     # set to true to log to neptune.ai
-    neptune: true
+    neptune: false
     run_id: null
     # please change "test" to something unique to your task
     project: openprot/struct-merge
     # will log to workdir and neptune.ai with this name
     name: multiflow-dev
     # if not null, will duplicate stdout and stderr to workdir/{name}/{logfile}
-    logfile: std.out
+    logfile: null # std.out
     # if null, will log every epoch, otherwise every this number of steps
     train_log_freq: 100
     val_log_freq: null 
@@ -18,7 +18,7 @@ logger:
     save_freq: 1000
 trainer:
     accelerator: auto
-    devices: 4
+    devices: 1
     max_epochs: 1
     max_steps: 1000000
     enable_progress_bar: true
@@ -27,7 +27,7 @@ trainer:
     num_sanity_val_steps: 0
     gradient_clip_val: 1.0
     accumulate_grad_batches: 1
-    val_check_interval: 300000000
+    val_check_interval: 300000000 # never
     check_val_every_n_epoch: 1
     logger: false
     precision: 16-mixed
@@ -36,9 +36,10 @@ trainer:
 data: 
     num_workers: 8
     buffer: 1000
-    max_toks: 2048
+    max_sq_toks: 400000
+    max_toks: null
     batch: null
-    crop: 256
+    crop: 384
     seed: 137
 
 # These are the raw features which are expected to be supplied by the Datasets
@@ -69,17 +70,9 @@ datasets:
         clusters: /data/cb/scratch/datasets/pdb_npz/pdb_clusters
         blacklist: null 
         struct_mask: true
-    # afdb_genie:
-    #     type: AFDBDataset
-    #     path: /scratch/projects/cgai/openprot/data/afdb_rep_v4/afdb_rep_v4
-    #     annotations: /scratch/projects/cgai/openprot/data/afdb_rep_v4.pkl.gz
-    #     blacklist: null 
-    #     plddt_thresh: null 
-    #     index: /scratch/projects/cgai/openprot/afdbreps_l-256_plddt_80.txt
-    synthetic: 
+    multiflow: 
         type: MultiflowDataset
-        path: /data/cb/scratch/datasets/processed_synthetic
-        struct_mask: true
+        config_path: multiflow_config.yaml 
 tasks:
     Codesign:
         fraction: 1.0
@@ -95,23 +88,19 @@ tasks:
         struct_beta: [1, 2]
         struct_max_noise_prob: 0.0
         struct_uniform_prob: 1.0
+        rots: true
         
         seed: 137
         random_rot: true
-        rots: true
         sched_p: ${tracks.StructureTrack.t_emb_p}
         sigma_max: ${tracks.StructureTrack.t_emb_max}
         sigma_min: ${tracks.StructureTrack.t_emb_min}
         
         datasets:
-            synthetic:
-                fraction: 0.25
+            multiflow:
+                fraction: 1.0
                 start: 0
                 seed: 41
-            pdb:
-                fraction: 0.75
-                start: 0
-                seed: 42
             
 evals: 
     codesign_random:
@@ -141,7 +130,7 @@ tracks:
     StructureTrack: 
         loss_weight: 1.0
         embed_trans: false
-        embed_pairwise: false
+        embed_pairwise: true
         readout_trans: null
         copy_trans: trunk
         readout_pairwise: false
@@ -179,13 +168,14 @@ model: # custom args
     multiflow: false
     multiflow_cfg: multiflow_config.yaml
     multiflow_ckpt: null # ./weights/last.ckpt
+    ema: false
     checkpoint: false
     dim: 256
     pairwise_dim: 128
     heads: 4
     pairwise_heads: 4
     blocks: 32
-    dropout: 0.0
+    dropout: 0.2
     token_dropout: 0.0
 
     
@@ -200,6 +190,10 @@ model: # custom args
         start: 0
         end: 32
         interval: 4
+    update_blocks:
+        start: 3
+        end: 32
+        interval: 4
     
     trunk_relpos: false
     trunk_frame_update: true
@@ -212,6 +206,7 @@ model: # custom args
     position_bins: 32
     # whether non-pair blocks still have pair bias
     block_pair_bias: true 
+    block_pair_values: false
     pair_ffn: true
     pair_values: true
     pair_bias: true

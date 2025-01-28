@@ -13,6 +13,7 @@ from Bio import PDB
 from . import protein, residue_constants
 from glob import glob
 from pytorch_lightning.utilities import rank_zero_only
+from torch_scatter import scatter, scatter_add
 
 Rigid = ru.Rigid
 Protein = protein.Protein
@@ -330,7 +331,7 @@ def align_structures(
             raise ValueError("Mismatch in batch dimensions.")
 
     # Center structures at origin (takes care of translation alignment)
-    breakpoint()
+    
     batch_positions = center_zero(batch_positions, batch_indices)
     reference_positions = center_zero(reference_positions, batch_indices)
 

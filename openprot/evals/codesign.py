@@ -63,7 +63,9 @@ class CodesignEval(OpenProtEval):
                 "--print",
             ]
             
-            out = subprocess.run(cmd)  
+            out = subprocess.run(cmd, env=os.environ | {
+                'CUDA_VISIBLE_DEVICES': str(torch.cuda.current_device())
+            })  
             
             for i in idx:
                 

@@ -3,12 +3,12 @@ pretrained: null  #  load weights from here first
 validate: false # if true, only validate the model, don't train
 logger:
     # set to true to log to neptune.ai
-    neptune: false
+    neptune: true
     run_id: null
     # please change "test" to something unique to your task
     project: openprot/struct-merge
     # will log to workdir and neptune.ai with this name
-    name: multiflow-tune-400k
+    name: multiflow-tune-32+ot+accum
     # if not null, will duplicate stdout and stderr to workdir/{name}/{logfile}
     logfile: std.out
     # if null, will log every epoch, otherwise every this number of steps
@@ -18,7 +18,7 @@ logger:
     save_freq: 1000
 trainer:
     accelerator: auto
-    devices: 1
+    devices: 8
     max_epochs: 1
     max_steps: 1000000
     enable_progress_bar: true
@@ -26,7 +26,7 @@ trainer:
     limit_val_batches: 1.0
     num_sanity_val_steps: 0
     gradient_clip_val: 1.0
-    accumulate_grad_batches: 1
+    accumulate_grad_batches: 2
     val_check_interval: 3000
     check_val_every_n_epoch: 1
     logger: false
@@ -34,12 +34,12 @@ trainer:
 
 # custom args to OpenProtDataset and elsewhere
 data: 
-    num_workers: 8
+    num_workers: 1
     buffer: 1000
     max_sq_toks: 400000
     max_toks: null
     batch: null
-    crop: 512
+    crop: 384
     seed: 137
 
 # These are the raw features which are expected to be supplied by the Datasets
