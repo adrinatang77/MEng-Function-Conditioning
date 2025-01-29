@@ -211,9 +211,15 @@ class Interpolant:
             so3_t = t
             r3_t = t
             cat_t = t
+
+        so3_t = batch.get('so3_t', so3_t)
+        r3_t = batch.get('r3_t', r3_t)
+        cat_t = batch.get('cat_t', cat_t)
         noisy_batch['so3_t'] = so3_t
         noisy_batch['r3_t'] = r3_t
         noisy_batch['cat_t'] = cat_t
+
+    
 
         # Apply corruptions
         if self._trans_cfg.corrupt:

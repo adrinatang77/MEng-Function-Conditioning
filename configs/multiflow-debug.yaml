@@ -1,18 +1,18 @@
-ckpt: null
+ckpt: null # workdir/multiflow-dev-nipa/last.ckpt
 pretrained: null  #  load weights from here first
 validate: false # if true, only validate the model, don't train
 logger:
     # set to true to log to neptune.ai
-    neptune: false
+    neptune: true
     run_id: null
     # please change "test" to something unique to your task
     project: openprot/struct-merge
     # will log to workdir and neptune.ai with this name
-    name: multiflow-disguise
+    name: multiflow-dev-relpos
     # if not null, will duplicate stdout and stderr to workdir/{name}/{logfile}
-    logfile: null # std.out
+    logfile: std.out
     # if null, will log every epoch, otherwise every this number of steps
-    train_log_freq: 10
+    train_log_freq: 100
     val_log_freq: null 
     ckpt_freq: 50000000000
     save_freq: 1000
@@ -21,13 +21,13 @@ trainer:
     devices: 1
     max_epochs: 1
     max_steps: 1000000
-    enable_progress_bar: true
+    enable_progress_bar: false
     limit_train_batches: 1.0
     limit_val_batches: 1.0
     num_sanity_val_steps: 0
     gradient_clip_val: 1.0
     accumulate_grad_batches: 1
-    val_check_interval: 300000000 # never
+    val_check_interval: 3000
     check_val_every_n_epoch: 1
     logger: false
     precision: 16-mixed
@@ -88,7 +88,7 @@ tasks:
         struct_beta: [1, 2]
         struct_max_noise_prob: 0.0
         struct_uniform_prob: 1.0
-        rots: true
+        rots: false
         
         seed: 137
         random_rot: true
@@ -104,16 +104,20 @@ tasks:
             
 evals: 
     codesign_random:
-        type: MultiflowEval
+        type: CodesignEval
         num_samples: 100
         batch: 100
         sample_length: 128
         steps: 200
-        sched_p: ${tracks.StructureTrack.t_emb_p}
-        sigma_max: ${tracks.StructureTrack.t_emb_max}
-        sigma_min: ${tracks.StructureTrack.t_emb_min}
         struct:
+            type: ${tracks.StructureTrack.diffusion.type}
             temp_factor: 0.5
+            sde_weight: 0.0 # can't quite get this working reliably yet
+            data_sigma: ${tracks.StructureTrack.diffusion.data_sigma}
+            sched: log
+            sched_p: ${tracks.StructureTrack.t_emb_p}
+            sigma_max: ${tracks.StructureTrack.t_emb_max}
+            sigma_min: ${tracks.StructureTrack.t_emb_min}
         seq:
             temp: 0.1
             strategy: purity
@@ -121,6 +125,15 @@ evals:
             logits: standard
             adjust_unmasked: false
             replace_unmasked: false
+        # seq:
+        #     temp: 0.1
+        #     strategy: dplm
+        #     logits: gumbel
+        #     remask: 0.0
+        #     topk_temp: 0.0
+        #     allow_mutation: false
+        #     adjust_unmasked: false
+        #     replace_unmasked: false
         run_designability: true
 
         
@@ -140,12 +153,12 @@ tracks:
         t_emb_max: 1
         t_emb_min: 0
         embed_sigma: true
-        rots: true
+        rots: false
         
         losses:
             # lddt: 1.0
             # distogram: 0.3
-            mse: 2.0 # 0.225
+            mse: 1.0 # 0.225
         diffusion:
             type: GaussianFM
             data_sigma: 10
@@ -165,7 +178,7 @@ tracks:
 
 model: # custom args
     dplm_ckpt: null
-    multiflow: true
+    multiflow: false
     multiflow_cfg: multiflow_config.yaml
     multiflow_ckpt: null # ./weights/last.ckpt
     ema: false
@@ -179,7 +192,7 @@ model: # custom args
     token_dropout: 0.0
 
     
-    trunk_relpos_params: [32, 1, 1000]
+    trunk_relpos_params: [32, 0.1, 10]
     
     # topology of the network
     pair_blocks:
@@ -197,7 +210,9 @@ model: # custom args
     
     trunk_relpos: false
     trunk_frame_update: true
-    trunk_update_rots: true
+    trunk_update_rots: false
+    trunk_ipa_frames: false
+    embed_rots: false
     trunk_ipa: true
     
     pairwise_pos_emb: true

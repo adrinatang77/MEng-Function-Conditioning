@@ -5,7 +5,7 @@ from ..utils.prot_utils import make_ca_prot, write_ca_traj
 from ..utils.geometry import compute_lddt, rmsdalign, compute_rmsd
 from ..utils import residue_constants as rc
 from ..generate.sampler import OpenProtSampler
-from ..generate.structure import EDMDiffusionStepper
+from ..generate.structure import EDMDiffusionStepper, GaussianFMStepper
 from ..generate.sequence import SequenceUnmaskingStepper
 import numpy as np
 from ..tasks import StructurePrediction
@@ -31,9 +31,10 @@ class CodesignEval(OpenProtEval):
             seqres="A" * L,
             seq_mask=np.ones(L, dtype=np.float32),
             seq_noise=np.ones(L, dtype=np.float32),
-            struct_noise=np.ones(L, dtype=np.float32) * self.cfg.sigma_max,
+            struct_noise=np.ones(L, dtype=np.float32) * self.cfg.struct.sigma_max,
             atom37=np.zeros((L, 37, 3), dtype=np.float32),
             atom37_mask=np.ones((L, 37), dtype=np.float32),
+            residx=np.arange(L, dtype=np.float32),
         )
         return data
 
@@ -98,18 +99,33 @@ class CodesignEval(OpenProtEval):
         logger=None
     ):
 
-        def sched_fn(t):
-            p = self.cfg.sched_p
+        def edm_sched_fn(t):
+            p = self.cfg.struct.sched_p
+            sigma_max = self.cfg.struct.sigma_max
+            sigma_min = self.cfg.struct.sigma_min 
             return (
-                self.cfg.sigma_min ** (1 / p)
-                + (1-t) * (self.cfg.sigma_max ** (1 / p) - self.cfg.sigma_min ** (1 / p))
+                sigma_min ** (1 / p)
+                + (1-t) * (sigma_max ** (1 / p) - sigma_min ** (1 / p))
             ) ** p
 
+        def log_sched_fn(t):
+            exp = 10 ** (-2*t)
+            return (exp - 1e-2) / (1 - 1e-2) - 0.001
+
+        StructureStepper = {
+            'EDM': EDMDiffusionStepper,
+            'GaussianFM': GaussianFMStepper,
+        }[self.cfg.struct.type]
+        sched_fn = {
+            'EDM': edm_sched_fn,
+            'GaussianFM': log_sched_fn,
+        }[self.cfg.struct.type]
+        
         sampler = OpenProtSampler(schedules={
             'structure': sched_fn,
             'sequence': lambda t: 1-t
         }, steppers=[
-            EDMDiffusionStepper(self.cfg.struct),
+            StructureStepper(self.cfg.struct),
             SequenceUnmaskingStepper(self.cfg.seq)
         ])
         

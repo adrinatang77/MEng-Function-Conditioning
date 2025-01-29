@@ -291,7 +291,7 @@ class OpenProtTransformerBlock(nn.Module):
                 # rots = rigids.get_rots().get_rot_mats()
                 
                 vec, rotvec = self.linear_frame_update(x).split(3, dim=-1)
-                trans = trans + torch.einsum("blij,blj->bli", rots, vec)
+                trans = trans + vec # torch.einsum("blij,blj->bli", rots, vec)
                 rots = rots @ axis_angle_to_matrix(rotvec).mT
             else:
                 trans = trans + update
@@ -378,8 +378,23 @@ class OpenProtModel(nn.Module):
             self.pairwise_positional_embedding = RelativePosition(
                 cfg.position_bins, cfg.pairwise_dim
             )
+        default_block_args = dict(
+            dim=cfg.dim,
+            ff_expand=cfg.ff_expand,
+            heads=cfg.heads,
+            rope=cfg.rope,
+            custom_rope=cfg.custom_rope,
+            adaLN=cfg.trunk_adaLN,
+            pairwise_dim=cfg.pairwise_dim,
+            pair_bias=cfg.block_pair_bias,
+            pair_values=cfg.block_pair_values,
+            dropout=cfg.dropout,
+            token_dropout=cfg.token_dropout,
+        )
         pair_args = dict(
             pair_updates=True,
+            pairwise_dim=cfg.pairwise_dim,
+            pair_bias=cfg.pair_bias,
             pair_values=cfg.pair_values,
             pairwise_heads=cfg.pairwise_heads,
             pair_ffn=cfg.pair_ffn,
@@ -391,12 +406,15 @@ class OpenProtModel(nn.Module):
             relpos_values=cfg.trunk_relpos,
             ipa_attn=cfg.trunk_ipa,
             ipa_values=cfg.trunk_ipa,
-            ipa_frames=cfg.trunk_ipa,
-            frame_update=cfg.trunk_frame_update,
-            update_rots=cfg.trunk_update_rots,
+            ipa_frames=cfg.trunk_ipa_frames,
+            embed_rots=cfg.embed_rots,
             relpos_freqs=cfg.trunk_relpos_params[0],
             relpos_min=cfg.trunk_relpos_params[1],
             relpos_max=cfg.trunk_relpos_params[2],
+        )
+        update_args = dict(
+            frame_update=cfg.trunk_frame_update,
+            update_rots=cfg.trunk_update_rots,
         )
 
         self.blocks = nn.ModuleList()
@@ -406,25 +424,19 @@ class OpenProtModel(nn.Module):
         relpos_block_idx = list(
             range(cfg.relpos_blocks.start, cfg.relpos_blocks.end, cfg.relpos_blocks.interval)
         )
+        update_block_idx = list(
+            range(cfg.update_blocks.start, cfg.update_blocks.end, cfg.update_blocks.interval)
+        )
 
+        
         for i in range(cfg.blocks):
-
-            self.blocks.append(
-                OpenProtTransformerBlock(
-                    dim=cfg.dim,
-                    heads=cfg.heads,
-                    ff_expand=cfg.ff_expand,
-                    rope=cfg.rope,
-                    custom_rope=cfg.custom_rope,
-                    adaLN=cfg.trunk_adaLN,
-                    pairwise_dim=cfg.pairwise_dim,
-                    pair_bias=cfg.block_pair_bias,
-                    **(pair_args if i in pair_block_idx else {}),
-                    **(relpos_args if i in relpos_block_idx else {}),
-                    dropout=cfg.dropout,
-                    token_dropout=cfg.token_dropout,
-                )
+            block_args = (
+                default_block_args | 
+                (pair_args if i in pair_block_idx else {}) |
+                (relpos_args if i in relpos_block_idx else {}) |
+                (update_args if i in update_block_idx else {})
             )
+            self.blocks.append(OpenProtTransformerBlock(**block_args))
 
         if cfg.readout_trans_before_sm:
             if cfg.readout_adaLN:
@@ -455,7 +467,7 @@ class OpenProtModel(nn.Module):
         x_cond = inp.get("x_cond", None)
         postcond_fn = inp.get("postcond_fn", None)
         struct_mask = inp.get("struct_mask", None)
-
+        
         for i, block in enumerate(self.blocks):
 
             if block.pair_updates and self.cfg.checkpoint:

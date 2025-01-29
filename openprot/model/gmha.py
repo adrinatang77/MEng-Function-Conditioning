@@ -211,7 +211,7 @@ class GeometricMultiHeadAttention(nn.Module):
                 min_period=self.relpos_min,
             )
             relpos_emb = relpos_emb.view(B, L, L, -1)
-            relpos_emb = torch.where(square_mask, relpos_emb, 0.0)
+            relpos_emb = torch.where(square_mask[...,None], relpos_emb, 0.0)
 
         if self.relpos_attn:
             relpos_query = self.linear_relpos_query(x)
@@ -259,7 +259,7 @@ class GeometricMultiHeadAttention(nn.Module):
             # if relpos_mask is not None:
             #     out = out + torch.where(relpos_mask[...,None], self.w_r(relpos_out), 0.0)
             # else:
-            out = out + self.w_r(relpos_out)
+            out = out + self.w_r(relpos_out) * relpos_mask[...,None].float()
 
         return out
 

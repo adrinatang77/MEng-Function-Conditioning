@@ -140,14 +140,20 @@ class StructureTrack(OpenProtTrack):
             noisy_rotmats = noisy_rotmats.reshape(num_batch, num_res, 3, 3)
             rotmats_0 = torch.einsum("...ij,...jk->...ik", batch['rots'], noisy_rotmats)
             
-            so3_t = 1 - batch['rots_noise'] # convention flipped
+            so3_t = 1 - batch['rots_noise'][...,0:1] # convention flipped
             rotmats_t = so3_utils.geodesic_t(so3_t[..., None], batch['rots'], rotmats_0)
 
-            # identity = torch.eye(3, device=self._device)
-            # rotmats_t = (
-            #     rotmats_t * res_mask[..., None, None]
-            #     + identity[None, None] * (1 - res_mask[..., None, None])
-            # )
+            identity = torch.eye(3, device=rotmats_t.device)
+            rotmats_t = (
+                rotmats_t * batch['struct_mask'][...,None,None]
+                + identity[None,None] * (1 - batch['struct_mask'][...,None,None])
+            )
+            # def _rots_diffuse_mask(rotmats_t, rotmats_1, diffuse_mask):
+            #     return (
+            #         rotmats_t * diffuse_mask[..., None, None]
+            #         + rotmats_1 * (1 - diffuse_mask[..., None, None])
+            #     )
+            # rotmats_t = _rots_diffuse_mask(rotmats_t, batch['rots'], batch['struct_mask']
             noisy_batch['rots'] = rotmats_t
             target['gt_rots'] = batch['rots']
             target['noisy_rots'] = rotmats_t
@@ -199,6 +205,7 @@ class StructureTrack(OpenProtTrack):
             model.frame_mask_cond[None,None],
             t_emb,
         )
+        
         if self.cfg.embed_sigma:
             inp["x"] += torch.where(
                 embed_as_mask[...,None],
@@ -327,7 +334,7 @@ class StructureTrack(OpenProtTrack):
         t = target["rots_noise"]
         t = torch.clamp(t, min=clip_t)
         rots_vf_loss = (rots_vf_error ** 2).sum(-1) / (t**2 + eps) / 3
-
+        
         mask = target["struct_supervise"]
         
         if logger:
@@ -350,7 +357,7 @@ class StructureTrack(OpenProtTrack):
             t=t,
             mask=mask, # used for alignment
         ) / 3
-        mse = torch.clamp(mse, max=5)
+        mse = torch.clamp(2 * mse, max=5)
 
         if logger:
             logger.masked_log("struct/mse_loss", mse[-1], mask=mask)
