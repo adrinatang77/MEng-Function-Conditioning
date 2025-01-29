@@ -1,16 +1,16 @@
-ckpt: null # workdir/codesign-old-arch/last.ckpt
+ckpt: null # workdir/codesign-new-fix/last.ckpt
 pretrained: null  #  load weights from here first
 validate: false # if true, only validate the model, don't train
 logger:
     # set to true to log to neptune.ai
-    neptune: true
-    run_id: null # STRUC1-561
+    neptune: false
+    run_id: null # STRUC1-559
     # please change "test" to something unique to your task
     project: openprot/struct-merge
     # will log to workdir and neptune.ai with this name
-    name: codesign-old-arch
+    name: codesign-new-fix
     # if not null, will duplicate stdout and stderr to workdir/{name}/{logfile}
-    logfile: std.out
+    logfile: null # std.out
     # if null, will log every epoch, otherwise every this number of steps
     train_log_freq: 100
     val_log_freq: null 
@@ -18,10 +18,10 @@ logger:
     save_freq: 1000
 trainer:
     accelerator: auto
-    devices: 4
+    devices: 1
     max_epochs: 1
     max_steps: 1000000
-    enable_progress_bar: true
+    enable_progress_bar: false
     limit_train_batches: 1.0
     limit_val_batches: 1.0
     num_sanity_val_steps: 0
@@ -34,10 +34,10 @@ trainer:
 
 # custom args to OpenProtDataset and elsewhere
 data: 
-    num_workers: 8
+    num_workers: 0
     buffer: 1000
     max_sq_toks: null # 400000
-    max_toks: 8192
+    max_toks: 9182
     batch: null
     crop: 384
     seed: 137
@@ -63,23 +63,16 @@ features:
     
     
 datasets:
-    # pdb:
-    #     type: PDBDataset
-    #     path: /scratch/projects/cgai/openprot/data/pdb_npz
-    #     cutoff: 2018-05-01
-    #     clusters: /scratch/projects/cgai/openprot/data/pdb_clusters
-    #     blacklist: /scratch/projects/cgai/openprot/cameo_pdb_blacklist.tsv
-    # afdb_genie:
-    #     type: AFDBDataset
-    #     path: /scratch/projects/cgai/openprot/data/afdb_rep_v4/afdb_rep_v4
-    #     annotations: /scratch/projects/cgai/openprot/data/afdb_rep_v4.pkl.gz
-    #     blacklist: null 
-    #     plddt_thresh: null 
-    #     index: /scratch/projects/cgai/openprot/afdbreps_l-256_plddt_80.txt
+    pdb:
+        type: PDBDataset
+        path: /data/cb/scratch/datasets/pdb_npz
+        cutoff: 2018-05-01
+        clusters: /data/cb/scratch/datasets/pdb_npz/pdb_clusters
+        blacklist: null 
+        struct_mask: true
     multiflow: 
         type: MultiflowDataset
         config_path: multiflow_config.yaml 
-        
 tasks:
     Codesign:
         fraction: 1.0
@@ -118,10 +111,10 @@ evals:
         steps: 200
         struct:
             type: ${tracks.StructureTrack.diffusion.type}
-            temp_factor: 0.5
-            sde_weight: 0.0 # can't quite get this working reliably yet
+            temp_factor: 1.0
+            sde_weight: 3.0 # can't quite get this working reliably yet
             data_sigma: ${tracks.StructureTrack.diffusion.data_sigma}
-            sched: log
+            sched: linear
             sched_p: ${tracks.StructureTrack.t_emb_p}
             sigma_max: ${tracks.StructureTrack.t_emb_max}
             sigma_min: ${tracks.StructureTrack.t_emb_min}
@@ -132,8 +125,18 @@ evals:
             logits: standard
             adjust_unmasked: false
             replace_unmasked: false
-
+        # seq:
+        #     temp: 0.1
+        #     strategy: dplm
+        #     logits: gumbel
+        #     remask: 0.0
+        #     topk_temp: 0.0
+        #     allow_mutation: false
+        #     adjust_unmasked: false
+        #     replace_unmasked: false
         run_designability: true
+
+        
         # order: random
 tracks:
     # register tracks here
@@ -141,8 +144,8 @@ tracks:
         loss_weight: 1.0
         embed_trans: true
         embed_pairwise: false
-        readout_trans: false
-        copy_trans: sm
+        readout_trans: trunk
+        copy_trans: false
         readout_pairwise: false
         postcondition: true
         int_loss_weight: 0.5
@@ -162,6 +165,7 @@ tracks:
             data_sigma: 10
             aligned_loss: false
             train_align: false
+        
     SequenceTrack:
         esm: null # esm2_3B # esm2_650M # esm2_8M_270K
         loss_weight: 1.0 
@@ -171,6 +175,7 @@ tracks:
         sup_all: true
         tied_weights: false
         embed_t: false
+
 
 model: # custom args
     dplm_ckpt: null
@@ -187,12 +192,14 @@ model: # custom args
     dropout: 0.0
     token_dropout: 0.0
 
-    trunk_relpos_params: [32, 1, 1000]
+    
+    trunk_relpos_params: [32, 0.1, 10]
+    
     # topology of the network
     pair_blocks:
         start: 0
         end: 0
-        interval: 1
+        interval: 4
     relpos_blocks:
         start: 0
         end: 0
@@ -201,55 +208,54 @@ model: # custom args
         start: 0
         end: 0
         interval: 4
+    
     trunk_relpos: false
     trunk_frame_update: false
     trunk_update_rots: false
     trunk_ipa_frames: false
     embed_rots: false
     trunk_ipa: false
-
+    
     pairwise_pos_emb: false
+    
     ff_expand: 4
     position_bins: 32
-    
-    block_pair_bias: false
+    # whether non-pair blocks still have pair bias
+    block_pair_bias: false 
     block_pair_values: false
-    
     pair_ffn: true
-    pair_values: false
+    pair_values: true
     pair_bias: true
     pair_ff_expand: 4
     tri_mul: false
     rope: false
     custom_rope: true
+    
 
-    struct_module: true
+    ### struct module args
+    struct_module: false
     sm_relpos: [32, 1, 100]
-    
     move_x_to_xcond: true
-    
     readout_trans_before_sm: false
     zero_frames_before_ipa: true
-    
     ipa_blocks: 8
     separate_ipa_blocks: false
     ipa_pair_values: false
     ipa_pair_bias: false
-    detach_trans: true
-    
+    detach_trans: true    
     ipa_relpos: true
     ipa_nipa: false
     ipa_rope: false
     ipa_frame_update: true
     zero_x_before_ipa: false
     trans_rescale: false
-    
+
+    ## adaLN args
     trunk_adaLN: true
-    sm_adaLN: true
+    sm_adaLN: false
     readout_adaLN: true
     
-
-
+    
 
 optimizer:
     type: AdamW

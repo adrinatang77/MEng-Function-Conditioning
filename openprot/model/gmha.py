@@ -150,9 +150,12 @@ class GeometricMultiHeadAttention(nn.Module):
 
         self.dropout = nn.Dropout(dropout)
 
-    def forward(self, x, z, mask, trans, rots, relpos_mask=None):
+    def forward(self, x, z, mask, trans, rots, relpos_mask=None, idx=None):
 
         B, L, D = x.shape
+        dev = x.device
+        if idx is None:
+            idx = torch.arange(L, device=dev)
 
         if self.embed_rots:
             x = x + self.linear_rots(rots.view(B, L, -1))
@@ -164,13 +167,13 @@ class GeometricMultiHeadAttention(nn.Module):
         key = self.w_k(x).view(B, L, self.heads, -1).transpose(1, 2)
 
         if self.rope:
-            freqs_cis = rope.compute_freqs_cis(D // self.heads, L, device=x.device)
+            raise Exception("this rope hasn't been used in a while")
+            freqs_cis = rope.compute_freqs_cis(D // self.heads, L, device=dev)
             query, key = rope.apply_rotary_emb(query, key, freqs_cis)
 
         elif self.custom_rope:
-            pos = torch.arange(L, device=query.device)
-            query = rotary_emb(query, pos, query.shape[-1] // 2, 10000, 1)
-            key = rotary_emb(key, pos, key.shape[-1] // 2, 10000, 1)
+            query = rotary_emb(query, idx[:,None], query.shape[-1] // 2, 10000, 1)
+            key = rotary_emb(key, idx[:,None], key.shape[-1] // 2, 10000, 1)
 
         elif self.relpos_rope:
             query = rope_3d(
@@ -189,7 +192,7 @@ class GeometricMultiHeadAttention(nn.Module):
         attn = query @ key.mT / math.sqrt(D / self.heads)  # B H L L
 
         if mask is None:
-            mask = torch.ones(B, L, D, dtype=bool, device=x.device)
+            mask = torch.ones(B, L, D, dtype=bool, device=dev)
         
         if relpos_mask is not None:
             square_mask = relpos_mask[:,None,:] & relpos_mask[:,:,None]
@@ -235,9 +238,9 @@ class GeometricMultiHeadAttention(nn.Module):
                 attn, value, trans[:, None], max_period=self.relpos_max, min_period=self.relpos_min
             )
         elif self.custom_rope:
-            value = rotary_emb(value, pos, value.shape[-1] // 2, 10000, 1)
+            value = rotary_emb(value, idx[:,None], value.shape[-1] // 2, 10000, 1)
             out = attn @ value
-            out = rotary_emb(out, -pos, out.shape[-1] // 2, 10000, 1)
+            out = rotary_emb(out, -idx[:,None], out.shape[-1] // 2, 10000, 1)
         else:
             out = attn @ value
         out = out.transpose(1, 2).reshape(B, L, D)

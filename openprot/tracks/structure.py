@@ -218,7 +218,7 @@ class StructureTrack(OpenProtTrack):
             dmat = coords[...,None,:,:] - coords[...,None,:]
             dmat = torch.square(dmat).sum(-1).sqrt()
             inp["z"] = inp.get("z", 0) + model.pairwise_in(
-                sinusoidal_embedding(dmat, model.cfg.pairwise_dim // 2, 100, 1)
+                sinusoidal_embedding(dmat, model.cfg.pairwise_dim // 2, 10.0, 0.1)
             ) * sq_mask.float()[...,None]
             
 
@@ -236,8 +236,9 @@ class StructureTrack(OpenProtTrack):
 
     def predict(self, model, inp, out, readout):
         if self.cfg.readout_trans == "trunk":
-            readout["trans"] = model.trans_out(out["x"])[None]
+            readout["trans"] = inp["postcond_fn"](model.trans_out(out["x"]))[None]
         elif self.cfg.readout_trans == "sm":
+            raise Exception("check")
             if model.cfg.trunk_adaLN:
                 readout["trans"] = model.trans_out(out["sm"]["x"], inp["x_cond"])
             else:
@@ -342,14 +343,14 @@ class StructureTrack(OpenProtTrack):
             
         return rots_vf_loss * mask
         
-    def compute_mse_loss(self, readout, target, logger=None, eps=1e-5, clip_t=0.1):
+    def compute_mse_loss(self, readout, target, logger=None, eps=1e-5):
 
         pred = readout["trans"]
         gt = target["struct"]
         
         mask = target["struct_supervise"] # weighted mse!
         t = target["struct_noise"]
-        t = torch.clamp(t, min=clip_t)
+        t = torch.clamp(t, min=self.cfg.clip_t)
         
         mse = self.diffusion.compute_loss(
             pred=pred,

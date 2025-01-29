@@ -13,10 +13,12 @@ parser.add_argument('--outdir', type=str, default='/tmp')
 parser.add_argument('--fasta', type=str, default=None)
 parser.add_argument('--dir', type=str, default=None)
 parser.add_argument('--print', action='store_true')
+parser.add_argument('--device', type=int, default=0)
 args = parser.parse_args()
 
 print(args)
 
+torch.cuda.set_device(args.device)
 model = esm.pretrained.esmfold_v1()
 model = model.eval().cuda()
 

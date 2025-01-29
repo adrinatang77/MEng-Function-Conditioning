@@ -236,7 +236,7 @@ class OpenProtTransformerBlock(nn.Module):
             torch.nn.init.zeros_(self.sequence_to_pair.o_proj.weight)
             torch.nn.init.zeros_(self.sequence_to_pair.o_proj.bias)
 
-    def forward(self, x, z, trans, mask, x_cond=None, postcond_fn=lambda x: x, relpos_mask=None, rots=None):
+    def forward(self, x, z, trans, mask, x_cond=None, postcond_fn=lambda x: x, relpos_mask=None, rots=None, idx=None):
 
         ### no pair2sequence
 
@@ -259,6 +259,7 @@ class OpenProtTransformerBlock(nn.Module):
                 trans=postcond_fn(trans),
                 rots=rots,
                 relpos_mask=relpos_mask,
+                idx=idx,
             ),
             gate_mha,
         ))
@@ -337,7 +338,7 @@ class StructureModule(nn.Module):
                 nn.LayerNorm(cfg.dim), nn.Linear(cfg.dim, cfg.dim)
             )
 
-    def forward(self, x, z, trans, mask, x_cond, postcond_fn, relpos_mask=None):
+    def forward(self, x, z, trans, mask, x_cond, postcond_fn, relpos_mask=None, idx=None):
             
         if self.cfg.move_x_to_xcond:
             x_cond = x_cond + self.x_cond_linear(x)
@@ -359,7 +360,7 @@ class StructureModule(nn.Module):
             else:
                 block = self.ipa_block
 
-            x, z, trans, rots = block(x, z, trans, mask, x_cond, postcond_fn, relpos_mask=relpos_mask)
+            x, z, trans, rots = block(x, z, trans, mask, x_cond, postcond_fn, relpos_mask=relpos_mask, idx=idx)
             all_trans.append(trans)
             all_x.append(x)
 
@@ -476,10 +477,10 @@ class OpenProtModel(nn.Module):
                     block, x, z, trans, mask, x_cond, use_reentrant=False
                 )
             else:
-                x, z, trans, rots = block(x, z, trans, mask, x_cond, relpos_mask=struct_mask, rots=rots)
+                x, z, trans, rots = block(x, z, trans, mask, x_cond, relpos_mask=struct_mask, rots=rots, idx=residx)
 
         if self.cfg.struct_module:
-            sm_out = self.structure_module(x, z, trans, mask, x_cond, postcond_fn=postcond_fn)
+            sm_out = self.structure_module(x, z, trans, mask, x_cond, postcond_fn=postcond_fn, relpos_mask=struct_mask, idx=residx)
         else:
             sm_out = None
 

@@ -18,7 +18,7 @@ logger:
     save_freq: 1000
 trainer:
     accelerator: auto
-    devices: 1
+    devices: 8
     max_epochs: 1
     max_steps: 1000000
     enable_progress_bar: false
@@ -208,12 +208,12 @@ model: # custom args
         end: 32
         interval: 4
     
-    trunk_relpos: false
+    trunk_relpos: true
     trunk_frame_update: true
     trunk_update_rots: false
     trunk_ipa_frames: false
     embed_rots: false
-    trunk_ipa: true
+    trunk_ipa: false
     
     pairwise_pos_emb: true
     

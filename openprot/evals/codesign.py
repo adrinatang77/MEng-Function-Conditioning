@@ -62,11 +62,12 @@ class CodesignEval(OpenProtEval):
                 "--dir",
                 f"{savedir}/rank{rank}",
                 "--print",
+                "--device",
+                str(torch.cuda.current_device())
             ]
-            
-            out = subprocess.run(cmd, env=os.environ | {
-                'CUDA_VISIBLE_DEVICES': str(torch.cuda.current_device())
-            })  
+            out = subprocess.run(cmd) #, env=os.environ | {
+            #     'CUDA_VISIBLE_DEVICES': str(torch.cuda.current_device())
+            # })  
             
             for i in idx:
                 
@@ -116,10 +117,12 @@ class CodesignEval(OpenProtEval):
             'EDM': EDMDiffusionStepper,
             'GaussianFM': GaussianFMStepper,
         }[self.cfg.struct.type]
-        sched_fn = {
-            'EDM': edm_sched_fn,
-            'GaussianFM': log_sched_fn,
-        }[self.cfg.struct.type]
+        if self.cfg.struct.type == 'EDM':
+            sched_fn = edm_sched_fn
+        elif self.cfg.struct.sched == 'linear':
+            sched_fn = lambda t: 1-t
+        else:
+            sched_fn = log_sched_fn
         
         sampler = OpenProtSampler(schedules={
             'structure': sched_fn,
