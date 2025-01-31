@@ -167,6 +167,6 @@ class SequenceUnmaskingStepper:
 
         seq = "".join([rc.restypes_with_x[aa] for aa in batch["aatype"][0]])
         seq = seq.replace("X", "-")
-        print(seq)
+        # print(seq)
         return batch
         

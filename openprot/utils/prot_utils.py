@@ -23,8 +23,10 @@ def write_ca_traj(prot, traj):
 
 def make_ca_prot(coords, aatype, mask=None):
     L = len(coords)
+    if aatype is None:
+        aatype = 'A'*L
     if type(aatype) is str:
-        aatype = seqres_to_aatype(aatype)
+        aatype = np.array(seqres_to_aatype(aatype))
     prot = protein.Protein(
         atom_positions=np.zeros((L, 37, 3)),
         aatype=aatype,
@@ -41,7 +43,12 @@ def make_ca_prot(coords, aatype, mask=None):
     return prot
 
 
-def compute_tmscore(coords1, coords2, seq1, seq2, mask1=None, mask2=None):
+def compute_tmscore(
+    coords1, coords2, 
+    seq1=None, seq2=None,
+    mask1=None, mask2=None, 
+    seq=False
+):
 
     path1 = tempfile.NamedTemporaryFile()
     prot1 = make_ca_prot(coords1, seq1, mask=mask1)
@@ -50,10 +57,11 @@ def compute_tmscore(coords1, coords2, seq1, seq2, mask1=None, mask2=None):
     path2 = tempfile.NamedTemporaryFile()
     prot2 = make_ca_prot(coords2, seq2, mask=mask2)
     open(path2.name, "w").write(protein.to_pdb(prot2))
+    cmd = ["TMscore"]
+    if seq: cmd += ["-seq"]
+    cmd += [path1.name, path2.name]    
     try:
-        out = subprocess.check_output(
-            ["TMscore", "-seq", path1.name, path2.name], stderr=subprocess.STDOUT
-        )
+        out = subprocess.check_output(cmd, stderr=subprocess.STDOUT)
     except subprocess.CalledProcessError as exc:
         print("Status : FAIL", exc.returncode, exc.output)
 

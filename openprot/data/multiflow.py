@@ -22,11 +22,9 @@ class MultiflowDataset(OpenProtDataset):
 
     def __getitem__(self, idx):
         _, clu = self.clusters[idx]
-        idx = np.random.choice(clu.index)
-        item = self.dataset[idx]
+        i = np.random.choice(clu['index'])
+        item = self.dataset[i]
         seqres = aatype_to_seqres(item['aatypes_1'])
-        breakpoint()
-        print(idx, item['pdb_name'])
         return self.make_data(
             name=item['pdb_name'],
             seqres=aatype_to_seqres(item['aatypes_1']),

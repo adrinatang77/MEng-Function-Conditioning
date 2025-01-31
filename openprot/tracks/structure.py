@@ -164,12 +164,12 @@ class StructureTrack(OpenProtTrack):
 
     def embed(self, model, batch, inp):
 
-        tmax = self.cfg.t_emb_max
+        tmax = 1
         embed_as_mask = (batch["struct_noise"] >= tmax) | ~batch["struct_mask"].bool()
 
         coords = torch.where(
             embed_as_mask[...,None],
-            tmax * torch.randn_like(batch["struct"]),
+            torch.zeros_like(batch["struct"]),
             batch["struct"]
         )
         noise = torch.where(
@@ -191,15 +191,8 @@ class StructureTrack(OpenProtTrack):
             model.frame_mask[None,None],
             0.0,
         )
-
-        # embed sigma
-        def sigma_transform(noise_level):
-            t_emb = noise_level ** (1/self.cfg.t_emb_p)
-            t_emb = t_emb / self.cfg.t_emb_max ** (1/self.cfg.t_emb_p)
-            return t_emb
-            
-        t_emb = sigma_transform(noise) 
-        t_emb = sinusoidal_embedding(t_emb, model.cfg.dim // 2, 1, 0.01).float()
+    
+        t_emb = sinusoidal_embedding(noise, model.cfg.dim // 2, 1, 0.01).float()
         inp["x_cond"] += torch.where(
             embed_as_mask[...,None],
             model.frame_mask_cond[None,None],

@@ -243,7 +243,8 @@ class BaseDataset(Dataset):
     
     def __getitem__(self, row_idx):
         # Process data example.
-        csv_row = self.csv.iloc[row_idx]
+        
+        csv_row = self.csv.iloc[row_idx] # needs to be LOC
         
         feats = self.process_csv_row(csv_row)
 

@@ -59,82 +59,10 @@ class GaussianFM(Diffusion):
     def compute_loss(self, pred, target, t, mask, eps=1e-6):
         return torch.square(pred - target).sum(-1) / (t**2+eps) / self.cfg.data_sigma**2
 
-    """
-    def inference(
-        self,
-        model,
-        cfg=None,
-        seed=None,
-        mask=None,
-        shape=None,
-        device=None,
-        return_traj=False,
-    ):
-
-        if seed is not None:
-            x = seed
-        else:
-            if mask is not None:
-                shape = list(mask.shape) + [3]
-                device = mask.device
-            x = torch.randn(shape, device=device) * self.cfg.prior_sigma
-
-        out = [x]
-        if cfg.sched_type == "linear":
-            sched = np.linspace(1, 0, cfg.nsteps + 1)
-        elif cfg.sched_type == "log":
-            sched = np.logspace(0, -2, cfg.nsteps + 1)
-            sched = (sched - sched.min()) / (sched.max() - sched.min())
-
-        preds = []
-        for t2, t1 in zip(sched[:-1], sched[1:]):
-            dt = t2 - t1
-
-            if self.cfg.prediction == "velocity":
-                v = model(x, t2)
-            elif self.cfg.prediction == "target":
-                x0 = model(x, t2)
-
-                if self.cfg.inf_align:
-                    x0 = rmsdalign(x, x0, mask)
-
-                v = (x0 - x) / t2
-
-            preds.append(x + v * t2)
-
-            # score = ((1-t)x0 - x_t) / t^2 * sigma^2
-
-            # x0 = xt + t*v
-            # score = (xt + t*v - t*xt - t^2*v - xt) / t^2 * sigma^2
-            #       = v - xt - t*v / t * sigma^2
-            #       = = (1-t)*v - xt / t * sigma^2
-
-            s = ((1 - t2) * v - x) / t2 / self.cfg.prior_sigma**2
-
-            noise = torch.randn_like(x)
-
-            g = cfg.sde_weight * t2 * self.cfg.prior_sigma**2
-
-            g *= sigmoid((t2 - cfg.sde_cutoff_time) / cfg.sde_cutoff_width)
-
-            gamma = cfg.temp_factor
-            dx = v * dt + g * s * dt + np.sqrt(2 * g * gamma * dt) * noise
-
-            x = x + dx
-            out.append(x)
-
-        if return_traj:
-            return torch.stack(out), torch.stack(preds)
-        else:
-            return x
-
-    """
-
-
 class EDMDiffusion(Diffusion):
 
-    def get_sigma(self, t):
-        return t 
+    def get_sigma(self, t, eps=1e-4):
+        return t / (1-t+eps) * self.cfg.data_sigma
 
     def add_noise(self, pos, t, mask=None):
 
@@ -152,6 +80,7 @@ class EDMDiffusion(Diffusion):
         return inp / (self.cfg.data_sigma**2 + sigma**2) ** 0.5
 
     def postcondition(self, inp, out, t):
+        
         sigma = self.get_sigma(t)[..., None]
         cskip = self.cfg.data_sigma**2 / (self.cfg.data_sigma**2 + sigma**2)
         cout = sigma * self.cfg.data_sigma / (self.cfg.data_sigma**2 + sigma**2) ** 0.5
@@ -163,7 +92,8 @@ class EDMDiffusion(Diffusion):
         if self.cfg.aligned_loss:
             target = rmsdalign(pred.detach(), target, mask)
             target = torch.where(mask[..., None].bool(), target, 0.0)
-
+        
+        
         sigma = self.get_sigma(t)
         num = sigma**2 + self.cfg.data_sigma**2
         denom = (sigma * self.cfg.data_sigma) ** 2

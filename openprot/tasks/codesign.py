@@ -55,15 +55,6 @@ class Codesign(OpenProtTask):
 
         L = len(data["seqres"])
         
-        ##############
-
-        p = self.cfg.sched_p
-        noise_level = (
-            self.cfg.sigma_min ** (1 / p)
-            + noise_level * (self.cfg.sigma_max ** (1 / p) - self.cfg.sigma_min ** (1 / p))
-        ) ** p
-        #####
-        
         data["struct_noise"] = np.ones(L, dtype=np.float32) * noise_level
         data["struct_weight"] = np.ones(L, dtype=np.float32) * self.cfg.struct_weight
 

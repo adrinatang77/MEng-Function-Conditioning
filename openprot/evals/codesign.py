@@ -1,7 +1,7 @@
 from .eval import OpenProtEval
 # import foldcomp
 from ..utils import protein
-from ..utils.prot_utils import make_ca_prot, write_ca_traj
+from ..utils.prot_utils import make_ca_prot, write_ca_traj, compute_tmscore
 from ..utils.geometry import compute_lddt, rmsdalign, compute_rmsd
 from ..utils import residue_constants as rc
 from ..generate.sampler import OpenProtSampler
@@ -31,7 +31,7 @@ class CodesignEval(OpenProtEval):
             seqres="A" * L,
             seq_mask=np.ones(L, dtype=np.float32),
             seq_noise=np.ones(L, dtype=np.float32),
-            struct_noise=np.ones(L, dtype=np.float32) * self.cfg.struct.sigma_max,
+            struct_noise=np.ones(L, dtype=np.float32) * self.cfg.struct.max_t,
             atom37=np.zeros((L, 37, 3), dtype=np.float32),
             atom37_mask=np.ones((L, 37), dtype=np.float32),
             residx=np.arange(L, dtype=np.float32),
@@ -42,11 +42,13 @@ class CodesignEval(OpenProtEval):
         self, rank=0, world_size=1, device=None, savedir=".", logger=None
     ):
 
+        
+
+        idx = list(range(rank, len(self), world_size))
+        os.makedirs(f"{savedir}/rank{rank}", exist_ok=True)
+        
         if self.cfg.run_designability:
             torch.cuda.empty_cache()
-
-            idx = list(range(rank, len(self), world_size))
-            os.makedirs(f"{savedir}/rank{rank}", exist_ok=True)
             for i in idx:
                 cmd = ['cp', f"{savedir}/sample{i}.fasta", f"{savedir}/rank{rank}"]
                 subprocess.run(cmd)
@@ -65,9 +67,7 @@ class CodesignEval(OpenProtEval):
                 "--device",
                 str(torch.cuda.current_device())
             ]
-            out = subprocess.run(cmd) #, env=os.environ | {
-            #     'CUDA_VISIBLE_DEVICES': str(torch.cuda.current_device())
-            # })  
+            out = subprocess.run(cmd) 
             
             for i in idx:
                 
@@ -88,7 +88,32 @@ class CodesignEval(OpenProtEval):
                     logger.log(f"{self.cfg.name}/sclddt", lddt)
                     logger.log(f"{self.cfg.name}/scrmsd", rmsd)
                     logger.log(f"{self.cfg.name}/scrmsd<2", (rmsd < 2).float())
+
+        if self.cfg.run_diversity:
+            tm_arr = np.zeros((len(self), len(self)))
+            for i in idx:
+                with open(f"{savedir}/sample{i}.pdb") as f:
+                    prot1 = protein.from_pdb_string(f.read())
+                for j in range(len(self)):
+                    with open(f"{savedir}/sample{j}.pdb") as f:
+                        prot2 = protein.from_pdb_string(f.read())
+                    tm_arr[i,j] = compute_tmscore(  # second is reference
+                        coords1=prot1.atom_positions[:,1],
+                        coords2=prot2.atom_positions[:,1],
+                    )['tm']
+            np.save(f"{savedir}/rank{rank}/tmscores.npy", tm_arr)
+            if world_size > 1:
+                torch.distributed.barrier()
                 
+            # every rank has to compute it, otherwise error
+            tm_arr = np.zeros((len(self), len(self)))
+            for r in range(world_size):
+                tm_arr += np.load(f"{savedir}/rank{r}/tmscores.npy")
+            eigvals = np.linalg.eigvals(tm_arr / len(self))
+            vendi = np.e**np.nansum(-eigvals * np.log(eigvals))
+            if logger is not None:
+                logger.log(f"{self.cfg.name}/vendi", vendi)
+                    
 
     def run_batch(
         self,
@@ -100,27 +125,27 @@ class CodesignEval(OpenProtEval):
         logger=None
     ):
 
-        def edm_sched_fn(t):
-            p = self.cfg.struct.sched_p
-            sigma_max = self.cfg.struct.sigma_max
-            sigma_min = self.cfg.struct.sigma_min 
-            return (
-                sigma_min ** (1 / p)
-                + (1-t) * (sigma_max ** (1 / p) - sigma_min ** (1 / p))
-            ) ** p
+        # def edm_sched_fn(t):
+        #     p = self.cfg.struct.sched_p
+        #     sigma_max = self.cfg.struct.sigma_max
+        #     sigma_min = self.cfg.struct.sigma_min 
+        #     return (
+        #         sigma_min ** (1 / p)
+        #         + (1-t) * (sigma_max ** (1 / p) - sigma_min ** (1 / p))
+        #     ) ** p
 
-        def log_sched_fn(t):
-            exp = 10 ** (-2*t)
-            return (exp - 1e-2) / (1 - 1e-2) - 0.001
-
+        
         StructureStepper = {
-            'EDM': EDMDiffusionStepper,
+            'EDMDiffusion': EDMDiffusionStepper,
             'GaussianFM': GaussianFMStepper,
         }[self.cfg.struct.type]
-        if self.cfg.struct.type == 'EDM':
-            sched_fn = edm_sched_fn
-        elif self.cfg.struct.sched == 'linear':
-            sched_fn = lambda t: 1-t
+        max_t = self.cfg.struct.max_t
+        def log_sched_fn(t):
+            exp = 10 ** (-2*t)
+            return max_t * (exp - 1e-2) / (1 - 1e-2)
+
+        if self.cfg.struct.sched == 'linear':
+            sched_fn = lambda t: max_t * (1-t)
         else:
             sched_fn = log_sched_fn
         
@@ -142,7 +167,7 @@ class CodesignEval(OpenProtEval):
         for i in range(B):
             prot = make_ca_prot(
                 sample['struct'][i].cpu().numpy(),
-                batch["aatype"][i].cpu().numpy(),
+                sample["aatype"][i].cpu().numpy(),
                 batch["struct_mask"][i].cpu().numpy(),
             )
     

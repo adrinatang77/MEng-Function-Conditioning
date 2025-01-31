@@ -98,6 +98,7 @@ class StructurePredictionEval(OpenProtEval):
             seq2=aatype,
             mask1=None,
             mask2=batch["struct_mask"].cpu().numpy()[0],
+            seq=True
         )
 
         rmsd = compute_rmsd(batch["struct"], coords, batch["struct_mask"])

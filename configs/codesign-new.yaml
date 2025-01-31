@@ -1,16 +1,16 @@
-ckpt: null # workdir/codesign-new-fix/last.ckpt
+ckpt: null
 pretrained: null  #  load weights from here first
 validate: false # if true, only validate the model, don't train
 logger:
     # set to true to log to neptune.ai
-    neptune: false
+    neptune: true
     run_id: null # STRUC1-559
     # please change "test" to something unique to your task
     project: openprot/struct-merge
     # will log to workdir and neptune.ai with this name
-    name: codesign-new-fix
+    name: codesign-pdb+dropout+nosupall
     # if not null, will duplicate stdout and stderr to workdir/{name}/{logfile}
-    logfile: null # std.out
+    logfile: std.out
     # if null, will log every epoch, otherwise every this number of steps
     train_log_freq: 100
     val_log_freq: null 
@@ -18,7 +18,7 @@ logger:
     save_freq: 1000
 trainer:
     accelerator: auto
-    devices: 1
+    devices: 4
     max_epochs: 1
     max_steps: 1000000
     enable_progress_bar: false
@@ -34,10 +34,10 @@ trainer:
 
 # custom args to OpenProtDataset and elsewhere
 data: 
-    num_workers: 0
+    num_workers: 8
     buffer: 1000
     max_sq_toks: null # 400000
-    max_toks: 9182
+    max_toks: 8192
     batch: null
     crop: 384
     seed: 137
@@ -72,7 +72,7 @@ datasets:
         struct_mask: true
     multiflow: 
         type: MultiflowDataset
-        config_path: multiflow_config.yaml 
+        config_path: multiflow_config-pdb.yaml 
 tasks:
     Codesign:
         fraction: 1.0
@@ -92,9 +92,6 @@ tasks:
         
         seed: 137
         random_rot: true
-        sched_p: ${tracks.StructureTrack.t_emb_p}
-        sigma_max: ${tracks.StructureTrack.t_emb_max}
-        sigma_min: ${tracks.StructureTrack.t_emb_min}
         
         datasets:
             multiflow:
@@ -111,13 +108,11 @@ evals:
         steps: 200
         struct:
             type: ${tracks.StructureTrack.diffusion.type}
-            temp_factor: 1.0
-            sde_weight: 3.0 # can't quite get this working reliably yet
+            temp_factor: 0.7
+            sde_weight: 3.0
             data_sigma: ${tracks.StructureTrack.diffusion.data_sigma}
             sched: linear
-            sched_p: ${tracks.StructureTrack.t_emb_p}
-            sigma_max: ${tracks.StructureTrack.t_emb_max}
-            sigma_min: ${tracks.StructureTrack.t_emb_min}
+            max_t: 0.95
         seq:
             temp: 0.1
             strategy: purity
@@ -126,7 +121,7 @@ evals:
             adjust_unmasked: false
             replace_unmasked: false
         # seq:
-        #     temp: 0.1
+        #     temp: 1.0
         #     strategy: dplm
         #     logits: gumbel
         #     remask: 0.0
@@ -135,6 +130,7 @@ evals:
         #     adjust_unmasked: false
         #     replace_unmasked: false
         run_designability: true
+        run_diversity: true
 
         
         # order: random
@@ -149,9 +145,6 @@ tracks:
         readout_pairwise: false
         postcondition: true
         int_loss_weight: 0.5
-        t_emb_p: 1
-        t_emb_max: 1
-        t_emb_min: 0
         embed_sigma: false
         rots: false
         clip_t: 0.0
@@ -172,7 +165,7 @@ tracks:
         mask_rate: 1.0
         rand_rate: 0.0
         esm_lm_head: true
-        sup_all: true
+        sup_all: false
         tied_weights: false
         embed_t: false
 
@@ -189,7 +182,7 @@ model: # custom args
     heads: 4
     pairwise_heads: 4
     blocks: 32
-    dropout: 0.0
+    dropout: 0.2
     token_dropout: 0.0
 
     
