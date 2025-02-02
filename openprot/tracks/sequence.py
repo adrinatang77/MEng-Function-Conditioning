@@ -198,7 +198,7 @@ class SequenceTrack(OpenProtTrack):
 
     def add_modules(self, model):
         model.seq_embed = nn.Embedding(NUM_TOKENS, model.cfg.dim)
-        # torch.nn.init.normal_(model.seq_embed.weight, std=0.02)
+        torch.nn.init.normal_(model.seq_embed.weight, std=0.02)
         if self.cfg.esm_lm_head:
             model.seq_out = EsmLMHead(model.cfg.dim, NUM_TOKENS)
             if self.cfg.tied_weights:

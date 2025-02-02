@@ -193,9 +193,11 @@ class GeometricMultiHeadAttention(nn.Module):
 
         if mask is None:
             mask = torch.ones(B, L, D, dtype=bool, device=dev)
+
+        if relpos_mask is None:
+            relpos_mask = mask
         
-        if relpos_mask is not None:
-            square_mask = relpos_mask[:,None,:] & relpos_mask[:,:,None]
+        square_mask = relpos_mask[:,None,:] & relpos_mask[:,:,None]
            
         if self.pair_bias:
             attn = attn + self.linear_b(z).permute(0, 3, 1, 2)
@@ -263,6 +265,7 @@ class GeometricMultiHeadAttention(nn.Module):
             #     out = out + torch.where(relpos_mask[...,None], self.w_r(relpos_out), 0.0)
             # else:
             out = out + self.w_r(relpos_out) * relpos_mask[...,None].float()
+            # the mask here should not matter
 
         return out
 

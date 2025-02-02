@@ -187,7 +187,7 @@ class OpenProtWrapper(Wrapper):
 
         
   
-        batch['pad_mask'] = batch['seq_mask'] = batch['struct_mask'] # to make losses comparable
+        # batch['pad_mask'] = batch['seq_mask'] = batch['struct_mask'] # to make losses comparable
         self._logger.register_masks(batch)
         self._logger.masked_log("toks", batch["pad_mask"], sum=True)
     
