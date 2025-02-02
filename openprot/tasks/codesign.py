@@ -39,7 +39,7 @@ class Codesign(OpenProtTask):
         t = (data["seq_mask"] * data["seq_noise"]).sum()  / (eps + data["seq_mask"].sum()) 
 
         if self.cfg.seq_reweight:
-            data["seq_weight"] = np.ones(L, dtype=np.float32) * (1-noise_level) * self.cfg.seq_weight
+            data["seq_weight"] = np.ones(L, dtype=np.float32) * t_inv * self.cfg.seq_weight
         else:
             data["seq_weight"] = np.ones(L, dtype=np.float32) *  self.cfg.seq_weight
         

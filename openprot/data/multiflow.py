@@ -25,10 +25,11 @@ class MultiflowDataset(OpenProtDataset):
         i = np.random.choice(clu['index'])
         item = self.dataset[i]
         seqres = aatype_to_seqres(item['aatypes_1'])
+        
         return self.make_data(
             name=item['pdb_name'],
             seqres=aatype_to_seqres(item['aatypes_1']),
-            residx=item['res_idx'],
+            residx=item['res_idx'].astype(np.float32),
             seq_mask=item['res_mask'].numpy(),
             atom37=item['all_atom_positions'].float().numpy(),
             atom37_mask=item['all_atom_mask'].float().numpy(),

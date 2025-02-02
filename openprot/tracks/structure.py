@@ -351,7 +351,7 @@ class StructureTrack(OpenProtTrack):
             t=t,
             mask=mask, # used for alignment
         ) / 3
-        mse = torch.clamp(2 * mse, max=5)
+        # mse = torch.clamp(2 * mse, max=5)
 
         if logger:
             logger.masked_log("struct/mse_loss", mse[-1], mask=mask)

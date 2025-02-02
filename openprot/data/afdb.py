@@ -50,7 +50,8 @@ class AFDBDataset(OpenProtDataset):
         return self.make_data(
             name=name,
             seqres=seqres,
-            seq_mask=np.ones(len(seqres)),
+            residx=np.arange(len(seqres), dtype=np.float32),
+            seq_mask=np.ones(len(seqres), dtype=np.float32),
             atom37=prot.atom_positions.astype(np.float32),
             atom37_mask=prot.atom_mask.astype(np.float32),
         )
