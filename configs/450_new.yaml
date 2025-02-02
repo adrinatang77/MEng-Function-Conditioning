@@ -8,7 +8,7 @@ logger:
     # please change "test" to something unique to your task
     project: openprot/struct-merge
     # will log to workdir and neptune.ai with this name
-    name: 450-replica-pdbonly-8 # merge-std-struct-gen-linear 
+    name: 450-replica-pdbonly # merge-std-struct-gen-linear 
     # if not null, will duplicate stdout and stderr to workdir/{name}/{logfile}
     logfile: std.out
     # if null, will log every epoch, otherwise every this number of steps
@@ -37,7 +37,6 @@ data:
     num_workers: 8
     buffer: 1000
     max_toks: 4096
-    max_sq_toks: null
     batch: null
     crop: 512 
     seed: 137
@@ -59,7 +58,6 @@ features:
     atom37_mask: [-1, 37]
     struct_noise: [-1]
     struct_weight: [-1]
-    residx: [-1]
     
     
 datasets:
@@ -69,8 +67,6 @@ datasets:
         cutoff: 2018-05-01
         clusters: /data/cb/scratch/datasets/pdb_npz/pdb_clusters
         blacklist: null 
-        struct_mask: false
-        
 tasks:
     Codesign:
         fraction: 1.0
@@ -80,34 +76,55 @@ tasks:
         seq_beta: [1, 2]
         seq_max_noise_prob: 0.0
         seq_uniform_prob: 1.0
-        seq_reweight: 'linear'
         
         struct_weight: 1.0
         struct_beta: [1, 2]
         struct_max_noise_prob: 0.0
         struct_uniform_prob: 0.5
-        rots: false
-        rescale_time: ${tracks.StructureTrack.rescale_time}
-        sched_p: ${tracks.StructureTrack.t_emb_p}
-        sigma_max: ${tracks.StructureTrack.t_emb_max}
-        sigma_min: ${tracks.StructureTrack.t_emb_min}
-
         
         seed: 137
         random_rot: true
+        sched_p: ${tracks.StructureTrack.t_emb_p}
+        sigma_max: ${tracks.StructureTrack.t_emb_max}
+        sigma_min: ${tracks.StructureTrack.t_emb_min}
+        
         datasets:
             pdb:
                 fraction: 1.0
                 start: 0
                 seed: 42
             
-evals:
+evals: 
+    # codesign_dplm:
+    #     type: CodesignEval
+    #     num_samples: 100
+    #     batch: 100
+    #     sample_length: 128
+    #     steps: 200
+    #     sched_p: ${tracks.StructureTrack.t_emb_p}
+    #     sigma_max: ${tracks.StructureTrack.t_emb_max}
+    #     sigma_min: ${tracks.StructureTrack.t_emb_min}
+    #     struct:
+    #         temp_factor: 0.5
+    #     seq:
+    #         temp: 0.1
+    #         strategy: dplm
+    #         logits: gumbel
+    #         remask: 0.0
+    #         topk_temp: 0.0
+    #         allow_mutation: false
+    #         adjust_unmasked: false
+    #         replace_unmasked: false
+    #     run_designability: true
     codesign_random:
         type: CodesignEval
         num_samples: 100
         batch: 100
         sample_length: 128
         steps: 200
+        sched_p: ${tracks.StructureTrack.t_emb_p}
+        sigma_max: ${tracks.StructureTrack.t_emb_max}
+        sigma_min: ${tracks.StructureTrack.t_emb_min}
         struct:
             temp_factor: 0.5
         seq:
@@ -128,19 +145,14 @@ tracks:
         embed_trans: true
         embed_pairwise: false
         readout_trans: false
-        copy_trans: sm
         readout_pairwise: false
         postcondition: true
         int_loss_weight: 0.5
-        embed_sigma: false
-        clip_t: 0.0
-
-        rescale_time: true
         t_emb_p: 7
         t_emb_max: 160
         t_emb_min: 0.05
-
-        rots: false
+        embed_sigma: false
+        
         losses:
             lddt: 1.0
             # distogram: 0.3
@@ -149,7 +161,6 @@ tracks:
             type: EDMDiffusion
             data_sigma: 15
             aligned_loss: true
-            rescale_time: ${tracks.StructureTrack.rescale_time}
     SequenceTrack:
         esm: null # esm2_3B # esm2_650M # esm2_8M_270K
         loss_weight: 1.0 
@@ -157,14 +168,11 @@ tracks:
         rand_rate: 0.0
         esm_lm_head: false
         embed_t: false
-        sup_all: false
 
 
 model: # custom args
     dplm_ckpt: null
     checkpoint: false
-    multiflow: false
-    ema: false
     dim: 512
     pairwise_dim: 128
     heads: 16
@@ -174,7 +182,7 @@ model: # custom args
     token_dropout: 0.0
 
     
-    trunk_relpos_params: [32, 1, 1000]
+    trunk_relpos: [32, 1, 1000]
     sm_relpos: [32, 1, 100]
     # topology of the network
     pair_blocks:
@@ -185,15 +193,10 @@ model: # custom args
         start: 0
         end: 0
         interval: 4
-    update_blocks:
-        start: 0
-        end: 0
-        interval: 4
     struct_module: true
     
     pairwise_pos_emb: false
     block_pair_bias: false
-    block_pair_values: false
     ff_expand: 4
     position_bins: 32
     pair_ffn: true
@@ -203,13 +206,6 @@ model: # custom args
     tri_mul: false
     rope: false
     custom_rope: true
-
-    trunk_relpos: false
-    trunk_frame_update: false
-    trunk_update_rots: false
-    trunk_ipa_frames: false
-    embed_rots: false
-    trunk_ipa: false
     
 
     ### ipa args
@@ -231,7 +227,6 @@ model: # custom args
     ipa_rope: false
     ipa_frame_update: true
     zero_x_before_ipa: false
-    trans_rescale: false
 
 
 optimizer:
