@@ -1,16 +1,16 @@
-ckpt: workdir/codesign-oldarch+reweight/last.ckpt
+ckpt: 
 pretrained: null  #  load weights from here first
 validate: false # if true, only validate the model, don't train
 logger:
     # set to true to log to neptune.ai
     neptune: true
-    run_id: STRUC1-625
+    run_id: 
     # please change "test" to something unique to your task
     project: openprot/struct-merge
     # will log to workdir and neptune.ai with this name
-    name: codesign-oldarch+reweight
+    name: codesign-oldarch2
     # if not null, will duplicate stdout and stderr to workdir/{name}/{logfile}
-    logfile: std.out
+    logfile: null # std.out
     # if null, will log every epoch, otherwise every this number of steps
     train_log_freq: 100
     val_log_freq: null 
@@ -89,7 +89,7 @@ tasks:
         seq_beta: [1, 2]
         seq_max_noise_prob: 0.0
         seq_uniform_prob: 1.0
-        seq_reweight: inverse
+        seq_reweight: false
 
         rescale_time: ${tracks.StructureTrack.rescale_time}
         sched_p: ${tracks.StructureTrack.t_emb_p}
@@ -121,6 +121,7 @@ evals:
         batch: 100
         sample_length: 128
         steps: 200
+        skew: 0
         struct:
             rescale_time: ${tracks.StructureTrack.rescale_time}
             sched_p: ${tracks.StructureTrack.t_emb_p}
@@ -139,19 +140,69 @@ evals:
             logits: standard
             adjust_unmasked: false
             replace_unmasked: false
-        # seq:
-        #     temp: 1.0
-        #     strategy: dplm
-        #     logits: gumbel
-        #     remask: 0.0
-        #     topk_temp: 0.0
-        #     allow_mutation: false
-        #     adjust_unmasked: false
-        #     replace_unmasked: false
         run_designability: true
+        run_pmpnn_designability: true
         run_diversity: true
 
-        
+    codesign_skew+1:
+        type: CodesignEval
+        num_samples: 100
+        batch: 100
+        sample_length: 128
+        steps: 200
+        skew: 1
+        struct:
+            rescale_time: ${tracks.StructureTrack.rescale_time}
+            sched_p: ${tracks.StructureTrack.t_emb_p}
+            sigma_max: ${tracks.StructureTrack.t_emb_max}
+            sigma_min: ${tracks.StructureTrack.t_emb_min}
+            type: ${tracks.StructureTrack.diffusion.type}
+            temp_factor: 0.5
+            sde_weight: 3.0
+            data_sigma: ${tracks.StructureTrack.diffusion.data_sigma}
+            sched: edm
+            max_t: 0.95
+        seq:
+            temp: 0.1
+            strategy: purity
+            noise: 20
+            logits: standard
+            adjust_unmasked: false
+            replace_unmasked: false
+        run_designability: true
+        run_pmpnn_designability: true
+        run_diversity: true
+
+
+    codesign_skew-1:
+        type: CodesignEval
+        num_samples: 100
+        batch: 100
+        sample_length: 128
+        steps: 200
+        skew: -0.99
+        struct:
+            rescale_time: ${tracks.StructureTrack.rescale_time}
+            sched_p: ${tracks.StructureTrack.t_emb_p}
+            sigma_max: ${tracks.StructureTrack.t_emb_max}
+            sigma_min: ${tracks.StructureTrack.t_emb_min}
+            type: ${tracks.StructureTrack.diffusion.type}
+            temp_factor: 0.5
+            sde_weight: 3.0
+            data_sigma: ${tracks.StructureTrack.diffusion.data_sigma}
+            sched: edm
+            max_t: 0.95
+        seq:
+            temp: 0.1
+            strategy: purity
+            noise: 20
+            logits: standard
+            adjust_unmasked: false
+            replace_unmasked: false
+        run_designability: true
+        run_pmpnn_designability: true
+        run_diversity: true
+
         # order: random
 tracks:
     # register tracks here

@@ -18,7 +18,7 @@ logger:
     save_freq: 1000
 trainer:
     accelerator: auto
-    devices: 1
+    devices: 4
     max_epochs: 1
     max_steps: 1000000
     enable_progress_bar: false
@@ -27,7 +27,7 @@ trainer:
     num_sanity_val_steps: 0
     gradient_clip_val: 1.0
     accumulate_grad_batches: 1
-    val_check_interval: 3000
+    val_check_interval: 10000
     check_val_every_n_epoch: 1
     logger: false
     precision: 16-mixed
@@ -115,13 +115,34 @@ tasks:
                 seed: 42
             
 evals: 
+    # struct_gen_sde_0.5:
+    #     type: StructureGenerationEval
+    #     num_samples: 100
+    #     batch: 100
+    #     sample_length: 128
+    #     steps: 200
+    #     struct:
+    #         rescale_time: ${tracks.StructureTrack.rescale_time}
+    #         sched_p: ${tracks.StructureTrack.t_emb_p}
+    #         sigma_max: ${tracks.StructureTrack.t_emb_max}
+    #         sigma_min: ${tracks.StructureTrack.t_emb_min}
+    #         type: ${tracks.StructureTrack.diffusion.type}
+    #         temp_factor: 0.5
+    #         sde_weight: 3.0
+    #         data_sigma: ${tracks.StructureTrack.diffusion.data_sigma}
+    #         sched: edm
+    #         max_t: 0.95
+    #     run_designability: true
+        
     codesign_random:
         type: CodesignEval
-        num_samples: 10
+        num_samples: 100
         batch: 100
         sample_length: 128
         steps: 200
-        skew: -0.99 # positive means struct gen-> inv fold
+        # positive means struct gen -> inv fold
+        # negative means seq gen -> fold, but cannot be exactly -1
+        skew: 1
         struct:
             rescale_time: ${tracks.StructureTrack.rescale_time}
             sched_p: ${tracks.StructureTrack.t_emb_p}
@@ -150,6 +171,7 @@ evals:
         #     adjust_unmasked: false
         #     replace_unmasked: false
         run_designability: true
+        run_pmpnn_designability: true
         run_diversity: true
 
         

@@ -69,7 +69,7 @@ class CodesignEval(OpenProtEval):
                 f"{savedir}/rank{rank}",
                 "--dir",
                 f"{savedir}/rank{rank}",
-                "--print",
+                # "--print",
                 "--device",
                 str(torch.cuda.current_device())
             ]
@@ -131,6 +131,37 @@ class CodesignEval(OpenProtEval):
             vendi = np.e**np.nansum(-eigvals * np.log(eigvals))
             if logger is not None:
                 logger.log(f"{self.cfg.name}/vendi", vendi)
+
+        if self.cfg.run_pmpnn_designability:
+            ## distributed designability
+            count = math.ceil(self.cfg.num_samples / world_size)
+            start = rank * count
+            end = min((rank + 1) * count, self.cfg.num_samples)
+
+            cmd = [
+                "bash",
+                "scripts/run_genie_pipeline.sh",
+                savedir,
+                str(start),
+                str(end - 1),
+            ]
+            cvd = os.environ.get('CUDA_VISIBLE_DEVICES', None)
+            if cvd:
+                dev = cvd.split(',')[torch.cuda.current_device()]
+            else:
+                dev = torch.cuda.current_device()
+            subprocess.run(cmd, env=os.environ | {
+                'CUDA_VISIBLE_DEVICES': str(dev)
+            })  
+
+            df = pd.read_csv(
+                f"{savedir}/eval{start}_{end-1}/info.csv", index_col="domain"
+            )
+            df["designable"] = df["scRMSD"] < 2
+            if logger is not None:
+                for col in df.columns:
+                    for val in df[col].tolist():
+                        logger.log(f"{self.cfg.name}/pmpnn_{col}", val)
                     
 
     def run_batch(
