@@ -95,7 +95,7 @@ class CodesignEval(OpenProtEval):
                     coords2=prot.atom_positions[:,1],
                 )['tm']
 
-                plddt = PandasPdb().read_pdb(f"{savedir}/rank{rank}/sample{i}.pdb").df['ATOM']
+                plddt = PandasPdb().read_pdb(f"{savedir}/rank{rank}/sample{i}.pdb").df['ATOM']['b_factor'].mean()
                 
                 if logger is not None:
                     logger.log(f"{self.cfg.name}/sclddt", lddt)
@@ -106,7 +106,7 @@ class CodesignEval(OpenProtEval):
                     logger.log(f"{self.cfg.name}/scTM>80", tmscore > 0.8)
                     logger.log(f"{self.cfg.name}/plddt", plddt)
                     
-                    
+           
         if self.cfg.run_diversity:
             tm_arr = np.zeros((len(self), len(self)))
             for i in idx:
@@ -170,10 +170,19 @@ class CodesignEval(OpenProtEval):
             sched_fn = log_sched_fn
         else:
             raise Exception("unrecognized schedule")
+
+        def t_skew_func(t, skew):
+            midpoint_y = 0.5 + skew / 2# [0, 1]
+            midpoint_x = 0.5 
+            if t < midpoint_x:
+                return midpoint_y / midpoint_x * t
+            else:
+                return midpoint_y + (1 - midpoint_y) / (1 - midpoint_x) * (t - midpoint_x)
+
         
         sampler = OpenProtSampler(schedules={
-            'structure': sched_fn,
-            'sequence': lambda t: 1-t
+            'structure': lambda t: sched_fn(t_skew_func(t, self.cfg.skew)),
+            'sequence': lambda t: 1-t_skew_func(t, -self.cfg.skew)
         }, steppers=[
             StructureStepper(self.cfg.struct),
             SequenceUnmaskingStepper(self.cfg.seq)

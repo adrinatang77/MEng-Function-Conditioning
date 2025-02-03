@@ -14,28 +14,27 @@ class StructureGeneration(OpenProtTask):
         if crop is not None:
             data.crop(crop)
 
-        ## noise EVERYTHING
-        if np.random.rand() < self.cfg.uniform_prob:
+        rand = np.random.rand()
+        if rand < self.cfg.struct_max_noise_prob:
+            noise_level = 1.0
+        elif rand < self.cfg.struct_max_noise_prob + self.cfg.struct_uniform_prob:
             noise_level = np.random.rand()
         else:
-            noise_level = np.random.beta(*self.cfg.beta)
+            noise_level = np.random.beta(*self.cfg.struct_beta)
 
         L = len(data["seqres"])
-        
 
-        ##############
-
-        p = self.cfg.sched_p
-        noise_level = (
-            self.cfg.sigma_min ** (1 / p)
-            + noise_level * (self.cfg.sigma_max ** (1 / p) - self.cfg.sigma_min ** (1 / p))
-        ) ** p
+        #####
+        if self.cfg.rescale_time:
+            p = self.cfg.sched_p
+            noise_level = (
+                self.cfg.sigma_min ** (1 / p)
+                + noise_level * (self.cfg.sigma_max ** (1 / p) - self.cfg.sigma_min ** (1 / p))
+            ) ** p
         #####
         
-        data["seq_noise"] = np.ones(L, dtype=np.float32)
-
         data["struct_noise"] = np.ones(L, dtype=np.float32) * noise_level
-        data["struct_weight"] = np.ones(L, dtype=np.float32) * self.cfg.weight
+        data["struct_weight"] = np.ones(L, dtype=np.float32) * self.cfg.struct_weight
 
         # center the structures
         pos = data["atom37"][..., rc.atom_order["CA"], :]
@@ -46,6 +45,9 @@ class StructureGeneration(OpenProtTask):
         if self.cfg.random_rot:
             randrot = R.random().as_matrix()
             data["atom37"] @= randrot.T
+
+        if self.cfg.rots:
+            data["rots_noise"] = data['struct_noise']
 
         data["/struct_gen"] = np.ones((), dtype=np.float32)
 

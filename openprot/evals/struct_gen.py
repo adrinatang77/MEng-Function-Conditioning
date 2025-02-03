@@ -5,7 +5,7 @@ from ..utils.prot_utils import make_ca_prot, write_ca_traj
 from ..utils.geometry import compute_lddt, rmsdalign
 from ..utils import residue_constants as rc
 from ..generate.sampler import OpenProtSampler
-from ..generate.structure import EDMDiffusionStepper
+from ..generate.structure import EDMDiffusionStepper, GaussianFMStepper
 import numpy as np
 from ..tasks import StructurePrediction
 import torch
@@ -25,16 +25,22 @@ class StructureGenerationEval(OpenProtEval):
 
     def __getitem__(self, idx):
         L = self.cfg.sample_length
+        if self.cfg.struct.rescale_time:
+            max_noise = self.cfg.struct.sigma_max
+        else:
+            max_noise = self.cfg.struct.max_t
         data = self.make_data(
             name=f"sample{idx}",
             seqres="A" * L,
             seq_mask=np.ones(L, dtype=np.float32),
             seq_noise=np.ones(L, dtype=np.float32),
-            struct_noise=np.ones(L, dtype=np.float32) * self.cfg.sigma_max,
+            struct_noise=np.ones(L, dtype=np.float32) * max_noise,
             atom37=np.zeros((L, 37, 3), dtype=np.float32),
             atom37_mask=np.ones((L, 37), dtype=np.float32),
+            residx=np.arange(L, dtype=np.float32),
         )
         return data
+
 
     def compute_metrics(
         self, rank=0, world_size=1, device=None, savedir=".", logger=None
@@ -55,8 +61,13 @@ class StructureGenerationEval(OpenProtEval):
                 str(start),
                 str(end - 1),
             ]
+            cvd = os.environ.get('CUDA_VISIBLE_DEVICES', None)
+            if cvd:
+                dev = cvd.split(',')[torch.cuda.current_device()]
+            else:
+                dev = torch.cuda.current_device()
             subprocess.run(cmd, env=os.environ | {
-                'CUDA_VISIBLE_DEVICES': str(torch.cuda.current_device())
+                'CUDA_VISIBLE_DEVICES': str(dev)
             })  
 
             df = pd.read_csv(
@@ -88,19 +99,38 @@ class StructureGenerationEval(OpenProtEval):
     ):
 
         
-        noisy_batch['struct'] = torch.randn_like(noisy_batch['struct']) * noisy_batch['struct_noise'][...,None]
-
-        def sched_fn(t):
-            p = self.cfg.sched_p
+        def edm_sched_fn(t):
+            p = self.cfg.struct.sched_p
+            sigma_max = self.cfg.struct.sigma_max
+            sigma_min = self.cfg.struct.sigma_min 
             return (
-                self.cfg.sigma_min ** (1 / p)
-                + (1-t) * (self.cfg.sigma_max ** (1 / p) - self.cfg.sigma_min ** (1 / p))
+                sigma_min ** (1 / p)
+                + (1-t) * (sigma_max ** (1 / p) - sigma_min ** (1 / p))
             ) ** p
+
+        
+        StructureStepper = {
+            'EDMDiffusion': EDMDiffusionStepper,
+            'GaussianFM': GaussianFMStepper,
+        }[self.cfg.struct.type]
+        max_t = self.cfg.struct.max_t
+        def log_sched_fn(t):
+            exp = 10 ** (-2*t)
+            return max_t * (exp - 1e-2) / (1 - 1e-2)
+
+        if self.cfg.struct.sched == 'linear':
+            sched_fn = lambda t: max_t * (1-t)
+        elif self.cfg.struct.sched == 'edm':
+            sched_fn = edm_sched_fn
+        elif self.cfg.struct.sched == 'log':
+            sched_fn = log_sched_fn
+        else:
+            raise Exception("unrecognized schedule")
 
         sampler = OpenProtSampler(schedules={
             'structure': sched_fn,
         }, steppers=[
-            EDMDiffusionStepper(self.cfg)
+            StructureStepper(self.cfg.struct)
         ])
         
         sample_batch, extra = sampler.sample(model, noisy_batch, self.cfg.steps)

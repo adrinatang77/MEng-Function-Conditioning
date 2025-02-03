@@ -41,7 +41,7 @@ class Codesign(OpenProtTask):
         if self.cfg.seq_reweight == 'linear':
             data["seq_weight"] = np.ones(L, dtype=np.float32) * (1-t) * self.cfg.seq_weight
         elif self.cfg.seq_reweight == 'inverse':
-            data["seq_weight"] = np.ones(L, dtype=np.float32) * (1-t) * self.cfg.seq_weight
+            data["seq_weight"] = np.ones(L, dtype=np.float32) * t_inv * self.cfg.seq_weight
         else:
             assert not self.cfg.seq_reweight, 'reweight type not recognized'
             data["seq_weight"] = np.ones(L, dtype=np.float32) *  self.cfg.seq_weight

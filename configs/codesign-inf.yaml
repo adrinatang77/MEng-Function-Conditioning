@@ -18,7 +18,7 @@ logger:
     save_freq: 1000
 trainer:
     accelerator: auto
-    devices: 8
+    devices: 1
     max_epochs: 1
     max_steps: 1000000
     enable_progress_bar: false
@@ -117,10 +117,11 @@ tasks:
 evals: 
     codesign_random:
         type: CodesignEval
-        num_samples: 100
+        num_samples: 10
         batch: 100
         sample_length: 128
         steps: 200
+        skew: -0.99 # positive means struct gen-> inv fold
         struct:
             rescale_time: ${tracks.StructureTrack.rescale_time}
             sched_p: ${tracks.StructureTrack.t_emb_p}
