@@ -1,14 +1,14 @@
-ckpt: workdir/codesign-oldarch/last.ckpt
+ckpt: 
 pretrained: null  #  load weights from here first
-validate: true # if true, only validate the model, don't train
+validate: false # if true, only validate the model, don't train
 logger:
     # set to true to log to neptune.ai
-    neptune: false
+    neptune: true
     run_id: 
     # please change "test" to something unique to your task
     project: openprot/struct-merge
     # will log to workdir and neptune.ai with this name
-    name: codesign-eval # oldarch
+    name: codesign-oldarch2
     # if not null, will duplicate stdout and stderr to workdir/{name}/{logfile}
     logfile: null # std.out
     # if null, will log every epoch, otherwise every this number of steps
@@ -18,7 +18,7 @@ logger:
     save_freq: 1000
 trainer:
     accelerator: auto
-    devices: 8
+    devices: 4
     max_epochs: 1
     max_steps: 1000000
     enable_progress_bar: false
@@ -140,7 +140,7 @@ evals:
             adjust_unmasked: false
             replace_unmasked: false
         # seq:
-        #     temp: 0.1
+        #     temp: 1.0
         #     strategy: dplm
         #     logits: gumbel
         #     remask: 0.0

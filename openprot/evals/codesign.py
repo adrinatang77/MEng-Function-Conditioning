@@ -12,6 +12,7 @@ from ..tasks import StructurePrediction
 import torch
 import os, tqdm, math, subprocess
 import pandas as pd
+from biopandas.pdb import PandasPdb
 
 
 class CodesignEval(OpenProtEval):
@@ -26,12 +27,17 @@ class CodesignEval(OpenProtEval):
 
     def __getitem__(self, idx):
         L = self.cfg.sample_length
+        
+        if self.cfg.struct.rescale_time:
+            max_noise = self.cfg.struct.sigma_max
+        else:
+            max_noise = self.cfg.struct.max_t
         data = self.make_data(
             name=f"sample{idx}",
             seqres="A" * L,
             seq_mask=np.ones(L, dtype=np.float32),
             seq_noise=np.ones(L, dtype=np.float32),
-            struct_noise=np.ones(L, dtype=np.float32) * self.cfg.struct.max_t,
+            struct_noise=np.ones(L, dtype=np.float32) * max_noise,
             atom37=np.zeros((L, 37, 3), dtype=np.float32),
             atom37_mask=np.ones((L, 37), dtype=np.float32),
             residx=np.arange(L, dtype=np.float32),
@@ -84,11 +90,23 @@ class CodesignEval(OpenProtEval):
                     torch.from_numpy(pred.atom_positions[:,1]),  
                     torch.from_numpy(prot.atom_positions[:,1])
                 )
+                tmscore = compute_tmscore(  # second is reference
+                    coords1=pred.atom_positions[:,1],
+                    coords2=prot.atom_positions[:,1],
+                )['tm']
+
+                plddt = PandasPdb().read_pdb(f"{savedir}/rank{rank}/sample{i}.pdb").df['ATOM']
+                
                 if logger is not None:
                     logger.log(f"{self.cfg.name}/sclddt", lddt)
                     logger.log(f"{self.cfg.name}/scrmsd", rmsd)
                     logger.log(f"{self.cfg.name}/scrmsd<2", (rmsd < 2).float())
-
+                    logger.log(f"{self.cfg.name}/scTM", tmscore)
+                    logger.log(f"{self.cfg.name}/sclddt>80", (lddt > 0.8).float())
+                    logger.log(f"{self.cfg.name}/scTM>80", tmscore > 0.8)
+                    logger.log(f"{self.cfg.name}/plddt", plddt)
+                    
+                    
         if self.cfg.run_diversity:
             tm_arr = np.zeros((len(self), len(self)))
             for i in idx:
@@ -125,14 +143,14 @@ class CodesignEval(OpenProtEval):
         logger=None
     ):
 
-        # def edm_sched_fn(t):
-        #     p = self.cfg.struct.sched_p
-        #     sigma_max = self.cfg.struct.sigma_max
-        #     sigma_min = self.cfg.struct.sigma_min 
-        #     return (
-        #         sigma_min ** (1 / p)
-        #         + (1-t) * (sigma_max ** (1 / p) - sigma_min ** (1 / p))
-        #     ) ** p
+        def edm_sched_fn(t):
+            p = self.cfg.struct.sched_p
+            sigma_max = self.cfg.struct.sigma_max
+            sigma_min = self.cfg.struct.sigma_min 
+            return (
+                sigma_min ** (1 / p)
+                + (1-t) * (sigma_max ** (1 / p) - sigma_min ** (1 / p))
+            ) ** p
 
         
         StructureStepper = {
@@ -146,8 +164,12 @@ class CodesignEval(OpenProtEval):
 
         if self.cfg.struct.sched == 'linear':
             sched_fn = lambda t: max_t * (1-t)
-        else:
+        elif self.cfg.struct.sched == 'edm':
+            sched_fn = edm_sched_fn
+        elif self.cfg.struct.sched == 'log':
             sched_fn = log_sched_fn
+        else:
+            raise Exception("unrecognized schedule")
         
         sampler = OpenProtSampler(schedules={
             'structure': sched_fn,

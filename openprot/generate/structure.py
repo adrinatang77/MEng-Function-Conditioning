@@ -19,10 +19,11 @@ class EDMDiffusionStepper:
         x = batch['struct']
         t2, t1 = sched['structure']
 
-        # translate to EDM definitions of time
-        t2 = t2 / (1-t2) * self.cfg.data_sigma
-        t1 = t1 / (1-t1) * self.cfg.data_sigma
-        
+        if not self.cfg.rescale_time:
+            # translate to EDM definitions of time
+            t2 = t2 / (1-t2) * self.cfg.data_sigma
+            t1 = t1 / (1-t1) * self.cfg.data_sigma
+            
         dt = t2 - t1
         g = np.sqrt(2 * t2)
 
@@ -33,8 +34,8 @@ class EDMDiffusionStepper:
         noise = torch.randn_like(x)
         gamma = self.cfg.temp_factor
 
-        # dx = g**2 * s * dt + g * gamma * np.sqrt(dt) * noise # SDE
-        dx = 0.5 * g**2 * s * dt # + g * gamma * np.sqrt(dt) * noise # ODE
+        dx = g**2 * s * dt + g * gamma * np.sqrt(dt) * noise # SDE
+        # dx = 0.5 * g**2 * s * dt # + g * gamma * np.sqrt(dt) * noise # ODE
         
         batch['struct'] = x + dx
         extra['traj'].append(batch['struct'])
