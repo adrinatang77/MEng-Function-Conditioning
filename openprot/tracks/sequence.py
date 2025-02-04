@@ -198,7 +198,8 @@ class SequenceTrack(OpenProtTrack):
 
     def add_modules(self, model):
         model.seq_embed = nn.Embedding(NUM_TOKENS, model.cfg.dim)
-        torch.nn.init.normal_(model.seq_embed.weight, std=0.02)
+        if self.cfg.init:
+            torch.nn.init.normal_(model.seq_embed.weight, std=self.cfg.init)
         if self.cfg.esm_lm_head:
             model.seq_out = EsmLMHead(model.cfg.dim, NUM_TOKENS)
             if self.cfg.tied_weights:
@@ -295,7 +296,10 @@ class SequenceTrack(OpenProtTrack):
         inp['residx'] = batch['residx'] # temporary
 
     def predict(self, model, inp, out, readout):
-        readout["aatype"] = model.seq_out(out["x"])
+        if self.cfg.readout == 'trunk':
+            readout["aatype"] = model.seq_out(out["x"])
+        elif self.cfg.readout == 'sm':
+            readout["aatype"] = model.seq_out(out["sm"]["x"][-1])
         if not model.training:
             readout["aatype"][...,MASK_IDX] = -np.inf
         

@@ -1,10 +1,10 @@
-ckpt: null # workdir/codesign-oldarch+reweight/last.ckpt
-pretrained: null  #  load weights from here first
+ckpt:
+pretrained: #  load weights from here first
 validate: false # if true, only validate the model, don't train
 logger:
     # set to true to log to neptune.ai
     neptune: true
-    run_id: null
+    run_id: 
     # please change "test" to something unique to your task
     project: openprot/struct-merge
     # will log to workdir and neptune.ai with this name
@@ -18,7 +18,7 @@ logger:
     save_freq: 1000
 trainer:
     accelerator: auto
-    devices: 4
+    devices: 8
     max_epochs: 1
     max_steps: 1000000
     enable_progress_bar: false
@@ -35,11 +35,11 @@ trainer:
 # custom args to OpenProtDataset and elsewhere
 data: 
     num_workers: 8
-    buffer: 1000
-    max_sq_toks: null # 400000
-    max_toks: 4096
-    batch: null
-    crop: 384
+    buffer: 
+    max_sq_toks:  # 400000
+    max_toks: 
+    batch: 32
+    crop: 256
     seed: 137
 
 # These are the raw features which are expected to be supplied by the Datasets
@@ -215,6 +215,8 @@ tracks:
         sup_all: false
         tied_weights: false
         embed_t: false
+        readout: trunk
+        init:
 
 
 model: # custom args
@@ -224,7 +226,7 @@ model: # custom args
     multiflow_ckpt: null # ./weights/last.ckpt
     ema: false
     checkpoint: false
-    dim: 512
+    dim: 640
     pairwise_dim: 128
     heads: 16
     pairwise_heads: 4

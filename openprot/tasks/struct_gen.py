@@ -14,6 +14,8 @@ class StructureGeneration(OpenProtTask):
         if crop is not None:
             data.crop(crop)
 
+        
+
         rand = np.random.rand()
         if rand < self.cfg.struct_max_noise_prob:
             noise_level = 1.0
@@ -23,7 +25,7 @@ class StructureGeneration(OpenProtTask):
             noise_level = np.random.beta(*self.cfg.struct_beta)
 
         L = len(data["seqres"])
-
+        data["seq_noise"] = np.ones(L, dtype=np.float32)
         #####
         if self.cfg.rescale_time:
             p = self.cfg.sched_p

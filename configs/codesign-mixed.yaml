@@ -1,16 +1,16 @@
-ckpt: workdir/codesign-mixed/last.ckpt
+ckpt: 
 pretrained: null  #  load weights from here first
-validate: true # if true, only validate the model, don't train
+validate: false # if true, only validate the model, don't train
 logger:
     # set to true to log to neptune.ai
-    neptune: false
+    neptune: true
     run_id: 
     # please change "test" to something unique to your task
     project: openprot/struct-merge
     # will log to workdir and neptune.ai with this name
-    name: codesign-eval
+    name: codesign-mixed
     # if not null, will duplicate stdout and stderr to workdir/{name}/{logfile}
-    logfile: 
+    logfile: std.out
     # if null, will log every epoch, otherwise every this number of steps
     train_log_freq: 100
     val_log_freq: null 
@@ -18,10 +18,10 @@ logger:
     save_freq: 1000
 trainer:
     accelerator: auto
-    devices: 8
+    devices: 4
     max_epochs: 1
     max_steps: 1000000
-    enable_progress_bar: true
+    enable_progress_bar: false
     limit_train_batches: 1.0
     limit_val_batches: 1.0
     num_sanity_val_steps: 0
@@ -157,6 +157,37 @@ evals:
         run_designability: true
         run_pmpnn_designability: true
         run_diversity: true
+
+    struct_gen_sde_0.5:
+        type: StructureGenerationEval
+        num_samples: 100
+        batch: 100
+        sample_length: 128
+        steps: 200
+        struct:
+            rescale_time: ${tracks.StructureTrack.rescale_time}
+            sched_p: ${tracks.StructureTrack.t_emb_p}
+            sigma_max: ${tracks.StructureTrack.t_emb_max}
+            sigma_min: ${tracks.StructureTrack.t_emb_min}
+            type: ${tracks.StructureTrack.diffusion.type}
+            temp_factor: 0.5
+            sde_weight: 3.0
+            data_sigma: ${tracks.StructureTrack.diffusion.data_sigma}
+            sched: edm
+            max_t: 0.95
+        run_designability: true
+
+    cameo22_invfold:
+        type: InverseFoldingEval
+        path: ./cameo
+        split: splits/cameo2022.csv
+        temp: 0.1
+        sigma: 0.2
+        batch: 1
+        steps: 
+        logits: standard
+        strategy: random
+        adjust_unmasked: false
 tracks:
     # register tracks here
     StructureTrack: 
@@ -198,7 +229,6 @@ tracks:
         tied_weights: false
         embed_t: false
         readout: trunk
-        init: 0.02
 
 
 model: # custom args

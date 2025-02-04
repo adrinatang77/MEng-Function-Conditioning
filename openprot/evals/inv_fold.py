@@ -35,16 +35,17 @@ class InverseFoldingEval(OpenProtEval):
             
         # seqres = self.df.seqres[name]
         seqres = aatype_to_seqres(prot.aatype)
+        L = len(seqres)
         data = self.make_data(
             name=name,
             seqres=seqres,
             seq_mask=np.ones(len(seqres)),
+            seq_noise=np.ones(L, dtype=np.float32),
             atom37=prot.atom_positions.astype(np.float32),
             atom37_mask=prot.atom_mask.astype(np.float32),
+            residx=np.arange(L, dtype=np.float32),
         )
-
-        L = len(seqres)
-        data["seq_noise"] = np.ones(L, dtype=np.float32)
+        
     
         return data
 
@@ -78,6 +79,8 @@ class InverseFoldingEval(OpenProtEval):
             "--dir",
             f"{savedir}/rank{rank}",
             # "--print",
+            "--device",
+            str(torch.cuda.current_device())
         ]
         
         out = subprocess.run(cmd)  
@@ -121,7 +124,7 @@ class InverseFoldingEval(OpenProtEval):
             SequenceUnmaskingStepper(self.cfg)
         ])
 
-        L = len(batch['seqres'][0])
+        L = self.cfg.steps or noisy_batch['struct_noise'].shape[-1]
         sample, extra = sampler.sample(model, noisy_batch, L)
          
         seq = "".join([rc.restypes_with_x[aa] for aa in sample["aatype"][0]])
@@ -135,3 +138,5 @@ class InverseFoldingEval(OpenProtEval):
         with open(f"{savedir}/{name}.fasta", "w") as f:
             f.write(f">{name}\n")  # FASTA format header
             f.write(seq + "\n")
+
+        print(seq, recov)
