@@ -3,6 +3,13 @@ import numpy as np
 def sigmoid(x):
     return 1 / (1 + np.exp(-x))
 
+def masked_center(x, mask=None, eps=1e-5):
+    if mask is None:
+        return x - x.mean(-2, keepdims=True)
+    mask = mask[..., None]
+    com = (x * mask).sum(-2, keepdims=True) / (eps + mask.sum(-2, keepdims=True))
+    return torch.where(mask, x - com, x)
+
 class EDMDiffusionStepper:
     def __init__(self, cfg=None):
         self.cfg = cfg
@@ -28,6 +35,8 @@ class EDMDiffusionStepper:
         g = np.sqrt(2 * t2)
 
         x0 = out['trans'][-1]
+        x0 = masked_center(x0, batch['struct_mask'].bool())
+        
         extra['preds'].append(x0)
         
         s = (x0 - x) / t2**2  # score

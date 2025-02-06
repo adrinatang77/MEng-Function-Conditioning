@@ -88,7 +88,9 @@ class StructureGenerationEval(OpenProtEval):
             #         f"{savedir}/designable"
             #     ])
 
+        
         if self.cfg.run_diversity:
+            idx = list(range(rank, len(self), world_size))
             tm_arr = np.zeros((len(self), len(self)))
             for i in idx:
                 with open(f"{savedir}/sample{i}.pdb") as f:
@@ -100,14 +102,14 @@ class StructureGenerationEval(OpenProtEval):
                         coords1=prot1.atom_positions[:,1],
                         coords2=prot2.atom_positions[:,1],
                     )['tm']
-            np.save(f"{savedir}/rank{rank}/tmscores.npy", tm_arr)
+            np.save(f"{savedir}/tmscores{rank}.npy", tm_arr)
             if world_size > 1:
                 torch.distributed.barrier()
                 
             # every rank has to compute it, otherwise error
             tm_arr = np.zeros((len(self), len(self)))
             for r in range(world_size):
-                tm_arr += np.load(f"{savedir}/rank{r}/tmscores.npy")
+                tm_arr += np.load(f"{savedir}/tmscores{r}.npy")
             eigvals = np.linalg.eigvals(tm_arr / len(self))
             vendi = np.e**np.nansum(-eigvals * np.log(eigvals))
             if logger is not None:

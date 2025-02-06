@@ -18,6 +18,8 @@ from biopandas.pdb import PandasPdb
 class InverseFoldingEval(OpenProtEval):
     def setup(self):
         self.df = pd.read_csv(self.cfg.split, index_col="name")
+        if self.cfg.limit:
+            self.df = self.df[:self.cfg.limit]
 
     def run(self, model):
         NotImplemented
