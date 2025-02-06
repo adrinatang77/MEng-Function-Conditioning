@@ -7,6 +7,7 @@ from ..utils import residue_constants as rc
 from ..generate.sampler import OpenProtSampler
 from ..generate.structure import EDMDiffusionStepper, GaussianFMStepper
 import numpy as np
+from ..utils.prot_utils import compute_tmscore
 from ..tasks import StructurePrediction
 import torch
 import os, tqdm, math, subprocess
@@ -86,6 +87,31 @@ class StructureGenerationEval(OpenProtEval):
             #         f"{savedir}/eval{start}_{end-1}/designs/{name}.pdb",
             #         f"{savedir}/designable"
             #     ])
+
+        if self.cfg.run_diversity:
+            tm_arr = np.zeros((len(self), len(self)))
+            for i in idx:
+                with open(f"{savedir}/sample{i}.pdb") as f:
+                    prot1 = protein.from_pdb_string(f.read())
+                for j in range(len(self)):
+                    with open(f"{savedir}/sample{j}.pdb") as f:
+                        prot2 = protein.from_pdb_string(f.read())
+                    tm_arr[i,j] = compute_tmscore(  # second is reference
+                        coords1=prot1.atom_positions[:,1],
+                        coords2=prot2.atom_positions[:,1],
+                    )['tm']
+            np.save(f"{savedir}/rank{rank}/tmscores.npy", tm_arr)
+            if world_size > 1:
+                torch.distributed.barrier()
+                
+            # every rank has to compute it, otherwise error
+            tm_arr = np.zeros((len(self), len(self)))
+            for r in range(world_size):
+                tm_arr += np.load(f"{savedir}/rank{r}/tmscores.npy")
+            eigvals = np.linalg.eigvals(tm_arr / len(self))
+            vendi = np.e**np.nansum(-eigvals * np.log(eigvals))
+            if logger is not None:
+                logger.log(f"{self.cfg.name}/vendi", vendi)
 
 
     def run_batch(

@@ -18,7 +18,7 @@ logger:
     save_freq: 1000
 trainer:
     accelerator: auto
-    devices: 8
+    devices: 1
     max_epochs: 1
     max_steps: 1000000
     enable_progress_bar: true
@@ -131,7 +131,7 @@ tasks:
 evals: 
     codesign_skew+1:
         type: CodesignEval
-        num_samples: 100
+        num_samples: 12
         batch: 100
         sample_length: 128
         steps: 200
@@ -149,14 +149,14 @@ evals:
             max_t: 0.95
         seq:
             temp: 0.1
-            strategy: purity
+            strategy: random
             noise: 20
             logits: standard
             adjust_unmasked: false
             replace_unmasked: false
         run_designability: true
-        run_pmpnn_designability: true
-        run_diversity: true
+        run_pmpnn_designability: false
+        run_diversity: false
 tracks:
     # register tracks here
     StructureTrack: 

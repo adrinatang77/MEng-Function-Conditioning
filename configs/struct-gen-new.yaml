@@ -8,7 +8,7 @@ logger:
     # please change "test" to something unique to your task
     project: openprot/struct-merge
     # will log to workdir and neptune.ai with this name
-    name: struct-gen-new
+    name: struct-gen-new-nosm
     # if not null, will duplicate stdout and stderr to workdir/{name}/{logfile}
     logfile: std.out
     # if null, will log every epoch, otherwise every this number of steps
@@ -181,8 +181,8 @@ tracks:
         loss_weight: 1.0
         embed_trans: true
         embed_pairwise: false
-        readout_trans: false
-        copy_trans: sm
+        readout_trans: trunk
+        copy_trans: false
         readout_pairwise: false
         postcondition: true
         int_loss_weight: 0.5
@@ -275,7 +275,7 @@ model: # custom args
     
 
     ### struct module args
-    struct_module: true
+    struct_module: false
     sm_relpos: [32, 1, 100]
     move_x_to_xcond: true
     readout_trans_before_sm: false

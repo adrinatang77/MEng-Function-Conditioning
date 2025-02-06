@@ -20,7 +20,40 @@ from multiflow.data import so3_utils
 import numpy as np
 import math
 
+def modulate(x, shift, scale):
+    if shift is not None:
+        return x * (1 + scale) + shift
+    else:
+        return x
 
+
+def gate(x, gate_):
+    if gate_ is not None:
+        return x * gate_
+    else:
+        return x
+
+class FinalLayer(nn.Module):
+    """
+    The final layer of DiT.
+    """
+
+    def __init__(self, dim, out):
+        super().__init__()
+        self.norm_final = nn.LayerNorm(dim, elementwise_affine=False, eps=1e-6)
+        self.linear = nn.Linear(dim, out, bias=True)
+        self.adaLN_modulation = nn.Sequential(
+            nn.SiLU(), nn.Linear(dim, 2 * dim, bias=True)
+        )
+        nn.init.constant_(self.linear.weight, 0)
+        nn.init.constant_(self.linear.bias, 0)
+
+    def forward(self, x, c):
+        shift, scale = self.adaLN_modulation(c).chunk(2, dim=-1)
+        x = modulate(self.norm_final(x), shift, scale)
+        x = self.linear(x)
+        return x
+        
 def sinusoidal_embedding(pos, n_freqs, max_period, min_period):
     periods = torch.exp(
         torch.linspace(
@@ -98,9 +131,12 @@ class StructureTrack(OpenProtTrack):
         if self.cfg.readout_pairwise:
             model.pairwise_out = nn.Linear(model.cfg.pairwise_dim, 64)
         if self.cfg.readout_trans:
-            model.trans_out = nn.Sequential(
-                nn.LayerNorm(model.cfg.dim), nn.Linear(model.cfg.dim, 3)
-            )
+            if self.cfg.readout_adaLN:
+                model.trans_out = FinalLayer(model.cfg.dim, 3)
+            else:
+                model.trans_out = nn.Sequential(
+                    nn.LayerNorm(model.cfg.dim), nn.Linear(model.cfg.dim, 3)
+                )
 
     def corrupt(self, batch, noisy_batch, target, logger=None):
 
@@ -241,13 +277,12 @@ class StructureTrack(OpenProtTrack):
 
     def predict(self, model, inp, out, readout):
         if self.cfg.readout_trans == "trunk":
-            readout["trans"] = inp["postcond_fn"](model.trans_out(out["x"]))[None]
+            if self.cfg.readout_adaLN:
+                readout["trans"] = inp["postcond_fn"](model.trans_out(out["x"], inp["x_cond"]))[None]
+            else:
+                readout["trans"] = inp["postcond_fn"](model.trans_out(out["x"]))[None]
         elif self.cfg.readout_trans == "sm":
             raise Exception("check")
-            if model.cfg.trunk_adaLN:
-                readout["trans"] = model.trans_out(out["sm"]["x"], inp["x_cond"])
-            else:
-                readout["trans"] = model.trans_out(out["sm"]["x"])
         elif self.cfg.copy_trans == 'sm':
             readout["trans"] = inp["postcond_fn"](out["sm"]["trans"])
         elif self.cfg.copy_trans == 'trunk':
