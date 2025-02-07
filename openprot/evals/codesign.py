@@ -13,6 +13,7 @@ import torch
 import os, tqdm, math, subprocess
 import pandas as pd
 from biopandas.pdb import PandasPdb
+from ..utils.secondary import assign_secondary_structures
 
 
 class CodesignEval(OpenProtEval):
@@ -106,7 +107,20 @@ class CodesignEval(OpenProtEval):
                     logger.log(f"{self.cfg.name}/scTM>80", tmscore > 0.8)
                     logger.log(f"{self.cfg.name}/plddt", plddt)
                     
-           
+        if self.cfg.run_secondary:
+            for i in idx:
+                with open(f"{savedir}/sample{i}.pdb") as f:
+                    prot = protein.from_pdb_string(f.read())
+                ss = assign_secondary_structures(
+                    torch.from_numpy(prot.atom_positions[None,:,1]), 
+                    full=False,
+                    return_encodings=False
+                )[0]
+                if logger is not None:
+                    logger.log(f"{self.cfg.name}/helix", ss.count('h') / len(ss))
+                    logger.log(f"{self.cfg.name}/sheet", ss.count('s') / len(ss))
+                    logger.log(f"{self.cfg.name}/loop", ss.count('-') / len(ss))
+            
         if self.cfg.run_diversity:
             tm_arr = np.zeros((len(self), len(self)))
             for i in idx:

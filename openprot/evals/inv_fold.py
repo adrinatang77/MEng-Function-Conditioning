@@ -17,18 +17,29 @@ from biopandas.pdb import PandasPdb
 
 class InverseFoldingEval(OpenProtEval):
     def setup(self):
-        self.df = pd.read_csv(self.cfg.split, index_col="name")
-        if self.cfg.limit:
-            self.df = self.df[:self.cfg.limit]
+        if self.cfg.split:
+            self.df = pd.read_csv(self.cfg.split, index_col="name")
+            if self.cfg.limit:
+                self.df = self.df[:self.cfg.limit]
+            
 
     def run(self, model):
         NotImplemented
 
     def __len__(self):
-        return len(self.df)
+        if self.cfg.split:
+            return len(self.df)
+        else:
+            return self.cfg.limit
 
+    def get_name(self, idx):
+        if self.cfg.split:
+            name = self.df.index[idx]
+        else:
+            name = f"sample{idx}"
+        return name
     def __getitem__(self, idx):
-        name = self.df.index[idx]
+        name = self.get_name(idx)
         # prot = dict(
         #     np.load(f"{self.cfg.path}/{name[1:3]}/{name}.npz", allow_pickle=True)
         # )
@@ -67,7 +78,8 @@ class InverseFoldingEval(OpenProtEval):
         idx = list(range(rank, len(self), world_size))
         os.makedirs(f"{savedir}/rank{rank}", exist_ok=True)
         for i in idx:
-            cmd = ['cp', f"{savedir}/{self.df.index[i]}.fasta", f"{savedir}/rank{rank}"]
+            name = self.get_name(i)
+            cmd = ['cp', f"{savedir}/{name}.fasta", f"{savedir}/rank{rank}"]
             subprocess.run(cmd)
             
         cmd = [
@@ -88,7 +100,7 @@ class InverseFoldingEval(OpenProtEval):
         out = subprocess.run(cmd)  
         
         for i in idx:
-            name = self.df.index[i]
+            name = self.get_name(i)
             with open(f"{self.cfg.path}/{name}.pdb") as f:
                 prot = protein.from_pdb_string(f.read())
             with open(f"{savedir}/{name}.pdb") as f:
@@ -128,17 +140,20 @@ class InverseFoldingEval(OpenProtEval):
 
         L = self.cfg.steps or noisy_batch['struct_noise'].shape[-1]
         sample, extra = sampler.sample(model, noisy_batch, L)
-         
-        seq = "".join([rc.restypes_with_x[aa] for aa in sample["aatype"][0]])
-        
-        recov = (sample['aatype'] == batch['aatype']).float()
-        recov = (recov * batch['struct_mask']).sum() / batch['struct_mask'].sum()
-        
-        if logger is not None:
-            logger.log(f"{self.cfg.name}/recov", recov.item())
-        name = batch['name'][0]
-        with open(f"{savedir}/{name}.fasta", "w") as f:
-            f.write(f">{name}\n")  # FASTA format header
-            f.write(seq + "\n")
 
-        print(seq, recov)
+        B = len(batch['name'])
+        for i in range(B):
+            seq = "".join([rc.restypes_with_x[aa] for aa in sample["aatype"][i]])
+            
+            recov = (sample['aatype'][i] == batch['aatype'][i]).float()
+            recov = (recov * batch['struct_mask'][i]).sum() / batch['struct_mask'][i].sum()
+            
+            if logger is not None:
+                logger.log(f"{self.cfg.name}/recov", recov.item())
+            
+            name = batch['name'][i]
+            with open(f"{savedir}/{name}.fasta", "w") as f:
+                f.write(f">{name}\n")  # FASTA format header
+                f.write(seq + "\n")
+
+            print(seq, recov)
