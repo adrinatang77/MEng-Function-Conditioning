@@ -14,7 +14,7 @@ import os, tqdm, math, subprocess
 import pandas as pd
 from biopandas.pdb import PandasPdb
 from ..utils.secondary import assign_secondary_structures
-
+from collections import defaultdict
 
 class CodesignEval(OpenProtEval):
     def setup(self):
@@ -53,6 +53,8 @@ class CodesignEval(OpenProtEval):
 
         idx = list(range(rank, len(self), world_size))
         os.makedirs(f"{savedir}/rank{rank}", exist_ok=True)
+
+        df = defaultdict(dict) 
         
         if self.cfg.run_designability:
             torch.cuda.empty_cache()
@@ -63,6 +65,7 @@ class CodesignEval(OpenProtEval):
             cmd = [
                 "bash",
                 "scripts/switch_conda_env.sh",
+                "eval",
                 "python",
                 "-m",
                 "scripts.esmfold",
@@ -106,6 +109,11 @@ class CodesignEval(OpenProtEval):
                     logger.log(f"{self.cfg.name}/sclddt>80", (lddt > 0.8).float())
                     logger.log(f"{self.cfg.name}/scTM>80", tmscore > 0.8)
                     logger.log(f"{self.cfg.name}/plddt", plddt)
+
+                df[f"sample{i}"]["plddt"] = plddt
+                df[f"sample{i}"]["scrmsd"] = float(rmsd)
+                df[f"sample{i}"]["sctm"] = tmscore
+                df[f"sample{i}"]["sclddt"] = float(lddt)
                     
         if self.cfg.run_secondary:
             for i in idx:
@@ -120,6 +128,38 @@ class CodesignEval(OpenProtEval):
                     logger.log(f"{self.cfg.name}/helix", ss.count('h') / len(ss))
                     logger.log(f"{self.cfg.name}/sheet", ss.count('s') / len(ss))
                     logger.log(f"{self.cfg.name}/loop", ss.count('-') / len(ss))
+                df[f"sample{i}"]["helix"] = ss.count('h') / len(ss)
+                df[f"sample{i}"]["sheet"] = ss.count('s') / len(ss)
+                df[f"sample{i}"]["loop"] = ss.count('-') / len(ss)
+                
+
+        df = pd.DataFrame(df).T.astype(float)
+        df.to_csv(f"{savedir}/rank{rank}.csv")
+    
+        if world_size > 1:
+            torch.distributed.barrier()
+        if rank == 0:
+            dfs = []
+            for r in range(world_size):
+                dfs.append(pd.read_csv(f"{savedir}/rank{r}.csv", index_col=0))
+                subprocess.run(["rm", f"{savedir}/rank{r}.csv"])
+            df = pd.concat(dfs).sort_index()
+            df.to_csv(f"{savedir}/info.csv")
+            cmd = [
+                "bash",
+                "scripts/switch_conda_env.sh",
+                "pymol",
+                "python",
+                "-m",
+                "scripts.visualize",
+                "--dir",
+                savedir,
+                "--out",
+                f"{savedir}/out.png",
+                "--annotate",
+            ]
+            out = subprocess.run(cmd) 
+            
             
         if self.cfg.run_diversity:
             tm_arr = np.zeros((len(self), len(self)))

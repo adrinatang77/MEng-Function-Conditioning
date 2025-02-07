@@ -43,8 +43,11 @@ class EDMDiffusionStepper:
         noise = torch.randn_like(x)
         gamma = self.cfg.temp_factor
 
-        dx = g**2 * s * dt + g * gamma * np.sqrt(dt) * noise # SDE
+        # dx = g**2 * s * dt + g * gamma * np.sqrt(dt) * noise # SDE
         # dx = 0.5 * g**2 * s * dt # + g * gamma * np.sqrt(dt) * noise # ODE
+        ode = 0.5 * g**2 * s * dt 
+        sde = 0.5 * g**2 * s * dt + g * gamma * np.sqrt(dt) * noise
+        dx = ode + self.cfg.sde_weight * sde
         
         batch['struct'] = x + dx
         extra['traj'].append(batch['struct'])

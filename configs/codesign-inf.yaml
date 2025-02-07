@@ -134,7 +134,7 @@ evals:
         num_samples: 100
         batch: 100
         sample_length: 128
-        steps: 400
+        steps: 200
         skew: 1
         struct:
             rescale_time: ${tracks.StructureTrack.rescale_time}
@@ -143,7 +143,7 @@ evals:
             sigma_min: ${tracks.StructureTrack.t_emb_min}
             type: ${tracks.StructureTrack.diffusion.type}
             temp_factor: 0.5
-            sde_weight: 3.0
+            sde_weight: 1.0
             data_sigma: ${tracks.StructureTrack.diffusion.data_sigma}
             sched: edm
             max_t: 0.95
@@ -156,7 +156,7 @@ evals:
             # replace_unmasked: false
         run_designability: true
         run_pmpnn_designability: false
-        run_diversity: true
+        run_diversity: false
         run_secondary: true
 
     # struct_gen_sde_0.5:
