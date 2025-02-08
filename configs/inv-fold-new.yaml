@@ -81,7 +81,7 @@ datasets:
 tasks:
 
     InverseFolding:
-        fraction: 0.5
+        fraction: 1.0
         weight: 1.0
         beta: [1, 2]
         uniform_prob: 1.0

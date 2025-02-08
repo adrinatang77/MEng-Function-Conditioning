@@ -41,7 +41,10 @@ for i, ax in tqdm.tqdm(enumerate(axs.flatten())):
     
     if args.annotate:
         row = df.loc[f"sample{i}"]
-        ax.text(0, 0, f"{i} {row.scrmsd:.1f}A {int(row.helix*100)}h:{int(row.sheet*100)}s:{int(row.loop*100)}l", size=4)
+        ax.text(0, 0, 
+            f"{i} {row.scrmsd:.1f}A / {row.pmpnn_scrmsd:.1f}A \n"
+            f"{int(row.helix*100)}h:{int(row.sheet*100)}s:{int(row.loop*100)}l",
+        size=4)
     ax.imshow(im)
     ax.set_axis_off()
 fig.savefig(args.out, bbox_inches='tight', pad_inches=0)

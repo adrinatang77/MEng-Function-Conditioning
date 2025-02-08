@@ -45,94 +45,176 @@ class CodesignEval(OpenProtEval):
         )
         return data
 
-    def compute_metrics(
-        self, rank=0, world_size=1, device=None, savedir=".", logger=None
-    ):
-
-        
-
-        idx = list(range(rank, len(self), world_size))
-        os.makedirs(f"{savedir}/rank{rank}", exist_ok=True)
-
-        df = defaultdict(dict) 
-        
-        if self.cfg.run_designability:
-            torch.cuda.empty_cache()
-            for i in idx:
-                cmd = ['cp', f"{savedir}/sample{i}.fasta", f"{savedir}/rank{rank}"]
-                subprocess.run(cmd)
+    def run_designability(self, idx, rank, world_size, savedir, logger, df):
+        for i in idx:
+            cmd = ['cp', f"{savedir}/sample{i}.fasta", f"{savedir}/rank{rank}"]
+            subprocess.run(cmd)
                 
-            cmd = [
-                "bash",
-                "scripts/switch_conda_env.sh",
-                "eval",
-                "python",
-                "-m",
-                "scripts.esmfold",
-                "--outdir",
-                f"{savedir}/rank{rank}",
-                "--dir",
-                f"{savedir}/rank{rank}",
-                # "--print",
-                "--device",
-                str(torch.cuda.current_device())
-            ]
-            out = subprocess.run(cmd) 
+        cmd = [
+            "bash",
+            "scripts/switch_conda_env.sh",
+            "eval",
+            "python",
+            "-m",
+            "scripts.esmfold",
+            "--outdir",
+            f"{savedir}/rank{rank}",
+            "--dir",
+            f"{savedir}/rank{rank}",
+            # "--print",
+            "--device",
+            str(torch.cuda.current_device())
+        ]
+        out = subprocess.run(cmd) 
+        
+        for i in idx:
             
-            for i in idx:
-                
-                with open(f"{savedir}/sample{i}.pdb") as f:
-                    prot = protein.from_pdb_string(f.read())
-                with open(f"{savedir}/rank{rank}/sample{i}.pdb") as f:
-                    pred = protein.from_pdb_string(f.read())
-                lddt = compute_lddt(
-                    torch.from_numpy(pred.atom_positions[:,1]), 
-                    torch.from_numpy(prot.atom_positions[:,1]), 
-                    torch.from_numpy(prot.atom_mask[:,1])
-                )
-                rmsd = compute_rmsd(
-                    torch.from_numpy(pred.atom_positions[:,1]),  
-                    torch.from_numpy(prot.atom_positions[:,1])
-                )
-                tmscore = compute_tmscore(  # second is reference
-                    coords1=pred.atom_positions[:,1],
-                    coords2=prot.atom_positions[:,1],
+            with open(f"{savedir}/sample{i}.pdb") as f:
+                prot = protein.from_pdb_string(f.read())
+            with open(f"{savedir}/rank{rank}/sample{i}.pdb") as f:
+                pred = protein.from_pdb_string(f.read())
+            lddt = compute_lddt(
+                torch.from_numpy(pred.atom_positions[:,1]), 
+                torch.from_numpy(prot.atom_positions[:,1]), 
+                torch.from_numpy(prot.atom_mask[:,1])
+            )
+            rmsd = compute_rmsd(
+                torch.from_numpy(pred.atom_positions[:,1]),  
+                torch.from_numpy(prot.atom_positions[:,1])
+            )
+            tmscore = compute_tmscore(  # second is reference
+                coords1=pred.atom_positions[:,1],
+                coords2=prot.atom_positions[:,1],
+            )['tm']
+
+            plddt = PandasPdb().read_pdb(f"{savedir}/rank{rank}/sample{i}.pdb").df['ATOM']['b_factor'].mean()
+            
+            if logger is not None:
+                logger.log(f"{self.cfg.name}/sclddt", lddt)
+                logger.log(f"{self.cfg.name}/scrmsd", rmsd)
+                logger.log(f"{self.cfg.name}/scrmsd<2", (rmsd < 2).float())
+                logger.log(f"{self.cfg.name}/scTM", tmscore)
+                logger.log(f"{self.cfg.name}/sclddt>80", (lddt > 0.8).float())
+                logger.log(f"{self.cfg.name}/scTM>80", tmscore > 0.8)
+                logger.log(f"{self.cfg.name}/plddt", plddt)
+
+            df[f"sample{i}"]["plddt"] = plddt
+            df[f"sample{i}"]["scrmsd"] = float(rmsd)
+            df[f"sample{i}"]["sctm"] = tmscore
+            df[f"sample{i}"]["sclddt"] = float(lddt)
+    
+
+    def run_diversity(self, idx, rank, world_size, savedir, logger, df):
+        tm_arr = np.zeros((len(self), len(self)))
+        for i in idx:
+            with open(f"{savedir}/sample{i}.pdb") as f:
+                prot1 = protein.from_pdb_string(f.read())
+            for j in range(len(self)):
+                with open(f"{savedir}/sample{j}.pdb") as f:
+                    prot2 = protein.from_pdb_string(f.read())
+                tm_arr[i,j] = compute_tmscore(  # second is reference
+                    coords1=prot1.atom_positions[:,1],
+                    coords2=prot2.atom_positions[:,1],
                 )['tm']
+        np.save(f"{savedir}/rank{rank}/tmscores.npy", tm_arr)
+        if world_size > 1:
+            torch.distributed.barrier()
+            
+        # every rank has to compute it, otherwise error
+        tm_arr = np.zeros((len(self), len(self)))
+        for r in range(world_size):
+            tm_arr += np.load(f"{savedir}/rank{r}/tmscores.npy")
+        eigvals = np.linalg.eigvals(tm_arr / len(self))
+        vendi = np.e**np.nansum(-eigvals * np.log(eigvals))
+        if logger is not None:
+            logger.log(f"{self.cfg.name}/vendi", vendi)
 
-                plddt = PandasPdb().read_pdb(f"{savedir}/rank{rank}/sample{i}.pdb").df['ATOM']['b_factor'].mean()
-                
-                if logger is not None:
-                    logger.log(f"{self.cfg.name}/sclddt", lddt)
-                    logger.log(f"{self.cfg.name}/scrmsd", rmsd)
-                    logger.log(f"{self.cfg.name}/scrmsd<2", (rmsd < 2).float())
-                    logger.log(f"{self.cfg.name}/scTM", tmscore)
-                    logger.log(f"{self.cfg.name}/sclddt>80", (lddt > 0.8).float())
-                    logger.log(f"{self.cfg.name}/scTM>80", tmscore > 0.8)
-                    logger.log(f"{self.cfg.name}/plddt", plddt)
+    def run_secondary(self, idx, rank, world_size, savedir, logger, df):
+        for i in idx:
+            with open(f"{savedir}/sample{i}.pdb") as f:
+                prot = protein.from_pdb_string(f.read())
+            ss = assign_secondary_structures(
+                torch.from_numpy(prot.atom_positions[None,:,1]), 
+                full=False,
+                return_encodings=False
+            )[0]
+            
+            pos = prot.atom_positions[:,1]
+            L = len(pos)
+            pos = pos - pos.mean(0, keepdims=True)
+            ii, jj = np.meshgrid(np.arange(L), np.arange(L))
+            dmat = np.square(pos[None] - pos[:,None]).sum(-1) ** 0.5
+            lrc = (np.abs(ii-jj) > 12) & (dmat < 8)
+            lrc = lrc.sum() / L
+            
+            if logger is not None:
+                logger.log(f"{self.cfg.name}/helix", ss.count('h') / len(ss))
+                logger.log(f"{self.cfg.name}/sheet", ss.count('s') / len(ss))
+                logger.log(f"{self.cfg.name}/loop", ss.count('-') / len(ss))
+                logger.log(f"{self.cfg.name}/lrc", lrc)
+            df[f"sample{i}"]["helix"] = ss.count('h') / len(ss)
+            df[f"sample{i}"]["sheet"] = ss.count('s') / len(ss)
+            df[f"sample{i}"]["loop"] = ss.count('-') / len(ss)
+            df[f"sample{i}"]["lrc"] = lrc
 
-                df[f"sample{i}"]["plddt"] = plddt
-                df[f"sample{i}"]["scrmsd"] = float(rmsd)
-                df[f"sample{i}"]["sctm"] = tmscore
-                df[f"sample{i}"]["sclddt"] = float(lddt)
-                    
-        if self.cfg.run_secondary:
-            for i in idx:
-                with open(f"{savedir}/sample{i}.pdb") as f:
-                    prot = protein.from_pdb_string(f.read())
-                ss = assign_secondary_structures(
-                    torch.from_numpy(prot.atom_positions[None,:,1]), 
-                    full=False,
-                    return_encodings=False
-                )[0]
-                if logger is not None:
-                    logger.log(f"{self.cfg.name}/helix", ss.count('h') / len(ss))
-                    logger.log(f"{self.cfg.name}/sheet", ss.count('s') / len(ss))
-                    logger.log(f"{self.cfg.name}/loop", ss.count('-') / len(ss))
-                df[f"sample{i}"]["helix"] = ss.count('h') / len(ss)
-                df[f"sample{i}"]["sheet"] = ss.count('s') / len(ss)
-                df[f"sample{i}"]["loop"] = ss.count('-') / len(ss)
-                
 
+    def make_plot(self, idx, rank, world_size, savedir, logger, df):
+        cmd = [
+            "bash",
+            "scripts/switch_conda_env.sh",
+            "pymol",
+            "python",
+            "-m",
+            "scripts.visualize",
+            "--dir",
+            savedir,
+            "--out",
+            f"{savedir}/out.png",
+            "--annotate",
+        ]
+        out = subprocess.run(cmd) 
+
+    def run_pmpnn_designability(self, idx, rank, world_size, savedir, logger, df):
+        # count = math.ceil(self.cfg.num_samples / world_size)
+        # start = rank * count
+        # end = min((rank + 1) * count, self.cfg.num_samples)
+
+        os.makedirs(f"{savedir}/rank{rank}/pmpnn/pdbs", exist_ok=True)
+        for i in idx:
+            cmd = [
+                'cp',
+                f"{savedir}/sample{i}.pdb",
+                f"{savedir}/rank{rank}/pmpnn/pdbs"
+            ]
+            subprocess.run(cmd)
+        cmd = [
+            "bash",
+            "scripts/run_genie_pipeline.sh",
+            f"{savedir}/rank{rank}/pmpnn",
+        ]
+        cvd = os.environ.get('CUDA_VISIBLE_DEVICES', None)
+        if cvd:
+            dev = cvd.split(',')[torch.cuda.current_device()]
+        else:
+            dev = torch.cuda.current_device()
+        subprocess.run(cmd, env=os.environ | {
+            'CUDA_VISIBLE_DEVICES': str(dev)
+        })  
+
+        pmpnn_df = pd.read_csv(
+            f"{savedir}/rank{rank}/pmpnn/info.csv", index_col="domain"
+        )
+        pmpnn_df["designable"] = pmpnn_df["scRMSD"] < 2
+        if logger is not None:
+            for col in pmpnn_df.columns:
+                for val in pmpnn_df[col].tolist():
+                    logger.log(f"{self.cfg.name}/pmpnn_{col}", val)
+        for i in idx:
+            df[f"sample{i}"]["pmpnn_scrmsd"] = pmpnn_df.loc[f"sample{i}"].scRMSD
+            df[f"sample{i}"]["pmpnn_scTM"] = pmpnn_df.loc[f"sample{i}"].scTM
+            df[f"sample{i}"]["pmpnn_pLDDT"] = pmpnn_df.loc[f"sample{i}"].pLDDT
+        
+    def save_df(self, idx, rank, world_size, savedir, logger, df):
         df = pd.DataFrame(df).T.astype(float)
         df.to_csv(f"{savedir}/rank{rank}.csv")
     
@@ -145,79 +227,35 @@ class CodesignEval(OpenProtEval):
                 subprocess.run(["rm", f"{savedir}/rank{r}.csv"])
             df = pd.concat(dfs).sort_index()
             df.to_csv(f"{savedir}/info.csv")
-            cmd = [
-                "bash",
-                "scripts/switch_conda_env.sh",
-                "pymol",
-                "python",
-                "-m",
-                "scripts.visualize",
-                "--dir",
-                savedir,
-                "--out",
-                f"{savedir}/out.png",
-                "--annotate",
-            ]
-            out = subprocess.run(cmd) 
-            
-            
+        
+    def compute_metrics(
+        self, rank=0, world_size=1, device=None, savedir=".", logger=None
+    ):
+
+        idx = list(range(rank, len(self), world_size))
+        os.makedirs(f"{savedir}/rank{rank}", exist_ok=True)
+
+        df = defaultdict(dict) 
+        
+        if self.cfg.run_designability:
+            torch.cuda.empty_cache()
+            self.run_designability(idx, rank, world_size, savedir, logger, df)
+                   
+        if self.cfg.run_secondary:
+            self.run_secondary(idx, rank, world_size, savedir, logger, df)
+
         if self.cfg.run_diversity:
-            tm_arr = np.zeros((len(self), len(self)))
-            for i in idx:
-                with open(f"{savedir}/sample{i}.pdb") as f:
-                    prot1 = protein.from_pdb_string(f.read())
-                for j in range(len(self)):
-                    with open(f"{savedir}/sample{j}.pdb") as f:
-                        prot2 = protein.from_pdb_string(f.read())
-                    tm_arr[i,j] = compute_tmscore(  # second is reference
-                        coords1=prot1.atom_positions[:,1],
-                        coords2=prot2.atom_positions[:,1],
-                    )['tm']
-            np.save(f"{savedir}/rank{rank}/tmscores.npy", tm_arr)
-            if world_size > 1:
-                torch.distributed.barrier()
-                
-            # every rank has to compute it, otherwise error
-            tm_arr = np.zeros((len(self), len(self)))
-            for r in range(world_size):
-                tm_arr += np.load(f"{savedir}/rank{r}/tmscores.npy")
-            eigvals = np.linalg.eigvals(tm_arr / len(self))
-            vendi = np.e**np.nansum(-eigvals * np.log(eigvals))
-            if logger is not None:
-                logger.log(f"{self.cfg.name}/vendi", vendi)
+            self.run_diversity(idx, rank, world_size, savedir, logger, df)
 
         if self.cfg.run_pmpnn_designability:
-            ## distributed designability
-            count = math.ceil(self.cfg.num_samples / world_size)
-            start = rank * count
-            end = min((rank + 1) * count, self.cfg.num_samples)
-
-            cmd = [
-                "bash",
-                "scripts/run_genie_pipeline.sh",
-                savedir,
-                str(start),
-                str(end - 1),
-            ]
-            cvd = os.environ.get('CUDA_VISIBLE_DEVICES', None)
-            if cvd:
-                dev = cvd.split(',')[torch.cuda.current_device()]
-            else:
-                dev = torch.cuda.current_device()
-            subprocess.run(cmd, env=os.environ | {
-                'CUDA_VISIBLE_DEVICES': str(dev)
-            })  
-
-            df = pd.read_csv(
-                f"{savedir}/eval{start}_{end-1}/info.csv", index_col="domain"
-            )
-            df["designable"] = df["scRMSD"] < 2
-            if logger is not None:
-                for col in df.columns:
-                    for val in df[col].tolist():
-                        logger.log(f"{self.cfg.name}/pmpnn_{col}", val)
-                    
-
+            torch.cuda.empty_cache()
+            self.run_pmpnn_designability(idx, rank, world_size, savedir, logger, df)
+        
+        # this has to be last
+        self.save_df(idx, rank, world_size, savedir, logger, df)
+        if rank == 0:
+            self.make_plot(idx, rank, world_size, savedir, logger, df)
+            
     def run_batch(
         self,
         model,
