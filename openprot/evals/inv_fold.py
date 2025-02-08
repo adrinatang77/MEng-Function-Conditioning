@@ -85,6 +85,7 @@ class InverseFoldingEval(OpenProtEval):
         cmd = [
             "bash",
             "scripts/switch_conda_env.sh",
+            "eval",
             "python",
             "-m",
             "scripts.esmfold",
