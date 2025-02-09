@@ -6,6 +6,7 @@ import numpy as np
 # from typing import override
 from .track import OpenProtTrack
 from ..utils import residue_constants as rc
+from ..utils.prot_utils import seqres_to_aatype
 from functools import partial
 
 import pandas as pd
@@ -44,6 +45,9 @@ def sinusoidal_embedding(pos, n_freqs, max_period, min_period):
 
 import esm
 from esm import Alphabet
+
+RNA_LETTERS = {"A": 0, "G": 1, "C": 2, "U": 3}
+DNA_LETTERS = {"A": 0, "G": 1, "C": 2, "T": 3}
 
 load_fn = esm.pretrained.load_model_and_alphabet
 esm_registry = {
@@ -91,83 +95,29 @@ class EsmLMHead(nn.Module):
 class SequenceTrack(OpenProtTrack):
 
     def setup(self):
-        # rate_matrix = pd.read_csv(self.cfg.rate_matrix_path, index_col=0)
-        # flow = torch.from_numpy(rate_matrix.values).float()
-        # self.flow = flow[:-1, :-1]
         self.alphabet = EsmTokenizer.from_pretrained('facebook/esm2_t30_150M_UR50D')
 
+        if self.cfg.all_atom:
+            self.ntoks = 21 + 5 + 5 + 128
+        else:
+            self.ntoks = NUM_TOKENS # 21
     def tokenize(self, data):
-
-        # seqres = data['seqres']
-        # if seqres[0] == '[':
-        #     seq = ['<cls>']
-        # seq += list(seqres[1:-1])
-        # if seqres[-1] == ']':
-        #     seq += ['<eos>']
-        # else:
-        #     seq += [seq[-1]]
         
+        prot_aatype = np.array(seqres_to_aatype(data["seqres"]))
+        rna_aatype = np.array([RNA_LETTERS.get(c, 4) for c in data["seqres"]])
+        dna_aatype = np.array([DNA_LETTERS.get(c, 4) for c in data["seqres"]])
+        lig_aatype = data["atom_num"].astype(int)
+        data['aatype'] = (data['mol_type'] == 0) * prot_aatype
+        data['aatype'] += (data['mol_type'] == 1) * (dna_aatype + 21)
+        data['aatype'] += (data['mol_type'] == 2) * (rna_aatype + 26)
+        data['aatype'] += (data['mol_type'] == 3) * (lig_aatype + 31)
+        data['aatype'] = data['aatype'].astype(int)    
         
-        # data['aatype'] = self.alphabet.batch_encode_plus(seq, add_special_tokens=False, padding="do_not_pad", return_tensors='np')['input_ids'][:,0]
-        data["aatype"] = np.array(
-            [rc.restype_order.get(c, rc.unk_restype_index) for c in data["seqres"]]
-        )
-
     @staticmethod
     def _af2_to_esm(d: Alphabet):
         # Remember that t is shifted from residue_constants by 1 (0 is padding).
         esm_reorder = [d.padding_idx] + [d.get_idx(v) for v in rc.restypes_with_x]
         return torch.tensor(esm_reorder)
-
-    """
-    def noise_transform(self, t, tokens, start = 0):
-        '''
-        takes tokens and noise_levels t and returns new noised distribution of tokens, offset by starting noise
-        '''
-        batch_size, seq_len = tokens.shape[0], tokens.shape[1]
-        start = torch.full(t.shape, start, device=t.device)
-        device = t.device
-        tokens = tokens.to(device)
-        self.steady_state = self.steady_state.to(device)
-        noisy_state = self.steady_state.unsqueeze(0).unsqueeze(0).unsqueeze(-1).expand(*tokens.shape)
-
-        if self.cfg.noise_schedule == "tan":
-            t[t==1] = 1 - 1e-5
-            start = torch.tan(start * (torch.pi/2))
-            end = torch.tan(t * (torch.pi/2))
-            converted_noise = end - start
-            flows = self.flow.unsqueeze(0).repeat(batch_size, seq_len, 1, 1).to(device)
-            transition = torch.matrix_exp(converted_noise.repeat(1, 1, NUM_TOKENS, NUM_TOKENS) * flows)
-            return torch.matmul(transition, tokens)
-        
-        elif self.cfg.noise_schedule == "exp":
-            start = self.cfg.noise_min + (self.cfg.noise_max - self.cfg.noise_min) * (1- torch.exp(-self.cfg.noise_k * start))
-            end = self.cfg.noise_min + (self.cfg.noise_max - self.cfg.noise_min) * (1- torch.exp(-self.cfg.noise_k * t))
-            converted_noise = end - start
-            flows = self.flow.unsqueeze(0).repeat(batch_size, seq_len, 1, 1).to(t.device)
-            transition = torch.matrix_exp(converted_noise.repeat(1, 1, NUM_TOKENS, NUM_TOKENS) * flows)
-            return torch.matmul(transition, tokens)
-        
-        raise ValueError("Invalid noise schedule")
-
-    
-
-    def apply_flow(self, tokens, t):
-
-        def t_transform(t):
-            return t  # temporary
-
-        tokens_ = torch.where(tokens == MASK_IDX, 0, tokens)  # temporary
-        B, L = tokens.shape
-
-        probs = torch.matrix_exp(self.flow.to(t) * t_transform(t)[..., None, None])
-        toks_oh = F.one_hot(tokens_, num_classes=20)
-        probs = torch.einsum("...ij,...j->...i", probs, toks_oh.float())
-
-        new_toks = torch.distributions.categorical.Categorical(probs).sample()
-
-        return torch.where(tokens == MASK_IDX, MASK_IDX, new_toks)
-    """
 
     def _compute_language_model_representations(self, esmaa):
         """Adds bos/eos tokens for the language model, since the structure module doesn't use these."""
@@ -197,15 +147,15 @@ class SequenceTrack(OpenProtTrack):
         return esm_s, esm_z
 
     def add_modules(self, model):
-        model.seq_embed = nn.Embedding(NUM_TOKENS, model.cfg.dim)
+        model.seq_embed = nn.Embedding(self.ntoks, model.cfg.dim)
         if self.cfg.init:
             torch.nn.init.normal_(model.seq_embed.weight, std=self.cfg.init)
         if self.cfg.esm_lm_head:
-            model.seq_out = EsmLMHead(model.cfg.dim, NUM_TOKENS)
+            model.seq_out = EsmLMHead(model.cfg.dim, self.ntoks)
             if self.cfg.tied_weights:
                 model.seq_out.decoder.weight = model.seq_embed.weight
         else:
-            model.seq_out = nn.Linear(model.cfg.dim, NUM_TOKENS)
+            model.seq_out = nn.Linear(model.cfg.dim, self.ntoks)
         
         if self.cfg.esm is not None:
 
@@ -258,7 +208,7 @@ class SequenceTrack(OpenProtTrack):
             target["seq_supervise"] = torch.where(sup, batch["seq_weight"], 0.0)
 
         noisy_batch['residx'] = batch['residx']
-        oh = torch.nn.functional.one_hot(tokens, num_classes=NUM_TOKENS)
+        oh = torch.nn.functional.one_hot(tokens, num_classes=self.ntoks)
         dist = oh.float().mean(1)
         dist /= dist.sum(-1, keepdims=True)
         ppl = (-torch.nansum(dist * dist.log(), -1)).exp()
@@ -315,19 +265,19 @@ class SequenceTrack(OpenProtTrack):
             logger.masked_log("seq/loss", loss, mask=mask)
             logger.masked_log("seq/perplexity", loss, mask=mask, post=np.exp)
 
-        logits = readout["aatype"]
+        # logits = readout["aatype"]
         # logits[...,-1] -= 1e5
         ## extract the pseudo-mask likelihoods
-        probs = logits.softmax(-1)
-        oh = torch.nn.functional.one_hot(target['noisy_aatype'], num_classes=NUM_TOKENS)
-        denom = 0.5 * oh + 0.05
-        new_probs = probs / denom
-        new_probs /= new_probs.sum(-1, keepdims=True)
-        is_mask_prob = ((probs - oh) / (new_probs - oh))[...,0]
-        is_unmask = (target['noisy_aatype'] != MASK_IDX)
-        # print((is_mask_prob * is_unmask).sum(-1) / is_unmask.sum(-1))
-        # print((is_mask_prob * is_unmask).sum() / is_unmask.sum())
-        if logger:
-            logger.masked_log("seq/is_mask_prob", is_mask_prob, mask=is_unmask)
+        # probs = logits.softmax(-1)
+        # oh = torch.nn.functional.one_hot(target['noisy_aatype'], num_classes=self.ntoks)
+        # denom = 0.5 * oh + 0.05
+        # new_probs = probs / denom
+        # new_probs /= new_probs.sum(-1, keepdims=True)
+        # is_mask_prob = ((probs - oh) / (new_probs - oh))[...,0]
+        # is_unmask = (target['noisy_aatype'] != MASK_IDX)
+        # # print((is_mask_prob * is_unmask).sum(-1) / is_unmask.sum(-1))
+        # # print((is_mask_prob * is_unmask).sum() / is_unmask.sum())
+        # if logger:
+        #     logger.masked_log("seq/is_mask_prob", is_mask_prob, mask=is_unmask)
         
         return loss * mask

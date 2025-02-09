@@ -32,19 +32,21 @@ class Codesign(OpenProtTask):
         else:
             noise_level = np.random.beta(*self.cfg.seq_beta)
 
+        mask = data["seq_mask"] * (data["mol_type"] == 0).float()
         
         L = len(data["seqres"])
         data["seq_noise"] = (np.random.rand(L) < noise_level).astype(np.float32)
-        t_inv = data["seq_mask"].sum() / (eps + (data["seq_mask"] * data["seq_noise"]).sum()) 
-        t = (data["seq_mask"] * data["seq_noise"]).sum()  / (eps + data["seq_mask"].sum()) 
+        t_inv = mask.sum() / (eps + (mask * data["seq_noise"]).sum()) 
+        t = (mask * data["seq_noise"]).sum()  / (eps + mask.sum()) 
 
+        ones = np.ones(L, dtype=np.float32)
         if self.cfg.seq_reweight == 'linear':
-            data["seq_weight"] = np.ones(L, dtype=np.float32) * (1-t) * self.cfg.seq_weight
+            data["seq_weight"] = ones * (1-t) * self.cfg.seq_weight
         elif self.cfg.seq_reweight == 'inverse':
-            data["seq_weight"] = np.ones(L, dtype=np.float32) * t_inv * self.cfg.seq_weight
+            data["seq_weight"] = ones * t_inv * self.cfg.seq_weight
         else:
             assert not self.cfg.seq_reweight, 'reweight type not recognized'
-            data["seq_weight"] = np.ones(L, dtype=np.float32) *  self.cfg.seq_weight
+            data["seq_weight"] = ones *  self.cfg.seq_weight
         
         
     def add_structure_noise(self, data, eps=1e-6):

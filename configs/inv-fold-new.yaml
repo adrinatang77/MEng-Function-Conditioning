@@ -3,12 +3,12 @@ pretrained: #  load weights from here first
 validate: false # if true, only validate the model, don't train
 logger:
     # set to true to log to neptune.ai
-    neptune: false
+    neptune: true
     run_id: 
     # please change "test" to something unique to your task
     project: openprot/struct-merge
     # will log to workdir and neptune.ai with this name
-    name: inv-fold-codesign2
+    name: inv-fold-codesign3
     # if not null, will duplicate stdout and stderr to workdir/{name}/{logfile}
     logfile: std.out
     # if null, will log every epoch, otherwise every this number of steps
@@ -18,7 +18,7 @@ logger:
     save_freq: 1000
 trainer:
     accelerator: auto
-    devices: 1
+    devices: 4
     max_epochs: 1
     max_steps: 1000000
     enable_progress_bar: true
@@ -116,6 +116,7 @@ evals:
         steps: 
         limit: 100
         logits: standard
+        run_pmpnn: false
         strategy: random
         adjust_unmasked: false
         
@@ -176,8 +177,8 @@ model: # custom args
     heads: 16
     pairwise_heads: 4
     blocks: 16
-    dropout: 0.1
-    token_dropout: 0.1
+    dropout: 0.0
+    token_dropout: 0.0
 
     
     
@@ -209,7 +210,7 @@ model: # custom args
     ff_expand: 4
     position_bins: 32
     # whether non-pair blocks still have pair bias
-    block_pair_bias: true 
+    block_pair_bias: false 
     block_pair_values: false
     pair_ffn: true
     pair_values: true
@@ -222,26 +223,11 @@ model: # custom args
 
     ### struct module args
     struct_module: false
-    # sm_relpos: [32, 1, 100]
-    # move_x_to_xcond: true
     readout_trans_before_sm: false
-    # zero_frames_before_ipa: true
-    # ipa_blocks: 8
-    # separate_ipa_blocks: true
-    # ipa_pair_values: false
-    # ipa_pair_bias: false
-    # detach_trans: true    
-    # ipa_relpos: true
-    # ipa_nipa: false
-    # ipa_rope: false
-    # ipa_frame_update: true
-    # zero_x_before_ipa: false
     trans_rescale: false
 
     ## adaLN args
     trunk_adaLN: true
-    # sm_adaLN: true
-    # readout_adaLN: true
     
 
 optimizer:

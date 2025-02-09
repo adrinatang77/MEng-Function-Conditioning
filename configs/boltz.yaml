@@ -217,7 +217,7 @@ tracks:
         embed_t: false
         readout: trunk
         init: 
-
+        all_atom: true
 
 model: # custom args
     dplm_ckpt: null

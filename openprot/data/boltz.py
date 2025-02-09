@@ -5,7 +5,8 @@ from .data import OpenProtDataset
 from ..utils import residue_constants as rc
 from collections import defaultdict
 from boltz.data.const import prot_token_to_letter, dna_token_to_letter, rna_token_to_letter
-from openprot.utils.prot_utils import seqres_to_aatype
+from ..utils.prot_utils import seqres_to_aatype
+import pickle
 
 class BoltzDataset(OpenProtDataset):
 
@@ -32,6 +33,10 @@ class BoltzDataset(OpenProtDataset):
         
         for _, sub_df in self.df.groupby('cluster_id'):
             self.clusters.append(sub_df)
+
+        # print('Loading CCD')
+        # with open('/data/cb/scratch/datasets/boltz/ccd.pkl', 'rb') as f:
+        #     self.ccd = pickle.load(f)
             
     def __len__(self):
         return len(self.clusters)
@@ -54,9 +59,13 @@ class BoltzDataset(OpenProtDataset):
             L = chain['atom_num']
         else:
             L = chain['res_num']
+            
         ones = np.ones(L, dtype=np.float32)
+        # defaults
         atom_num = ones * 0.0
         seq_mask = np.copy(ones)
+        ref_conf = np.zeros((L, 3), dtype=np.float32)
+        
         if chain['mol_type'] == 0: # prot
             seqres = ''.join([prot_token_to_letter.get(c, 'X') for c in resis['name']])
             seq_mask[[c not in rc.restype_order for c in seqres]] = 0
@@ -74,6 +83,7 @@ class BoltzDataset(OpenProtDataset):
             coords = atoms['coords']
             mask = atoms['is_present']
             residx = ones * 0.0
+            ref_conf = atoms['conformer']
             
         return {
             'seqres': seqres,
@@ -82,7 +92,7 @@ class BoltzDataset(OpenProtDataset):
             'seq_mask': seq_mask,
             'struct': coords,
             'struct_mask': mask,
-            # 'ref_conf': None,
+            'ref_conf': ref_conf,
             'residx': residx,
             'chain': ones * idx,
         }
