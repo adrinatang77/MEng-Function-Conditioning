@@ -1,14 +1,14 @@
-ckpt: workdir/inv-fold-codesign/last.ckpt
+ckpt: 
 pretrained: #  load weights from here first
 validate: false # if true, only validate the model, don't train
 logger:
     # set to true to log to neptune.ai
-    neptune: true
-    run_id: STRUC1-662
+    neptune: false
+    run_id: 
     # please change "test" to something unique to your task
     project: openprot/struct-merge
     # will log to workdir and neptune.ai with this name
-    name: inv-fold-codesign
+    name: inv-fold-codesign2
     # if not null, will duplicate stdout and stderr to workdir/{name}/{logfile}
     logfile: std.out
     # if null, will log every epoch, otherwise every this number of steps
@@ -18,16 +18,16 @@ logger:
     save_freq: 1000
 trainer:
     accelerator: auto
-    devices: 8
+    devices: 1
     max_epochs: 1
     max_steps: 1000000
-    enable_progress_bar: false
+    enable_progress_bar: true
     limit_train_batches: 1.0
     limit_val_batches: 1.0
     num_sanity_val_steps: 0
     gradient_clip_val: 1.0
     accumulate_grad_batches: 1
-    val_check_interval: 10000
+    val_check_interval: 3000
     check_val_every_n_epoch: 1
     logger: false
     precision: 16-mixed
@@ -37,7 +37,7 @@ data:
     num_workers: 8
     buffer: 1000
     max_sq_toks: null # 400000
-    max_toks: 4096
+    max_toks: 8192
     batch: null
     crop: 384
     seed: 137
@@ -51,16 +51,19 @@ data:
 # -1 means this is the LEGNTH dim. 
 features:
     # sequence feats
+    atom_num: [-1] # ligands only
+    mol_type: [-1] # default 0 = protein
     seq_mask: [-1]
     seq_noise: [-1]
     seq_weight: [-1]
-    # structure feats are unconventional
-    # because they really mix 3 modalities
-    atom37: [-1, 37, 3]
-    atom37_mask: [-1, 37]
+    struct: [-1, 3]
+    struct_mask: [-1]
     struct_noise: [-1]
     struct_weight: [-1]
+    ref_conf: [-1, 3]
     residx: [-1]
+    chain: [-1]
+    
 datasets:
     pdb:
         type: PDBDataset
@@ -133,7 +136,7 @@ tracks:
         rescale_time: true
         t_emb_p: 7
         t_emb_max: 160
-        t_emb_min: 0.05
+        t_emb_min: 0.2
         readout_adaLN: false
 
         
@@ -167,23 +170,23 @@ model: # custom args
     multiflow_cfg: multiflow_config.yaml
     multiflow_ckpt: null # ./weights/last.ckpt
     ema: false
-    checkpoint: false
-    dim: 512
+    checkpoint: true
+    dim: 256
     pairwise_dim: 128
     heads: 16
     pairwise_heads: 4
-    blocks: 30
-    dropout: 0.0
-    token_dropout: 0.0
+    blocks: 16
+    dropout: 0.1
+    token_dropout: 0.1
 
     
-    trunk_relpos_params: [32, 0.1, 10]
+    
     
     # topology of the network
     pair_blocks:
         start: 0
         end: 0
-        interval: 4
+        interval: 2
     relpos_blocks:
         start: 0
         end: 0
@@ -194,6 +197,7 @@ model: # custom args
         interval: 4
     
     trunk_relpos: false
+    trunk_relpos_params: [32, 0.1, 10]
     trunk_frame_update: false
     trunk_update_rots: false
     trunk_ipa_frames: false
@@ -205,7 +209,7 @@ model: # custom args
     ff_expand: 4
     position_bins: 32
     # whether non-pair blocks still have pair bias
-    block_pair_bias: false 
+    block_pair_bias: true 
     block_pair_values: false
     pair_ffn: true
     pair_values: true
@@ -218,26 +222,26 @@ model: # custom args
 
     ### struct module args
     struct_module: false
-    sm_relpos: [32, 1, 100]
-    move_x_to_xcond: true
+    # sm_relpos: [32, 1, 100]
+    # move_x_to_xcond: true
     readout_trans_before_sm: false
-    zero_frames_before_ipa: true
-    ipa_blocks: 8
-    separate_ipa_blocks: true
-    ipa_pair_values: false
-    ipa_pair_bias: false
-    detach_trans: true    
-    ipa_relpos: true
-    ipa_nipa: false
-    ipa_rope: false
-    ipa_frame_update: true
-    zero_x_before_ipa: false
+    # zero_frames_before_ipa: true
+    # ipa_blocks: 8
+    # separate_ipa_blocks: true
+    # ipa_pair_values: false
+    # ipa_pair_bias: false
+    # detach_trans: true    
+    # ipa_relpos: true
+    # ipa_nipa: false
+    # ipa_rope: false
+    # ipa_frame_update: true
+    # zero_x_before_ipa: false
     trans_rescale: false
 
     ## adaLN args
     trunk_adaLN: true
-    sm_adaLN: true
-    readout_adaLN: true
+    # sm_adaLN: true
+    # readout_adaLN: true
     
 
 optimizer:
