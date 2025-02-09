@@ -4,7 +4,7 @@ import pandas as pd
 from .data import OpenProtDataset
 from ..utils import residue_constants as rc
 from collections import defaultdict
-from boltz.data.const import prot_token_to_letter
+from boltz.data.const import prot_token_to_letter, dna_token_to_letter, rna_token_to_letter
 from openprot.utils.prot_utils import seqres_to_aatype
 
 class BoltzDataset(OpenProtDataset):
@@ -35,6 +35,57 @@ class BoltzDataset(OpenProtDataset):
             
     def __len__(self):
         return len(self.clusters)
+
+    def unpack_chain(self, npz, idx):
+        chain = npz['chains'][idx]
+        start = chain['res_idx']
+        end = start + chain['res_num']
+        resis = npz['residues'][start:end]
+
+        astart = chain['atom_idx']
+        aend = astart + chain['atom_num']
+        atoms = npz['atoms'][astart:aend]
+        
+        coords = npz['atoms'][resis['atom_center']]['coords']
+        mask = npz['atoms'][resis['atom_center']]['is_present']
+        residx = resis['res_idx']
+
+        if chain['mol_type'] == 3:
+            L = chain['atom_num']
+        else:
+            L = chain['res_num']
+        ones = np.ones(L, dtype=np.float32)
+        atom_num = ones * 0.0
+        seq_mask = np.copy(ones)
+        if chain['mol_type'] == 0: # prot
+            seqres = ''.join([prot_token_to_letter.get(c, 'X') for c in resis['name']])
+            seq_mask[[c not in rc.restype_order for c in seqres]] = 0
+        
+        elif chain['mol_type'] == 1: # DNA
+            seqres = ''.join([dna_token_to_letter.get(c, 'N') for c in resis['name']])
+            seq_mask[[c == 'N' for c in seqres]] = 0
+        elif chain['mol_type'] == 2: # RNA
+            seqres = ''.join([rna_token_to_letter.get(c, 'N') for c in resis['name']])
+            seq_mask[[c == 'N' for c in seqres]] = 0
+            
+        elif chain['mol_type'] == 3: # ligand
+            atom_num = atoms['element']
+            seqres = '*'*len(atoms)
+            coords = atoms['coords']
+            mask = atoms['is_present']
+            residx = ones * 0.0
+            
+        return {
+            'seqres': seqres,
+            'atom_num': atom_num,
+            'mol_type': ones * chain['mol_type'],
+            'seq_mask': seq_mask,
+            'struct': coords,
+            'struct_mask': mask,
+            # 'ref_conf': None,
+            'residx': residx,
+            'chain': ones * idx,
+        }
         
     def __getitem__(self, idx: int):
         
@@ -49,36 +100,9 @@ class BoltzDataset(OpenProtDataset):
 
         npz = np.load(f"{self.cfg.path}/structures/{pdb_id[1:3]}/{pdb_id}.npz")
 
-        def unpack_chain(chain, chain_idx=0):
-            start = chain['res_idx']
-            end = start + chain['res_num']
-            resis = npz['residues'][start:end]
-            coords = npz['atoms'][resis['atom_center']]['coords']
-            mask = npz['atoms'][resis['atom_center']]['is_present']
-            residx = resis['res_idx']
-            
-            L = chain['res_num']
-            ones = np.ones(L, dtype=np.float32)
-            if chain['mol_type'] == 0: # prot
-                seqres = ''.join([prot_token_to_letter.get(c, 'X') for c in resis['name']])
-                seq_mask = np.ones(len(seqres), dtype=np.float32)
-                seq_mask[[c not in rc.restype_order for c in seqres]] = 0
-            
-            return {
-                'seqres': seqres,
-                'mol_type': ones * chain['mol_type'],
-                'seq_mask': seq_mask,
-                'struct': coords,
-                'struct_mask': mask,
-                # 'ref_conf': None,
-                'residx': residx,
-                'chain': ones * chain_idx,
-            }
-
-        
-        data = unpack_chain(npz['chains'][int(chain1)])
+        data = self.unpack_chain(npz, int(chain1))
         if chain2 is not None:
-            data2 = unpack_chain(npz['chains'][int(chain2)], 1)
+            data2 = self.unpack_chain(npz, int(chain2))
             for key in data2:
                 if key == 'seqres':
                     data['seqres'] += data2['seqres']
