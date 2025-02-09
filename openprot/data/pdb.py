@@ -3,6 +3,7 @@ import numpy as np
 import pandas as pd
 from .data import OpenProtDataset
 from ..utils import residue_constants as rc
+from ..utils.prot_utils import seqres_to_aatype
 
 class PDBDataset(OpenProtDataset):
 
@@ -64,24 +65,12 @@ class PDBDataset(OpenProtDataset):
         atom37=prot["all_atom_positions"]
         atom37_mask=prot["all_atom_mask"]
         
-        if self.cfg.struct_mask:
-            mask = atom37_mask[:,1].astype(bool)
-            seqres = "".join([
-                seqres[i] for i, c in enumerate(mask) if c
-            ])
-            residx = residx[mask]
-            seq_mask = seq_mask[mask]
-            atom37 = atom37[mask]
-            atom37_mask = atom37_mask[mask]
-
-        if len(seqres) == 0:
-            return self[(idx+1) % len(self)]
             
         return self.make_data(
             name=name,
             seqres=seqres,
             residx=residx,
             seq_mask=seq_mask,
-            atom37=atom37,
-            atom37_mask=atom37_mask
+            struct=atom37[:,1],
+            struct_mask=atom37_mask[:,1]
         )
