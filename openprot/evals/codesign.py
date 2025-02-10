@@ -35,12 +35,12 @@ class CodesignEval(OpenProtEval):
             max_noise = self.cfg.struct.max_t
         data = self.make_data(
             name=f"sample{idx}",
-            seqres="A" * L,
+            seqres="A"*L,
             seq_mask=np.ones(L, dtype=np.float32),
             seq_noise=np.ones(L, dtype=np.float32),
             struct_noise=np.ones(L, dtype=np.float32) * max_noise,
-            atom37=np.zeros((L, 37, 3), dtype=np.float32),
-            atom37_mask=np.ones((L, 37), dtype=np.float32),
+            struct=np.zeros((L, 3), dtype=np.float32),
+            struct_mask=np.ones(L, dtype=np.float32),
             residx=np.arange(L, dtype=np.float32),
         )
         return data
@@ -253,7 +253,7 @@ class CodesignEval(OpenProtEval):
         
         # this has to be last
         self.save_df(idx, rank, world_size, savedir, logger, df)
-        if rank == 0:
+        if self.cfg.run_plot and rank == 0:
             self.make_plot(idx, rank, world_size, savedir, logger, df)
             
     def run_batch(

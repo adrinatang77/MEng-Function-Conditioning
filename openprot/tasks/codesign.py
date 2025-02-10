@@ -32,7 +32,7 @@ class Codesign(OpenProtTask):
         else:
             noise_level = np.random.beta(*self.cfg.seq_beta)
 
-        mask = data["seq_mask"] * (data["mol_type"] == 0).float()
+        mask = data["seq_mask"] * (data["mol_type"] == 0).astype(np.float32)
         
         L = len(data["seqres"])
         data["seq_noise"] = (np.random.rand(L) < noise_level).astype(np.float32)
@@ -73,16 +73,13 @@ class Codesign(OpenProtTask):
         data["struct_weight"] = np.ones(L, dtype=np.float32) * self.cfg.struct_weight
 
         # center the structures
-        pos = data["atom37"][..., rc.atom_order["CA"], :]
-        mask = data["atom37_mask"][..., rc.atom_order["CA"], None]
+        pos = data["struct"]
+        mask = data["struct_mask"][..., None]
         com = (pos * mask).sum(-2) / (mask.sum(-2) + eps)
-        data["atom37"] -= com
+        data["struct"] -= com
 
         if self.cfg.random_rot:
             randrot = R.random().as_matrix()
-            data["atom37"] @= randrot.T
-
-        if self.cfg.rots:
-            data["rots_noise"] = data['struct_noise']
+            data["struct"] @= randrot.T
 
     
