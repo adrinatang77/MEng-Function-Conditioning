@@ -8,7 +8,7 @@ logger:
     # please change "test" to something unique to your task
     project: openprot/struct-merge
     # will log to workdir and neptune.ai with this name
-    name: codesign-mixed5-nolddt-noalign
+    name: codesign-mixed-weight3+dropout
     # if not null, will duplicate stdout and stderr to workdir/{name}/{logfile}
     logfile: std.out
     # if null, will log every epoch, otherwise every this number of steps
@@ -18,7 +18,7 @@ logger:
     save_freq: 1000
 trainer:
     accelerator: auto
-    devices: 8
+    devices: 1
     max_epochs: 1
     max_steps: 1000000
     enable_progress_bar: false
@@ -37,7 +37,7 @@ data:
     num_workers: 8
     buffer: 1000
     max_sq_toks: null # 400000
-    max_toks: 4096
+    max_toks: 8192
     batch: null
     crop: 384
     seed: 137
@@ -65,21 +65,18 @@ features:
 datasets:
     pdb:
         type: PDBDataset
-        path: /data/cb/scratch/datasets/pdb_npz
+        path: /scratch/projects/cgai/openprot/data/pdb_npz
         cutoff: 2018-05-01
-        clusters: /data/cb/scratch/datasets/pdb_npz/pdb_clusters
-        blacklist: null 
+        clusters: /scratch/projects/cgai/openprot/data/pdb_clusters
+        blacklist: null
         struct_mask: false
     afdb_genie:
         type: AFDBDataset
-        path: /data/cb/scratch/datasets/afdb_rep_v4/afdb_rep_v4
-        annotations: /data/cb/scratch/datasets/afdb_rep_v4.pkl.gz
+        path: /scratch/projects/cgai/openprot/data/afdb_rep_v4/afdb_rep_v4
+        annotations: /scratch/projects/cgai/openprot/data/afdb_rep_v4.pkl.gz
         blacklist: null 
         plddt_thresh: null 
-        index: /data/cb/scratch/datasets/afdbreps_l-256_plddt_80.txt
-    multiflow: 
-        type: MultiflowDataset
-        config_path: multiflow_config.yaml 
+        index: /scratch/projects/cgai/openprot/afdbreps_l-256_plddt_80.txt
 tasks:
         
     StructureGeneration:
@@ -111,7 +108,7 @@ tasks:
 
     InverseFolding:
         fraction: 0.5
-        weight: 1.0
+        weight: 3.0
         beta: [1, 2]
         uniform_prob: 1.0
         seed: 137
@@ -155,9 +152,10 @@ evals:
             adjust_unmasked: false
             # replace_unmasked: false
         run_designability: true
-        run_pmpnn_designability: false
-        run_diversity: false
+        run_pmpnn_designability: true
+        run_diversity: true
         run_secondary: true
+        run_plot: false
 
     # struct_gen_sde_0.5:
     #     type: StructureGenerationEval
@@ -179,37 +177,33 @@ evals:
     #     run_designability: false
     #     run_diversity: false
 
-    # cameo22_invfold:
-    #     type: InverseFoldingEval
-    #     path: ./cameo
-    #     split: splits/cameo2022.csv
-    #     temp: 0.1
-    #     sigma: ${tasks.InverseFolding.sigma}
-    #     batch: 1
-    #     steps: 
-    #     limit: 16
-    #     logits: standard
-    #     strategy: random
-    #     adjust_unmasked: false
-
-    # codesign_invfold: 
-    #     type: InverseFoldingEval
-    #     # inv fold model gets 34%, codesign-mixed-4 gets 22%
-    #     path: workdir/codesign-mixed4/eval_step0/struct_gen_sde_0.5
-    #     path: workdir/codesign-mixed4/eval_step0/codesign_skew+1
-    #     split: 
-    #     temp: 0.1
-    #     sigma: ${tasks.InverseFolding.sigma}
-    #     batch: 100
-    #     steps: 
-    #     limit: 100
-    #     logits: standard
-    #     strategy: random
-    #     # topk_temp: 0.0
-    #     # noise: 20
-    #     adjust_unmasked: false
-    #     # replace_unmasked: false
-    #     # allow_mutation: false
+    cameo22_invfold:
+        type: InverseFoldingEval
+        path: ./cameo
+        split: splits/cameo2022.csv
+        temp: 0.1
+        sigma: ${tasks.InverseFolding.sigma}
+        batch: 1
+        steps: 
+        limit: 
+        logits: standard
+        strategy: random
+        adjust_unmasked: false
+    codesign_invfold: 
+        type: InverseFoldingEval
+        # inv fold model gets 34%, codesign-mixed-4 gets 22%
+        # path: workdir/codesign-mixed4/eval_step0/struct_gen_sde_0.5
+        path: tmp-codesign-invfold # pmpnn gets 87
+        split: 
+        temp: 0.1
+        sigma: ${tasks.InverseFolding.sigma}
+        batch: 100
+        steps: 
+        limit: 100
+        logits: standard
+        strategy: random
+        adjust_unmasked: false
+        
 tracks:
     # register tracks here
     StructureTrack: 
@@ -267,7 +261,7 @@ model: # custom args
     heads: 16
     pairwise_heads: 4
     blocks: 30
-    dropout: 0.0
+    dropout: 0.2
     token_dropout: 0.0
 
     

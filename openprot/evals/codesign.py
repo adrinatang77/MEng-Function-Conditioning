@@ -253,7 +253,7 @@ class CodesignEval(OpenProtEval):
         
         # this has to be last
         self.save_df(idx, rank, world_size, savedir, logger, df)
-        if rank == 0:
+        if self.cfg.run_plot and rank == 0:
             self.make_plot(idx, rank, world_size, savedir, logger, df)
             
     def run_batch(
