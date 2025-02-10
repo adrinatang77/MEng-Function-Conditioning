@@ -8,7 +8,7 @@ logger:
     # please change "test" to something unique to your task
     project: openprot/struct-merge
     # will log to workdir and neptune.ai with this name
-    name: inv-fold-codesign3
+    name: inv-fold-codesign+synthetic
     # if not null, will duplicate stdout and stderr to workdir/{name}/{logfile}
     logfile: std.out
     # if null, will log every epoch, otherwise every this number of steps
@@ -79,9 +79,9 @@ datasets:
         blacklist: null 
         plddt_thresh: null 
         index: /data/cb/scratch/datasets/afdbreps_l-256_plddt_80.txt
-    multiflow: 
-        type: MultiflowDataset
-        config_path: multiflow_config.yaml 
+    synthetic: 
+        type: SyntheticDataset
+        path: /data/cb/scratch/datasets/processed_synthetic/
 tasks:
 
     InverseFolding:
@@ -99,9 +99,13 @@ tasks:
                 start: 0
                 seed: 37
             afdb_genie:
-                fraction: 0.75
+                fraction: 0.5
                 start: 0
                 seed: 38
+            synthetic:
+                fraction: 0.25
+                start: 0
+                seed: 37
             
 evals: 
     codesign_invfold: 
@@ -163,7 +167,7 @@ tracks:
         embed_t: false
         readout: trunk
         init: 
-
+        all_atom: false
 
 model: # custom args
     dplm_ckpt: null
@@ -177,8 +181,8 @@ model: # custom args
     heads: 16
     pairwise_heads: 4
     blocks: 16
-    dropout: 0.0
-    token_dropout: 0.0
+    dropout: 0.1
+    token_dropout: 0.1
 
     
     
