@@ -54,8 +54,8 @@ class InverseFoldingEval(OpenProtEval):
             seqres=seqres,
             seq_mask=np.ones(len(seqres)),
             seq_noise=np.ones(L, dtype=np.float32),
-            atom37=prot.atom_positions.astype(np.float32),
-            atom37_mask=prot.atom_mask.astype(np.float32),
+            struct=prot.atom_positions[:,1].astype(np.float32),
+            struct_mask=prot.atom_mask[:,1].astype(np.float32),
             residx=np.arange(L, dtype=np.float32),
         )
         
@@ -77,10 +77,21 @@ class InverseFoldingEval(OpenProtEval):
 
         idx = list(range(rank, len(self), world_size))
         os.makedirs(f"{savedir}/rank{rank}", exist_ok=True)
+        if self.cfg.run_pmpnn:
+            os.makedirs(f"{savedir}/rank{rank}/pmpnn/pdbs", exist_ok=True)
+            
         for i in idx:
             name = self.get_name(i)
             cmd = ['cp', f"{savedir}/{name}.fasta", f"{savedir}/rank{rank}"]
             subprocess.run(cmd)
+            if self.cfg.run_pmpnn:
+                name = self.get_name(idx)
+                cmd = [
+                    'cp',
+                    f"{savedir}/sample{i}.pdb",
+                    f"{savedir}/rank{rank}/pmpnn/pdbs"
+                ]
+                subprocess.run(cmd)
             
         cmd = [
             "bash",
@@ -119,6 +130,30 @@ class InverseFoldingEval(OpenProtEval):
                 logger.log(f"{self.cfg.name}/sclddt", lddt)
                 logger.log(f"{self.cfg.name}/scrmsd", rmsd)
                 logger.log(f"{self.cfg.name}/scrmsd<2", (rmsd < 2).float())
+
+        if self.cfg.run_pmpnn:
+            cmd = [
+                "bash",
+                "scripts/run_genie_pipeline.sh",
+                f"{savedir}/rank{rank}/pmpnn",
+            ]
+            cvd = os.environ.get('CUDA_VISIBLE_DEVICES', None)
+            if cvd:
+                dev = cvd.split(',')[torch.cuda.current_device()]
+            else:
+                dev = torch.cuda.current_device()
+            subprocess.run(cmd, env=os.environ | {
+                'CUDA_VISIBLE_DEVICES': str(dev)
+            })  
+    
+            pmpnn_df = pd.read_csv(
+                f"{savedir}/rank{rank}/pmpnn/info.csv", index_col="domain"
+            )
+            pmpnn_df["designable"] = pmpnn_df["scRMSD"] < 2
+            if logger is not None:
+                for col in pmpnn_df.columns:
+                    for val in pmpnn_df[col].tolist():
+                        logger.log(f"{self.cfg.name}/pmpnn_{col}", val)
             
 
     def run_batch(

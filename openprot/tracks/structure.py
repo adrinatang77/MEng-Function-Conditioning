@@ -102,11 +102,12 @@ class StructureTrack(OpenProtTrack):
 
     def tokenize(self, data):
 
-        frames, frame_mask = atom37_to_frames(data["atom37"], data["atom37_mask"])
-        data["struct"] = data["atom37"][:,1] # frames._trans
-        data["struct_mask"] = data["atom37_mask"][:,1] # frame_mask
-        if self.cfg.rots:
-            data["rots"] = frames._rots._rot_mats.numpy()
+        pass # nothing to do
+        # frames, frame_mask = atom37_to_frames(data["atom37"], data["atom37_mask"])
+        # data["struct"] = data["atom37"][:,1] # frames._trans
+        # data["struct_mask"] = data["atom37_mask"][:,1] # frame_mask
+        # if self.cfg.rots:
+        #     data["rots"] = frames._rots._rot_mats.numpy()
         """
         aatype = np.array(
             [rc.restype_order.get(c, rc.unk_restype_index) for c in data["seqres"]]
@@ -162,38 +163,9 @@ class StructureTrack(OpenProtTrack):
         target["struct"] = target_tensor 
 
         # needed for computing distogram loss
-        target["beta"], target["beta_mask"] = pseudo_beta_fn(
-            batch["aatype"], batch["atom37"], batch["atom37_mask"]
-        )
-
-        if self.cfg.rots:
-            num_batch, num_res = batch['struct_mask'].shape
-            dev = batch['struct_mask'].device
-            noisy_rotmats = self.igso3.sample(
-                torch.tensor([1.5]),
-                num_batch*num_res
-            ).to(dev)
-            noisy_rotmats = noisy_rotmats.reshape(num_batch, num_res, 3, 3)
-            rotmats_0 = torch.einsum("...ij,...jk->...ik", batch['rots'], noisy_rotmats)
-            
-            so3_t = 1 - batch['rots_noise'][...,0:1] # convention flipped
-            rotmats_t = so3_utils.geodesic_t(so3_t[..., None], batch['rots'], rotmats_0)
-
-            identity = torch.eye(3, device=rotmats_t.device)
-            rotmats_t = (
-                rotmats_t * batch['struct_mask'][...,None,None]
-                + identity[None,None] * (1 - batch['struct_mask'][...,None,None])
-            )
-            # def _rots_diffuse_mask(rotmats_t, rotmats_1, diffuse_mask):
-            #     return (
-            #         rotmats_t * diffuse_mask[..., None, None]
-            #         + rotmats_1 * (1 - diffuse_mask[..., None, None])
-            #     )
-            # rotmats_t = _rots_diffuse_mask(rotmats_t, batch['rots'], batch['struct_mask']
-            noisy_batch['rots'] = rotmats_t
-            target['gt_rots'] = batch['rots']
-            target['noisy_rots'] = rotmats_t
-            target['rots_noise'] = batch['rots_noise']
+        # target["beta"], target["beta_mask"] = pseudo_beta_fn(
+        #     batch["aatype"], batch["atom37"], batch["atom37_mask"]
+        # )
             
         if logger:
             logger.masked_log("struct/toks", batch["struct_mask"], sum=True)

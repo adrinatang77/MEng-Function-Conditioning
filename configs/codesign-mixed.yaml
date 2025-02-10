@@ -1,10 +1,10 @@
-ckpt: 
+ckpt: workdir/codesign-mixed5-nolddt-noalign/last.ckpt
 pretrained: #  load weights from here first
 validate: false # if true, only validate the model, don't train
 logger:
     # set to true to log to neptune.ai
     neptune: true
-    run_id: 
+    run_id: STRUC1-660
     # please change "test" to something unique to your task
     project: openprot/struct-merge
     # will log to workdir and neptune.ai with this name
@@ -100,11 +100,11 @@ tasks:
             afdb_genie:
                 fraction: 0.75
                 start: 0
-                seed: 42
+                seed: 424
             pdb:
                 fraction: 0.25
                 start: 0
-                seed: 42
+                seed: 424
 
     InverseFolding:
         fraction: 0.5
@@ -119,11 +119,11 @@ tasks:
             pdb:
                 fraction: 0.25
                 start: 0
-                seed: 37
+                seed: 374
             afdb_genie:
                 fraction: 0.75
                 start: 0
-                seed: 38
+                seed: 384
             
 evals: 
     codesign_skew+1:
@@ -157,6 +157,7 @@ evals:
         run_secondary: true
         run_plot: false
 
+<<<<<<< HEAD
     # struct_gen_sde_0.5:
     #     type: StructureGenerationEval
     #     num_samples: 100
@@ -193,6 +194,10 @@ evals:
         type: InverseFoldingEval
         # inv fold model gets 34%, codesign-mixed-4 gets 22%
         # path: workdir/codesign-mixed4/eval_step0/struct_gen_sde_0.5
+=======
+    codesign_invfold: 
+        type: InverseFoldingEval
+>>>>>>> refs/remotes/origin/structure
         path: tmp-codesign-invfold # pmpnn gets 87
         split: 
         temp: 0.1
@@ -203,7 +208,10 @@ evals:
         logits: standard
         strategy: random
         adjust_unmasked: false
+<<<<<<< HEAD
         
+=======
+>>>>>>> refs/remotes/origin/structure
 tracks:
     # register tracks here
     StructureTrack: 
