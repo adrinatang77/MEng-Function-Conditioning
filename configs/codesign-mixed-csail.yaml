@@ -1,16 +1,16 @@
 ckpt: workdir/codesign-new-std/last.ckpt
 pretrained: #  load weights from here first
-validate: true # if true, only validate the model, don't train
+validate: false # if true, only validate the model, don't train
 logger:
     # set to true to log to neptune.ai
-    neptune: false
-    run_id: 
+    neptune: true
+    run_id: STRUC1-679
     # please change "test" to something unique to your task
     project: openprot/struct-merge
     # will log to workdir and neptune.ai with this name
-    name: codesign-inf
+    name: codesign-new-std
     # if not null, will duplicate stdout and stderr to workdir/{name}/{logfile}
-    logfile: 
+    logfile: std.out
     # if null, will log every epoch, otherwise every this number of steps
     train_log_freq: 100
     val_log_freq:  
@@ -180,16 +180,33 @@ evals:
             max_t: 0.95
         seq:
             temp: 0.1
-            strategy: purity
-            noise: 20
+            strategy: random
+            # noise: 20
             logits: standard
             adjust_unmasked: false
             # replace_unmasked: false
         run_designability: true
         run_pmpnn_designability: true
-        run_diversity: false
+        run_diversity: true
         run_secondary: true
         run_plot: true
+
+    codesign_invfold: 
+        type: InverseFoldingEval
+        # inv fold model gets 34%, codesign-mixed-4 gets 22%
+        # path: workdir/codesign-mixed4/eval_step0/struct_gen_sde_0.5
+        path: tmp-codesign-invfold # pmpnn gets 87
+        split: 
+        temp: 0.1
+        sigma: ${tasks.InverseFolding.sigma}
+        batch: 100
+        steps: 
+        limit: 100
+        logits: standard
+        strategy: random
+        adjust_unmasked: false
+        run_pmpnn: false
+
 
 tracks:
     # register tracks here
