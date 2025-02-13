@@ -392,62 +392,13 @@ class OpenProtModel(nn.Module):
             dropout=cfg.dropout,
             token_dropout=cfg.token_dropout,
         )
-        pair_args = dict(
-            pair_updates=True,
-            pairwise_dim=cfg.pairwise_dim,
-            pair_bias=cfg.pair_bias,
-            pair_values=cfg.pair_values,
-            pairwise_heads=cfg.pairwise_heads,
-            pair_ffn=cfg.pair_ffn,
-            pair_ff_expand=cfg.pair_ff_expand,
-            tri_mul=cfg.tri_mul,
-        )
-        relpos_args = dict(
-            relpos_attn=cfg.trunk_relpos,
-            relpos_values=cfg.trunk_relpos,
-            ipa_attn=cfg.trunk_ipa,
-            ipa_values=cfg.trunk_ipa,
-            ipa_frames=cfg.trunk_ipa_frames,
-            embed_rots=cfg.embed_rots,
-            relpos_freqs=cfg.trunk_relpos_params[0],
-            relpos_min=cfg.trunk_relpos_params[1],
-            relpos_max=cfg.trunk_relpos_params[2],
-        )
-        update_args = dict(
-            frame_update=cfg.trunk_frame_update,
-            update_rots=cfg.trunk_update_rots,
-        )
+
 
         self.blocks = nn.ModuleList()
-        pair_block_idx = list(
-            range(cfg.pair_blocks.start, cfg.pair_blocks.end, cfg.pair_blocks.interval)
-        )
-        relpos_block_idx = list(
-            range(cfg.relpos_blocks.start, cfg.relpos_blocks.end, cfg.relpos_blocks.interval)
-        )
-        update_block_idx = list(
-            range(cfg.update_blocks.start, cfg.update_blocks.end, cfg.update_blocks.interval)
-        )
-
         
         for i in range(cfg.blocks):
-            block_args = (
-                default_block_args | 
-                (pair_args if i in pair_block_idx else {}) |
-                (relpos_args if i in relpos_block_idx else {}) |
-                (update_args if i in update_block_idx else {})
-            )
+            block_args = default_block_args 
             self.blocks.append(OpenProtTransformerBlock(**block_args))
-
-        if cfg.readout_trans_before_sm:
-            if cfg.readout_adaLN:
-                self.trans_readout = FinalLayer(cfg.dim, 3)
-            else:
-                self.trans_readout = nn.Sequential(
-                    nn.LayerNorm(cfg.dim), nn.Linear(cfg.dim, 3)
-                )
-        if cfg.struct_module:
-            self.structure_module = StructureModule(cfg)
 
     def forward(self, inp):
 
@@ -461,8 +412,6 @@ class OpenProtModel(nn.Module):
             z = z + self.pairwise_positional_embedding(residx.long(), mask=mask)
 
         trans = inp.get("struct", None)
-        if self.cfg.trans_rescale:
-            trans /= self.cfg.trans_rescale
         rots = inp.get("rots", None)
         
         x_cond = inp.get("x_cond", None)
@@ -478,12 +427,5 @@ class OpenProtModel(nn.Module):
             else:
                 x, z, trans, rots = block(x, z, trans, mask, x_cond, relpos_mask=struct_mask, rots=rots, idx=residx)
 
-        if self.cfg.struct_module:
-            sm_out = self.structure_module(x, z, trans, mask, x_cond, postcond_fn=postcond_fn, relpos_mask=struct_mask, idx=residx)
-        else:
-            sm_out = None
-
-        if self.cfg.trans_rescale:
-            trans *= self.cfg.trans_rescale
-
-        return {"x": x, "z": z, "trans": trans, "rots": rots, "sm": sm_out}
+        
+        return {"x": x, "z": z, "trans": trans, "rots": rots}

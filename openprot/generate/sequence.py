@@ -23,7 +23,7 @@ class SequenceUnmaskingStepper:
         
     def advance(self, batch, sched, out, extra={}):
 
-        
+        if 'seq_traj' not in extra: extra['seq_traj'] = []
         
         t, s = sched['sequence']
 
@@ -39,6 +39,11 @@ class SequenceUnmaskingStepper:
         is_unmask = (batch['aatype'] != MASK_IDX)
         is_mask = (batch['aatype'] == MASK_IDX)
 
+        if 'seq_temp' in sched:
+            temp, _ = sched['seq_temp']
+        else:
+            temp = self.cfg.temp_start * t + (1-t) * self.cfg.temp_end
+
         probs = logits.softmax(-1)
         oh = torch.nn.functional.one_hot(batch['aatype'], num_classes=NUM_TOKENS)
         denom = 0.5 * oh + 0.05
@@ -46,12 +51,12 @@ class SequenceUnmaskingStepper:
         new_probs /= new_probs.sum(-1, keepdims=True)
         if self.cfg.logits == 'standard':
             curr_tok_logits = Categorical(
-                logits=new_probs.log() / self.cfg.temp
+                logits=new_probs.log() / temp
             ).log_prob(batch['aatype'])
         elif self.cfg.logits == 'gumbel':
             gumbel_noise = -torch.log(-torch.log(torch.rand_like(logits) + 1e-8) + 1e-8)
             curr_tok_logits = Categorical(
-                logits = (new_probs.log() + gumbel_noise) / self.cfg.temp
+                logits = (new_probs.log() + gumbel_noise) / temp
             ).log_prob(batch['aatype'])
         
         # is_mask_prob = ((probs - oh) / (new_probs - oh))[...,0]
@@ -60,14 +65,14 @@ class SequenceUnmaskingStepper:
             logits = torch.where(is_unmask[...,None], new_probs.log(), logits)
         
         if self.cfg.logits == 'standard':
-            cat = Categorical(logits=logits / self.cfg.temp)
+            cat = Categorical(logits=logits / temp)
             sample_ = cat.sample()
             scores_ = cat.log_prob(sample_)
             
         elif self.cfg.logits == 'gumbel':
             gumbel_noise = -torch.log(-torch.log(torch.rand_like(logits) + 1e-8) + 1e-8)
             logits = logits + gumbel_noise 
-            scores_, sample_ = (logits / self.cfg.temp).log_softmax(dim=-1).max(dim=-1) 
+            scores_, sample_ = (logits / temp).log_softmax(dim=-1).max(dim=-1) 
 
         if self.cfg.strategy == 'one_stage':            
             remask_prob = self.cfg.remask * max(0, 0.1 - 0.2*s)
@@ -123,7 +128,7 @@ class SequenceUnmaskingStepper:
         elif self.cfg.strategy == 'purity':
             
             logits_1_wo_mask = logits[:, :, 0:-1] # (B, D, S-1)
-            pt_x1_probs = torch.softmax(logits_1_wo_mask / self.cfg.temp, dim=-1) # (B, D, S-1)
+            pt_x1_probs = torch.softmax(logits_1_wo_mask / temp, dim=-1) # (B, D, S-1)
             # step_probs = (d_t * pt_x1_probs * (1/(1-t))).clamp(max=1) # (B, D, S-1)
             max_logprob = torch.max(torch.log(pt_x1_probs), dim=-1)[0] # (B, D)
             # bias so that only currently masked positions get chosen to be unmasked
@@ -165,8 +170,7 @@ class SequenceUnmaskingStepper:
 
         batch['aatype'] = batch['aatype'].long()
 
-        seq = "".join([rc.restypes_with_x[aa] for aa in batch["aatype"][0]])
-        seq = seq.replace("X", "-")
-        # print(seq)
+        extra['seq_traj'].append(batch['aatype'])
+        
         return batch
         

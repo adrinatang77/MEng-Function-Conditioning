@@ -302,11 +302,21 @@ class CodesignEval(OpenProtEval):
             else:
                 return midpoint_y + (1 - midpoint_y) / (1 - midpoint_x) * (t - midpoint_x)
 
-        
-        sampler = OpenProtSampler(schedules={
+        schedules = {
             'structure': lambda t: sched_fn(t_skew_func(t, self.cfg.skew)),
             'sequence': lambda t: 1-t_skew_func(t, -self.cfg.skew)
-        }, steppers=[
+        }
+
+        class ArraySchedule:
+            def __init__(self, path):
+                self.arr = np.load(path)
+                self.linspace = np.linspace(0, 1, len(self.arr))
+            def __call__(self, t):
+                return np.interp(t, self.linspace, self.arr)
+                
+        for key in self.cfg.schedule:
+            schedules[key] = ArraySchedule(self.cfg.schedule[key])
+        sampler = OpenProtSampler(schedules, steppers=[
             StructureStepper(self.cfg.struct),
             SequenceUnmaskingStepper(self.cfg.seq)
         ])
@@ -340,3 +350,12 @@ class CodesignEval(OpenProtEval):
             with open(f"{savedir}/{name}.fasta", "w") as f:
                 f.write(f">{name}\n")  # FASTA format header
                 f.write(seq + "\n")
+
+            with open(f"{savedir}/{name}_traj.fasta", "w") as f:
+                for seqs in extra['seq_traj']:
+                    seq = "".join([rc.restypes_with_x[aa] for aa in seqs[i]])
+                    seq = seq.replace('X', '-')
+                    f.write(seq+'\n')
+                
+                
+
