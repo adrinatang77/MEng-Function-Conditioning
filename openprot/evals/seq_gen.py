@@ -30,9 +30,13 @@ class SequenceGenerationEval(OpenProtEval):
         L = self.cfg.sample_length
         data = self.make_data(
             name=f"sample{idx}",
-            seqres="A" * L,
+            seqres="A"*L,
             seq_mask=np.ones(L, dtype=np.float32),
             seq_noise=np.ones(L, dtype=np.float32),
+            struct_noise=np.ones(L, dtype=np.float32) * 160,
+            struct=np.zeros((L, 3), dtype=np.float32),
+            struct_mask=np.ones(L, dtype=np.float32),
+            residx=np.arange(L, dtype=np.float32),
         )
         return data
 
@@ -57,6 +61,7 @@ class SequenceGenerationEval(OpenProtEval):
         cmd = [
             "bash",
             "scripts/switch_conda_env.sh",
+            "eval",
             "python",
             "-m",
             "scripts.esmfold",
@@ -66,8 +71,13 @@ class SequenceGenerationEval(OpenProtEval):
             f"{savedir}/rank{rank}",
             "--print",
         ]
+        cvd = os.environ.get('CUDA_VISIBLE_DEVICES', None)
+        if cvd:
+            dev = cvd.split(',')[torch.cuda.current_device()]
+        else:
+            dev = torch.cuda.current_device()
         out = subprocess.run(cmd, env=os.environ | {
-            'CUDA_VISIBLE_DEVICES': str(torch.cuda.current_device())
+            'CUDA_VISIBLE_DEVICES': str(dev)
         })  
         for i in idx:
             try:
@@ -96,15 +106,22 @@ class SequenceGenerationEval(OpenProtEval):
             SequenceUnmaskingStepper(self.cfg)
         ])
         
-        sample_batch, extra = sampler.sample(model, noisy_batch, self.cfg.steps)
-        
-        for name, aatype in zip(sample_batch['name'], sample_batch['aatype']):
-            seq = "".join(
-                [rc.restypes_with_x[aa] for aa in aatype]
-            ) # in case there is still mask
-            if logger is not None:
-                logger.log(f"{self.cfg.name}/seqent", self.compute_sequence_entropy(seq))
-            
+        sample, extra = sampler.sample(model, noisy_batch, self.cfg.steps)
+        B = len(sample['aatype'])
+        for i in range(B):
+            name = batch["name"][i]
+
+            seq = "".join([rc.restypes_with_x[aa] for aa in sample["aatype"][i]])
             with open(f"{savedir}/{name}.fasta", "w") as f:
                 f.write(f">{name}\n")  # FASTA format header
                 f.write(seq + "\n")
+
+            if logger is not None:
+                logger.log(f"{self.cfg.name}/seqent", self.compute_sequence_entropy(seq))
+
+            with open(f"{savedir}/{name}_traj.fasta", "w") as f:
+                for seqs in extra['seq_traj']:
+                    seq = "".join([rc.restypes_with_x[aa] for aa in seqs[i]])
+                    seq = seq.replace('X', '-')
+                    f.write(seq+'\n')
+                

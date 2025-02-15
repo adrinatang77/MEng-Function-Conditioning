@@ -8,7 +8,7 @@ logger:
     # please change "test" to something unique to your task
     project: openprot/struct-merge
     # will log to workdir and neptune.ai with this name
-    name: codesign-infq
+    name: codesign-inf
     # if not null, will duplicate stdout and stderr to workdir/{name}/{logfile}
     logfile: 
     # if null, will log every epoch, otherwise every this number of steps
@@ -160,27 +160,44 @@ tasks:
                 seed: 384
             
 evals: 
+    # seq_gen_dplm: 
+    #     type: SequenceGenerationEval
+    #     num_samples: 50
+    #     sample_length: 300
+    #     batch: 100
+    #     steps: 300
+    #     temp_start: 1.0
+    #     temp_end: 0.1
+    #     strategy: dplm
+    #     logits: gumbel
+    #     remask: 0.0
+    #     topk_temp: 0.0
+    #     replace_unmasked: false
+    #     adjust_unmasked: false
+    #     allow_mutation: false
 
-    codesign_1k:
+    codesign:
         type: CodesignEval
-        num_samples: 1000
+        num_samples: 100
         batch: 100
         sample_length: 128
-        steps: 200
+        steps: 100
         skew: 0.0
+        truncate:
+        dir: # workdir/codesign-inf/eval_step0/codesign_1k/
         struct:
             rescale_time: ${tracks.StructureTrack.rescale_time}
             sched_p: ${tracks.StructureTrack.t_emb_p}
             sigma_max: ${tracks.StructureTrack.t_emb_max}
             sigma_min: ${tracks.StructureTrack.t_emb_min}
             type: ${tracks.StructureTrack.diffusion.type}
-            temp_factor: 0.5
+            temp_factor: 0.2
             sde_weight: 1.0
             data_sigma: ${tracks.StructureTrack.diffusion.data_sigma}
             sched: edm
             max_t: 0.95
         seq:
-            temp_start: 1.0
+            temp_start: 0.7
             temp_end: 0.1
             strategy: dplm
             noise: 20
@@ -189,10 +206,12 @@ evals:
             replace_unmasked: true # logit of current toks
             topk_temp: 0.0
             allow_mutation: false
-        schedule: {}
+        schedule: 
+            seq_temp: workdir/seq_temp.npy
+            # struct_temp: workdir/struct_temp.npy
         run_designability: true
         run_pmpnn_designability: false
-        run_diversity: false
+        run_diversity: true
         run_secondary: true
         run_plot: true
 
@@ -210,6 +229,7 @@ tracks:
         postcondition: true
         int_loss_weight: 0.5
         embed_sigma: false
+        embed_mask: true
         rots: false
         clip_t: 0.0
         rescale_time: true

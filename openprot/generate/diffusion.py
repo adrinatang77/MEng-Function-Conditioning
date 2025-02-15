@@ -90,9 +90,9 @@ class EDMDiffusion(Diffusion):
 
         return cskip * inp + cout * out
 
-    def compute_loss(self, pred, target, t, mask, eps=1e-9):
+    def compute_loss(self, pred, target, t, mask, aligned=False, eps=1e-9):
 
-        if self.cfg.aligned_loss:
+        if aligned:
             target = rmsdalign(pred.detach(), target, mask)
             target = torch.where(mask[..., None].bool(), target, 0.0)
         

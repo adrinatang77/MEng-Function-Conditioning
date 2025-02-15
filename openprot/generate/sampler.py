@@ -2,7 +2,7 @@ from ..tracks.sequence import MASK_IDX
 from torch.distributions.categorical import Categorical
 import torch
 import tqdm
-
+import numpy as np
 
 
 class OpenProtSampler:
@@ -10,12 +10,13 @@ class OpenProtSampler:
         self.schedules = schedules
         self.steppers = steppers
 
-    def sample(self, model, noisy_batch, steps=100):
+    def sample(self, model, noisy_batch, steps=100, trunc=None):
 
         extra = {}
-        
-        for i in tqdm.trange(steps):
-            t, s = i/steps, (i+1)/steps
+        steps = np.linspace(0, 1, steps+1)
+        steps = list(zip(steps[:-1], steps[1:]))
+        for t, s in tqdm.tqdm(steps):
+            if trunc is not None and t < trunc: continue
             sched = {key: (sched(t), sched(s)) for key, sched in self.schedules.items()}
             noisy_batch = self.single_step(model, noisy_batch, sched, extra)
 

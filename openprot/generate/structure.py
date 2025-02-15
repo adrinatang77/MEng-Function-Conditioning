@@ -41,7 +41,11 @@ class EDMDiffusionStepper:
         
         s = (x0 - x) / t2**2  # score
         noise = torch.randn_like(x)
-        gamma = self.cfg.temp_factor
+
+        if 'struct_temp' in sched:
+            gamma, _ = sched['struct_temp']
+        else:
+            gamma = self.cfg.temp_factor
 
         # dx = g**2 * s * dt + g * gamma * np.sqrt(dt) * noise # SDE
         # dx = 0.5 * g**2 * s * dt # + g * gamma * np.sqrt(dt) * noise # ODE

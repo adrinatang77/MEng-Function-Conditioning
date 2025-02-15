@@ -117,7 +117,7 @@ class OpenProtDatasetManager(torch.utils.data.IterableDataset):
             rank = self.rank * worker_info.num_workers + worker_info.id
 
         rng = np.random.default_rng(seed=self.cfg.data.seed)
-        assert self.task_probs.sum() == 1
+        assert abs(self.task_probs.sum()-1) < 1e-3
 
         i = 0
         while True:

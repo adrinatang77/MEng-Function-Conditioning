@@ -1,7 +1,7 @@
 from .eval import OpenProtEval
 # import foldcomp
 from ..utils import protein
-from ..utils.prot_utils import make_ca_prot, write_ca_traj, compute_tmscore
+from ..utils.prot_utils import make_ca_prot, write_ca_traj, compute_tmscore, aatype_to_seqres
 from ..utils.geometry import compute_lddt, rmsdalign, compute_rmsd
 from ..utils import residue_constants as rc
 from ..generate.sampler import OpenProtSampler
@@ -18,8 +18,42 @@ from collections import defaultdict
 
 class CodesignEval(OpenProtEval):
     def setup(self):
-        pass
+        def edm_sched_fn(t):
+            p = self.cfg.struct.sched_p
+            sigma_max = self.cfg.struct.sigma_max
+            sigma_min = self.cfg.struct.sigma_min 
+            return (
+                sigma_min ** (1 / p)
+                + (1-t) * (sigma_max ** (1 / p) - sigma_min ** (1 / p))
+            ) ** p
 
+        
+
+        max_t = self.cfg.struct.max_t
+        def log_sched_fn(t):
+            exp = 10 ** (-2*t)
+            return max_t * (exp - 1e-2) / (1 - 1e-2)
+
+        if self.cfg.struct.sched == 'linear':
+            sched_fn = lambda t: max_t * (1-t)
+        elif self.cfg.struct.sched == 'edm':
+            sched_fn = edm_sched_fn
+        elif self.cfg.struct.sched == 'log':
+            sched_fn = log_sched_fn
+        else:
+            raise Exception("unrecognized schedule")
+
+        def t_skew_func(t, skew):
+            midpoint_y = 0.5 + skew / 2# [0, 1]
+            midpoint_x = 0.5 
+            if t < midpoint_x:
+                return midpoint_y / midpoint_x * t
+            else:
+                return midpoint_y + (1 - midpoint_y) / (1 - midpoint_x) * (t - midpoint_x)
+
+        self.struct_sched_fn = lambda t: sched_fn(t_skew_func(t, self.cfg.skew))
+        self.seq_sched_fn = lambda t: 1-t_skew_func(t, -self.cfg.skew)
+        
     def run(self, model):
         NotImplemented
 
@@ -33,12 +67,36 @@ class CodesignEval(OpenProtEval):
             max_noise = self.cfg.struct.sigma_max
         else:
             max_noise = self.cfg.struct.max_t
+        if self.cfg.truncate:
+            struct_noise = self.struct_sched_fn(self.cfg.truncate)
+            seq_noise = self.seq_sched_fn(self.cfg.truncate)
+        else:
+            struct_noise = max_noise
+            seq_noise = 1
+
+        if self.cfg.dir is not None:
+            with open(f"{self.cfg.dir}/sample{idx}.pdb") as f:
+                prot = protein.from_pdb_string(f.read())
+            
+            seqres = aatype_to_seqres(prot.aatype)
+            data = self.make_data(
+                name=f"sample{idx}",
+                seqres=seqres,
+                seq_mask=np.ones(L),
+                seq_noise=np.ones(L, dtype=np.float32) * seq_noise,
+                struct=prot.atom_positions[:,1].astype(np.float32),
+                struct_noise=np.ones(L, dtype=np.float32) * struct_noise,
+                struct_mask=prot.atom_mask[:,1].astype(np.float32),
+                residx=np.arange(L, dtype=np.float32),
+            )
+            return data
+        
         data = self.make_data(
             name=f"sample{idx}",
             seqres="A"*L,
             seq_mask=np.ones(L, dtype=np.float32),
-            seq_noise=np.ones(L, dtype=np.float32),
-            struct_noise=np.ones(L, dtype=np.float32) * max_noise,
+            seq_noise=np.ones(L, dtype=np.float32) * seq_noise,
+            struct_noise=np.ones(L, dtype=np.float32) * struct_noise,
             struct=np.zeros((L, 3), dtype=np.float32),
             struct_mask=np.ones(L, dtype=np.float32),
             residx=np.arange(L, dtype=np.float32),
@@ -266,45 +324,13 @@ class CodesignEval(OpenProtEval):
         logger=None
     ):
 
-        def edm_sched_fn(t):
-            p = self.cfg.struct.sched_p
-            sigma_max = self.cfg.struct.sigma_max
-            sigma_min = self.cfg.struct.sigma_min 
-            return (
-                sigma_min ** (1 / p)
-                + (1-t) * (sigma_max ** (1 / p) - sigma_min ** (1 / p))
-            ) ** p
-
-        
         StructureStepper = {
             'EDMDiffusion': EDMDiffusionStepper,
             'GaussianFM': GaussianFMStepper,
         }[self.cfg.struct.type]
-        max_t = self.cfg.struct.max_t
-        def log_sched_fn(t):
-            exp = 10 ** (-2*t)
-            return max_t * (exp - 1e-2) / (1 - 1e-2)
-
-        if self.cfg.struct.sched == 'linear':
-            sched_fn = lambda t: max_t * (1-t)
-        elif self.cfg.struct.sched == 'edm':
-            sched_fn = edm_sched_fn
-        elif self.cfg.struct.sched == 'log':
-            sched_fn = log_sched_fn
-        else:
-            raise Exception("unrecognized schedule")
-
-        def t_skew_func(t, skew):
-            midpoint_y = 0.5 + skew / 2# [0, 1]
-            midpoint_x = 0.5 
-            if t < midpoint_x:
-                return midpoint_y / midpoint_x * t
-            else:
-                return midpoint_y + (1 - midpoint_y) / (1 - midpoint_x) * (t - midpoint_x)
-
         schedules = {
-            'structure': lambda t: sched_fn(t_skew_func(t, self.cfg.skew)),
-            'sequence': lambda t: 1-t_skew_func(t, -self.cfg.skew)
+            'structure': self.struct_sched_fn,
+            'sequence': self.seq_sched_fn,
         }
 
         class ArraySchedule:
@@ -321,7 +347,7 @@ class CodesignEval(OpenProtEval):
             SequenceUnmaskingStepper(self.cfg.seq)
         ])
         
-        sample, extra = sampler.sample(model, noisy_batch, self.cfg.steps)
+        sample, extra = sampler.sample(model, noisy_batch, self.cfg.steps, trunc=self.cfg.truncate)
 
         pred_traj = torch.stack(extra['preds'])
         samp_traj = torch.stack(extra['traj'])

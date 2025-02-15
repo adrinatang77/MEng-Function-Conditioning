@@ -26,16 +26,16 @@ class StructurePredictionEval(OpenProtEval):
             np.load(f"{self.cfg.path}/{name[1:3]}/{name}.npz", allow_pickle=True)
         )
         seqres = self.df.seqres[name]
+        L = len(seqres)
         data = self.make_data(
             name=name,
             seqres=seqres,
             seq_mask=np.ones(len(seqres)),
-            atom37=prot["all_atom_positions"].astype(np.float32),
-            atom37_mask=prot["all_atom_mask"].astype(np.float32),
+            struct=prot["all_atom_positions"][:,1].astype(np.float32),
+            struct_mask=prot["all_atom_mask"][:,1].astype(np.float32),
+            struct_noise=np.ones(L, dtype=np.float32) * 160, # temporary
+            residx=np.arange(L, dtype=np.float32),
         )
-
-        L = len(seqres)
-        data["struct_noise"] = np.ones(L, dtype=np.float32) * 160.
 
         return data
 
