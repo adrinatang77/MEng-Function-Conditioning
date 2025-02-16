@@ -4,7 +4,7 @@ parser = argparse.ArgumentParser()
 parser.add_argument('--yaml', type=str, required=True)
 parser.add_argument('--prefix', type=str, required=True)
 args = parser.parse_args()
-#  kappa /tmp/bjing.job.1231267
+#  kappa /tmp/bjing.job.3660435
 import numpy as np
 import os
 from omegaconf import OmegaConf
@@ -27,7 +27,7 @@ class Sweeper:
     def get_next(self, i):
         out = {}
         for j in range(11):
-            for k in [-2, -1, 0, 1, 2]:
+            for k in [-2, -1, 0]:#, 1, 2]:
                 jj = j+k
                 if jj not in list(range(11)): continue
                 key = f"{i}_{j}_{jj}"
@@ -48,6 +48,7 @@ sweeper = Sweeper()
 
 os.makedirs(f"workdir/sweep_{args.prefix}", exist_ok=True)
 def run_job(key, sched):
+    if sched[0] != 0: return 0.0
     if os.path.exists(f'workdir/{args.prefix}/{key}/eval_step0/codesign/info.csv'):
         return pd.read_csv(f'workdir/{args.prefix}/{key}/eval_step0/codesign/info.csv', index_col=0).sctm.mean()    
     np.save(f"workdir/sweep_{args.prefix}/{key}.npy", sched[::-1]/10)
@@ -55,7 +56,7 @@ def run_job(key, sched):
     cfg.logger.name = f'{args.prefix}/{key}'
     i, j, k = key.split('_')
     cfg.evals.codesign.truncate = 1 - (int(i)+1)/10 + 0.01 # eps
-    cfg.evals.codesign.schedule['struct_temp'] = f"workdir/sweep_{args.prefix}/{key}.npy"
+    cfg.evals.codesign.schedule['sequence'] = f"workdir/sweep_{args.prefix}/{key}.npy"
     with open(f"workdir/sweep_{args.prefix}/{key}.yaml", "w") as f:
         f.write(OmegaConf.to_yaml(cfg))
     print(f"workdir/sweep_{args.prefix}/{key}.yaml", flush=True)
@@ -81,7 +82,8 @@ for i in range(10):
     print(sweeper.dirs, flush=True)
     
             
-print(sweeper.get_path(9, np.argmax(sweeper.best[-1])), flush=True)
+# print(sweeper.get_path(9, np.argmax(sweeper.best[-1])), flush=True)
+print(sweeper.get_path(9, 10), flush=True)
         
 
         

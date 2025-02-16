@@ -74,30 +74,30 @@ class SequenceUnmaskingStepper:
             logits = logits + gumbel_noise 
             scores_, sample_ = (logits / temp).log_softmax(dim=-1).max(dim=-1) 
 
-        if self.cfg.strategy == 'one_stage':            
-            remask_prob = self.cfg.remask * max(0, 0.1 - 0.2*s)
-            num_remask = int(torch.distributions.Binomial(
-                is_unmask.sum().item(), remask_prob
-            ).sample().item())
+        # if self.cfg.strategy == 'one_stage':            
+        #     remask_prob = self.cfg.remask * max(0, 0.1 - 0.2*s)
+        #     num_remask = int(torch.distributions.Binomial(
+        #         is_unmask.sum().item(), remask_prob
+        #     ).sample().item())
            
-            topk = topk_masking(
-                -curr_tok_logits,
-                num_remask, 
-                is_unmask,
-                temp=self.cfg.topk_temp
-            )
+        #     topk = topk_masking(
+        #         -curr_tok_logits,
+        #         num_remask, 
+        #         is_unmask,
+        #         temp=self.cfg.topk_temp
+        #     )
             
-            batch['aatype'] = torch.where(topk, MASK_IDX, batch['aatype'])
+        #     batch['aatype'] = torch.where(topk, MASK_IDX, batch['aatype'])
             
-            topk = topk_masking(
-                scores_, 
-                num_mask - new_num_mask,
-                is_mask,
-                temp=self.cfg.topk_temp
-            )
-            batch['aatype'] = torch.where(topk, sample_, batch['aatype'])
+        #     topk = topk_masking(
+        #         scores_, 
+        #         num_mask - new_num_mask,
+        #         is_mask,
+        #         temp=self.cfg.topk_temp
+        #     )
+        #     batch['aatype'] = torch.where(topk, sample_, batch['aatype'])
 
-        elif self.cfg.strategy == 'dplm':
+        if self.cfg.strategy == 'dplm':
 
             if self.cfg.replace_unmasked:
                 scores_ = torch.where(is_unmask, curr_tok_logits, scores_)

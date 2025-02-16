@@ -236,12 +236,16 @@ class StructureTrack(OpenProtTrack):
         soft_lddt = self.compute_lddt_loss(
             readout, target, logger=logger
         )
-        
-        w = target['seq_occupancy'].unsqueeze(-1)
-        loss = w * self.cfg.loss['aligned_mse'] * aligned_mse 
-        loss += w * self.cfg.loss['lddt'] * soft_lddt
-        loss += (1-w) * self.cfg.loss['mse'] * mse
-        
+
+        if self.cfg.aligned_loss:
+            w = target['seq_occupancy'].unsqueeze(-1)
+            loss = w * self.cfg.loss['aligned_mse'] * aligned_mse 
+            loss += w * self.cfg.loss['lddt'] * soft_lddt
+            loss += (1-w) * self.cfg.loss['mse'] * mse
+
+        else:
+            loss = mse
+            
         lddt = compute_lddt(
             readout["trans"][-1], target["struct"], target["struct_supervise"]
         )

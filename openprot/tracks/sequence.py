@@ -200,7 +200,7 @@ class SequenceTrack(OpenProtTrack):
         noisy_batch["aatype"] = torch.where(mask, MASK_IDX, tokens)
 
         present = ~batch["seq_noise"].bool() & batch["seq_mask"].bool()
-        target["seq_occupancy"] = present.sum(-1) / batch['pad_mask'].sum(-1)        
+        target["seq_occupancy"] = present.sum(-1) / (1+batch['seq_mask'].sum(-1))        
         noisy_batch["seq_noise"] = batch["seq_noise"]
 
         target["aatype"] = tokens

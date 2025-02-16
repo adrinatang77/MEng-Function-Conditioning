@@ -8,7 +8,7 @@ logger:
     # please change "test" to something unique to your task
     project: openprot/struct-merge
     # will log to workdir and neptune.ai with this name
-    name: codesign-new-std-aligned
+    name: struct-pred-only
     # if not null, will duplicate stdout and stderr to workdir/{name}/{logfile}
     logfile: 
     # if null, will log every epoch, otherwise every this number of steps
@@ -81,86 +81,9 @@ datasets:
         index: /data/cb/scratch/datasets/afdbreps_l-256_plddt_80.txt
     
 tasks:
-        
-    StructureGeneration:
-        rescale_time: ${tracks.StructureTrack.rescale_time}
-        sched_p: ${tracks.StructureTrack.t_emb_p}
-        sigma_max: ${tracks.StructureTrack.t_emb_max}
-        sigma_min: ${tracks.StructureTrack.t_emb_min}
-        rots: false
-
-        fraction: 0.1
-        weight: 1.0
-        struct_weight: 1.0
-        struct_beta: [1, 2]
-        struct_max_noise_prob: 0.0
-        struct_uniform_prob: 0.5
-        
-        seed: 137
-        random_rot: true
-        
-        datasets:
-            afdb_genie:
-                fraction: 0.75
-                start: 0
-                seed: 424
-            pdb:
-                fraction: 0.25
-                start: 0
-                seed: 424
-
-    InverseFolding:
-        fraction: 0.1
-        weight: 1.0
-        beta: [1, 2]
-        uniform_prob: 1.0
-        seed: 137
-        random_rot: true
-        sigma: ${tracks.StructureTrack.t_emb_min}
-        reweight: false
-        datasets:
-            pdb:
-                fraction: 0.25
-                start: 0
-                seed: 374
-            afdb_genie:
-                fraction: 0.75
-                start: 0
-                seed: 384
-
-    Codesign:
-        fraction: 0.7
-        weight: 1.0
-        
-        seq_weight: 1.0
-        seq_beta: [1, 2]
-        seq_max_noise_prob: 0.05
-        seq_uniform_prob: 0.95
-        seq_reweight:
-        
-        struct_weight: 1.0
-        struct_beta: [1, 2]
-        struct_max_noise_prob: 0.05
-        struct_uniform_prob: 0.95
-        
-        seed: 137
-        random_rot: true
-        rescale_time: ${tracks.StructureTrack.rescale_time}
-        sched_p: ${tracks.StructureTrack.t_emb_p}
-        sigma_max: ${tracks.StructureTrack.t_emb_max}
-        sigma_min: ${tracks.StructureTrack.t_emb_min}
-        datasets:
-            pdb:
-                fraction: 0.25
-                start: 0
-                seed: 374
-            afdb_genie:
-                fraction: 0.75
-                start: 0
-                seed: 384
                 
     StructurePrediction:
-        fraction: 0.1
+        fraction: 1.0
         weight: 1.0
         beta: [1, 2]
         uniform_prob: 0.0
@@ -191,80 +114,7 @@ evals:
         align: false
         demean: true
         batch: 1
-    codesign_skew+1:
-        type: CodesignEval
-        num_samples: 100
-        batch: 100
-        sample_length: 128
-        steps: 200
-        skew: 1.0
-        truncate: 
-        dir:
-        struct:
-            rescale_time: ${tracks.StructureTrack.rescale_time}
-            sched_p: ${tracks.StructureTrack.t_emb_p}
-            sigma_max: ${tracks.StructureTrack.t_emb_max}
-            sigma_min: ${tracks.StructureTrack.t_emb_min}
-            type: ${tracks.StructureTrack.diffusion.type}
-            temp_factor: 0.5
-            sde_weight: 1.0
-            data_sigma: ${tracks.StructureTrack.diffusion.data_sigma}
-            sched: edm
-            max_t: 0.95
-        seq:
-            temp_start: 0.1
-            temp_end: 0.1
-            strategy: random
-            noise: 20
-            logits: standard
-            adjust_unmasked: false # pseudo-masked logits
-            replace_unmasked: false # logit of current toks
-            topk_temp: 0.0
-            allow_mutation: false
-        schedule: {}
-        run_designability: true
-        run_pmpnn_designability: true
-        run_diversity: true
-        run_secondary: true
-        run_plot: true
-
-    codesign_skew+0:
-        type: CodesignEval
-        num_samples: 100
-        batch: 100
-        sample_length: 128
-        steps: 200
-        skew: 0.0
-        truncate:
-        dir:
-        struct:
-            rescale_time: ${tracks.StructureTrack.rescale_time}
-            sched_p: ${tracks.StructureTrack.t_emb_p}
-            sigma_max: ${tracks.StructureTrack.t_emb_max}
-            sigma_min: ${tracks.StructureTrack.t_emb_min}
-            type: ${tracks.StructureTrack.diffusion.type}
-            temp_factor: 0.5
-            sde_weight: 1.0
-            data_sigma: ${tracks.StructureTrack.diffusion.data_sigma}
-            sched: edm
-            max_t: 0.95
-        seq:
-            temp_start: 1.0
-            temp_end: 0.1
-            strategy: dplm
-            noise: 20
-            logits: gumbel
-            adjust_unmasked: false # pseudo-masked logits
-            replace_unmasked: true # logit of current toks
-            topk_temp: 0.0
-            allow_mutation: false
-        schedule: {}
-        run_designability: true
-        run_pmpnn_designability: true
-        run_diversity: true
-        run_secondary: true
-        run_plot: true
-
+  
 
 
 tracks:
@@ -286,9 +136,9 @@ tracks:
         readout_adaLN: false
         embed_mask: false
         loss:
-            mse: 1.0
+            mse: 0.0
             aligned_mse: 0.5
-            lddt: 2.0
+            lddt: 1.0
         diffusion:
             type: EDMDiffusion
             data_sigma: 15
