@@ -8,7 +8,9 @@ from ..utils.geometry import (
     gram_schmidt,
     compute_pade,
     compute_lddt,
+    compute_rmsd,
     rmsdalign,
+    compute_pseudo_tm,
 )
 from ..utils.rotation_conversions import axis_angle_to_matrix, random_rotations
 from ..utils.rigid_utils import Rigid, Rotation
@@ -146,6 +148,7 @@ class StructureTrack(OpenProtTrack):
         target["struct_supervise"] = torch.where(
             batch["struct_mask"].bool(), batch["struct_weight"], 0.0
         )
+        target["struct_mask"] = batch["struct_mask"]
         target["struct"] = target_tensor 
             
         if logger:
@@ -237,20 +240,31 @@ class StructureTrack(OpenProtTrack):
             readout, target, logger=logger
         )
 
-        if self.cfg.aligned_loss:
+        if self.cfg.interp_aligned_loss:
             w = target['seq_occupancy'].unsqueeze(-1)
             loss = w * self.cfg.loss['aligned_mse'] * aligned_mse 
             loss += w * self.cfg.loss['lddt'] * soft_lddt
             loss += (1-w) * self.cfg.loss['mse'] * mse
 
         else:
-            loss = mse
+            loss = 0
+            loss = self.cfg.loss['aligned_mse'] * aligned_mse 
+            loss += self.cfg.loss['lddt'] * soft_lddt
+            loss += self.cfg.loss['mse'] * mse
             
         lddt = compute_lddt(
-            readout["trans"][-1], target["struct"], target["struct_supervise"]
+            readout["trans"][-1], target["struct"], target["struct_mask"]
+        )
+        rmsd = compute_rmsd(
+            readout["trans"][-1], target["struct"], target["struct_mask"]
+        )
+        pseudo_tm = compute_pseudo_tm(
+            readout["trans"][-1], target["struct"], target["struct_mask"]
         )
         if logger:
             logger.masked_log("struct/lddt", lddt, dims=0)
+            logger.masked_log("struct/rmsd", rmsd, dims=0)
+            logger.masked_log("struct/pseudo_tm", pseudo_tm, dims=0)
 
         mask = target["struct_supervise"]
         if logger:
@@ -294,9 +308,11 @@ class StructureTrack(OpenProtTrack):
         ) 
         # mse = torch.clamp(2 * mse, max=5)
 
+        if aligned: key = 'aligned_mse'
+        else: key = 'mse'
         if logger:
-            logger.masked_log("struct/mse_loss", mse[-1], mask=mask)
-            logger.masked_log("struct/mse_loss_aux", mse.mean(0), mask=mask)
+            logger.masked_log(f"struct/{key}_loss", mse[-1], mask=mask)
+            logger.masked_log(f"struct/{key}_loss_aux", mse.mean(0), mask=mask)
 
         w = self.cfg.int_loss_weight
         return w * mse.mean(0) + (1 - w) * mse[-1]   
