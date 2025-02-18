@@ -1,10 +1,10 @@
-ckpt: 
+ckpt: workdir/codesign-new-std+struct-pred/last.ckpt
 pretrained:  #  load weights from here first
 validate: false # if true, only validate the model, don't train
 logger:
     # set to true to log to neptune.ai
     neptune: true
-    run_id: 
+    run_id: STRUC1-704
     # please change "test" to something unique to your task
     project: openprot/struct-merge
     # will log to workdir and neptune.ai with this name
@@ -182,6 +182,26 @@ tasks:
                 seed: 41
             
 evals: 
+    cameo22_diff:
+        type: StructurePredictionEval
+        path: /data/cb/scratch/datasets/pdb_npz
+        split: splits/cameo2022.csv
+        diffusion: true
+        augmented: false
+        align: false
+        demean: true
+        batch: 100
+        struct:
+            rescale_time: ${tracks.StructureTrack.rescale_time}
+            sched_p: ${tracks.StructureTrack.t_emb_p}
+            sigma_max: ${tracks.StructureTrack.t_emb_max}
+            sigma_min: ${tracks.StructureTrack.t_emb_min}
+            type: ${tracks.StructureTrack.diffusion.type}
+            temp_factor: 0.5
+            sde_weight: 1.0
+            data_sigma: ${tracks.StructureTrack.diffusion.data_sigma}
+            sched: edm
+        steps: 50
     cameo22:
         type: StructurePredictionEval
         path: /data/cb/scratch/datasets/pdb_npz
