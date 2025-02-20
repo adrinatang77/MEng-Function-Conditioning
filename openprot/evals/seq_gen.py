@@ -33,9 +33,6 @@ class SequenceGenerationEval(OpenProtEval):
             seqres="A"*L,
             seq_mask=np.ones(L, dtype=np.float32),
             seq_noise=np.ones(L, dtype=np.float32),
-            struct_noise=np.ones(L, dtype=np.float32) * 160,
-            struct=np.zeros((L, 3), dtype=np.float32),
-            struct_mask=np.ones(L, dtype=np.float32),
             residx=np.arange(L, dtype=np.float32),
         )
         return data
@@ -55,8 +52,6 @@ class SequenceGenerationEval(OpenProtEval):
         idx = list(range(rank, self.cfg.num_samples, world_size))
         os.makedirs(f"{savedir}/rank{rank}", exist_ok=True)
         for i in idx:
-            # cmd = ['cp', f"{savedir}/sample{i}.fasta", f"{savedir}/rank{rank}"]
-            # subprocess.run(cmd)
             shutil.copy(f"{savedir}/sample{i}.fasta", f"{savedir}/rank{rank}")
         cmd = [
             "bash",

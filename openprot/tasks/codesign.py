@@ -36,8 +36,9 @@ class Codesign(OpenProtTask):
         
         L = len(data["seqres"])
         data["seq_noise"] = (np.random.rand(L) < noise_level).astype(np.float32)
-        t_inv = mask.sum() / (eps + (mask * data["seq_noise"]).sum()) 
-        t = (mask * data["seq_noise"]).sum()  / (eps + mask.sum()) 
+
+        t_inv = min(100, 1/noise_level)
+        t = noise_level
 
         ones = np.ones(L, dtype=np.float32)
         if self.cfg.seq_reweight == 'linear':

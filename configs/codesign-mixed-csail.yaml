@@ -1,14 +1,14 @@
-ckpt: workdir/codesign-new-std+struct-pred/last.ckpt
+ckpt: 
 pretrained:  #  load weights from here first
 validate: false # if true, only validate the model, don't train
 logger:
     # set to true to log to neptune.ai
-    neptune: true
-    run_id: STRUC1-704
+    neptune: false
+    run_id: 
     # please change "test" to something unique to your task
     project: openprot/struct-merge
     # will log to workdir and neptune.ai with this name
-    name: codesign-new-std+struct-pred
+    name: codesign-linear-reweigh
     # if not null, will duplicate stdout and stderr to workdir/{name}/{logfile}
     logfile: std.out
     # if null, will log every epoch, otherwise every this number of steps
@@ -117,7 +117,7 @@ tasks:
         seed: 137
         random_rot: true
         sigma: ${tracks.StructureTrack.t_emb_min}
-        reweight: false
+        reweight: linear
         datasets:
             pdb:
                 fraction: 0.25
@@ -129,14 +129,14 @@ tasks:
                 seed: 384
 
     Codesign:
-        fraction: 0.7
+        fraction: 0.8
         weight: 1.0
         
         seq_weight: 1.0
         seq_beta: [1, 2]
         seq_max_noise_prob: 0.05
         seq_uniform_prob: 0.95
-        seq_reweight:
+        seq_reweight: linear
         
         struct_weight: 1.0
         struct_beta: [1, 2]
@@ -159,27 +159,39 @@ tasks:
                 start: 0
                 seed: 384
                 
-    StructurePrediction:
-        fraction: 0.1
-        weight: 1.0
-        beta: [1, 2]
-        uniform_prob: 0.0
-        max_noise_prob: 1.0
-        seed: 137
-        random_rot: true
-        rescale_time: ${tracks.StructureTrack.rescale_time}
-        sched_p: ${tracks.StructureTrack.t_emb_p}
-        sigma_max: ${tracks.StructureTrack.t_emb_max}
-        sigma_min: ${tracks.StructureTrack.t_emb_min}
-        datasets:
-            afdb_genie:
-                fraction: 0.75
-                start: 0
-                seed: 40
-            pdb:
-                fraction: 0.25
-                start: 0
-                seed: 41
+    # StructurePrediction:
+    #     fraction: 0.1
+    #     weight: 1.0
+    #     beta: [1, 2]
+    #     uniform_prob: 0.0
+    #     max_noise_prob: 1.0
+    #     seed: 137
+    #     random_rot: true
+    #     rescale_time: ${tracks.StructureTrack.rescale_time}
+    #     sched_p: ${tracks.StructureTrack.t_emb_p}
+    #     sigma_max: ${tracks.StructureTrack.t_emb_max}
+    #     sigma_min: ${tracks.StructureTrack.t_emb_min}
+    #     datasets:
+    #         afdb_genie:
+    #             fraction: 0.75
+    #             start: 0
+    #             seed: 40
+    #         pdb:
+    #             fraction: 0.25
+    #             start: 0
+    #             seed: 41
+
+    # SequenceUnmasking: 
+    #     fraction: 0.1
+    #     weight: 1.0
+    #     beta: [3, 9]
+    #     uniform_prob: 1.0
+    #     seed: 137
+    #     datasets:
+    #         uniref:
+    #             fraction: 1.0
+    #             start: 0
+    #             seed: 40
             
 evals: 
     cameo22_diff:
