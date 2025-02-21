@@ -63,10 +63,7 @@ class CodesignEval(OpenProtEval):
     def __getitem__(self, idx):
         L = self.cfg.sample_length
         
-        if self.cfg.struct.rescale_time:
-            max_noise = self.cfg.struct.edm.sigma_max
-        else:
-            max_noise = self.cfg.struct.max_t
+        max_noise = self.cfg.struct.edm.sigma_max
         if self.cfg.truncate:
             struct_noise = self.struct_sched_fn(self.cfg.truncate)
             seq_noise = self.seq_sched_fn(self.cfg.truncate)
@@ -324,10 +321,6 @@ class CodesignEval(OpenProtEval):
         logger=None
     ):
 
-        StructureStepper = {
-            'EDMDiffusion': EDMDiffusionStepper,
-            'GaussianFM': GaussianFMStepper,
-        }[self.cfg.struct.type]
         schedules = {
             'structure': self.struct_sched_fn,
             'sequence': self.seq_sched_fn,
@@ -343,7 +336,7 @@ class CodesignEval(OpenProtEval):
         for key in self.cfg.schedule:
             schedules[key] = ArraySchedule(self.cfg.schedule[key])
         sampler = OpenProtSampler(schedules, steppers=[
-            StructureStepper(self.cfg.struct),
+            EDMDiffusionStepper(self.cfg.struct),
             SequenceUnmaskingStepper(self.cfg.seq)
         ])
         

@@ -188,17 +188,17 @@ tasks:
                 seed: 40
             
 evals: 
-    cameo22_diff:
-        type: StructurePredictionEval
-        path: /data/cb/scratch/datasets/pdb_npz
-        split: splits/cameo2022.csv
-        diffusion: true
-        batch: 100
-        struct:
-            edm: ${edm}
-            temp_factor: 0.5
-            sde_weight: 1.0
-        steps: 50
+    # cameo22_diff:
+    #     type: StructurePredictionEval
+    #     path: /data/cb/scratch/datasets/pdb_npz
+    #     split: splits/cameo2022.csv
+    #     diffusion: true
+    #     batch: 100
+    #     struct:
+    #         edm: ${edm}
+    #         temp_factor: 0.5
+    #         sde_weight: 1.0
+    #     steps: 50
     # cameo22:
     #     type: StructurePredictionEval
     #     path: /data/cb/scratch/datasets/pdb_npz
