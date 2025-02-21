@@ -18,7 +18,7 @@ class SequenceUnmasking(OpenProtTask):
             noise_level = np.random.beta(*self.cfg.beta)
 
         L = len(data["seqres"])
-        
+        data["seq_noise"] = (np.random.rand(L) < noise_level).astype(np.float32)
         t_inv = min(100, 1/noise_level)
         t = noise_level
 

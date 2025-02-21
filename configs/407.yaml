@@ -1,14 +1,14 @@
-ckpt: 
+ckpt: workdir/dplm-407-replica/last.ckpt
 pretrained:   #  load weights from here first
-validate: false # if true, only validate the model, don't train
+validate: true # if true, only validate the model, don't train
 logger:
     # set to true to log to neptune.ai
-    neptune: true
+    neptune: false
     run_id: 
     # please change "test" to something unique to your task
     project: openprot/struct-merge
     # will log to workdir and neptune.ai with this name
-    name: seq-gen-new 
+    name: dplm-407-replica
     # if not null, will duplicate stdout and stderr to workdir/{name}/{logfile}
     logfile: std.out
     # if null, will log every epoch, otherwise every this number of steps
@@ -39,7 +39,7 @@ data:
     max_sq_toks: null # 400000
     max_toks: 8192
     batch: null
-    crop: 1024
+    crop: 512
     seed: 137
 
 
@@ -68,8 +68,11 @@ features:
 datasets:
     uniref:
         type: UnirefDataset
+        # path: /scratch/projects/cgai/openprot/data/uniref50.fasta
         path: /data/cb/scratch/datasets/uniref50.fasta
+        # index: /scratch/projects/cgai/openprot/data/uniref50.idx.npy  
         index: /data/cb/scratch/datasets/uniref50.idx.npy  
+
 
 tasks:
     SequenceUnmasking: 
@@ -78,6 +81,7 @@ tasks:
         beta: [3, 9]
         uniform_prob: 1.0
         seed: 137
+        reweight: linear
         datasets:
             uniref:
                 fraction: 1.0
@@ -111,7 +115,7 @@ tracks:
         loss_weight: 1.0 
         mask_rate: 1.0
         rand_rate: 0.0
-        esm_lm_head: true
+        esm_lm_head: false
         sup_all: false
         tied_weights: false
         embed_t: false
@@ -127,7 +131,7 @@ model: # custom args
     multiflow_ckpt: null # ./weights/last.ckpt
     ema: false
     checkpoint: false
-    dim: 512
+    dim: 640
     pairwise_dim: 128
     heads: 16
     pairwise_heads: 4

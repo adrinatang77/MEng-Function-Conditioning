@@ -3,12 +3,12 @@ pretrained:  #  load weights from here first
 validate: false # if true, only validate the model, don't train
 logger:
     # set to true to log to neptune.ai
-    neptune: false
+    neptune: true
     run_id: 
     # please change "test" to something unique to your task
     project: openprot/struct-merge
     # will log to workdir and neptune.ai with this name
-    name: codesign-linear-reweigh
+    name: codesign-inverse-reweigh
     # if not null, will duplicate stdout and stderr to workdir/{name}/{logfile}
     logfile: std.out
     # if null, will log every epoch, otherwise every this number of steps
@@ -117,7 +117,7 @@ tasks:
         seed: 137
         random_rot: true
         sigma: ${tracks.StructureTrack.t_emb_min}
-        reweight: linear
+        reweight: inverse
         datasets:
             pdb:
                 fraction: 0.25
@@ -136,7 +136,7 @@ tasks:
         seq_beta: [1, 2]
         seq_max_noise_prob: 0.05
         seq_uniform_prob: 0.95
-        seq_reweight: linear
+        seq_reweight: inverse
         
         struct_weight: 1.0
         struct_beta: [1, 2]
@@ -194,35 +194,35 @@ tasks:
     #             seed: 40
             
 evals: 
-    cameo22_diff:
-        type: StructurePredictionEval
-        path: /data/cb/scratch/datasets/pdb_npz
-        split: splits/cameo2022.csv
-        diffusion: true
-        augmented: false
-        align: false
-        demean: true
-        batch: 100
-        struct:
-            rescale_time: ${tracks.StructureTrack.rescale_time}
-            sched_p: ${tracks.StructureTrack.t_emb_p}
-            sigma_max: ${tracks.StructureTrack.t_emb_max}
-            sigma_min: ${tracks.StructureTrack.t_emb_min}
-            type: ${tracks.StructureTrack.diffusion.type}
-            temp_factor: 0.5
-            sde_weight: 1.0
-            data_sigma: ${tracks.StructureTrack.diffusion.data_sigma}
-            sched: edm
-        steps: 50
-    cameo22:
-        type: StructurePredictionEval
-        path: /data/cb/scratch/datasets/pdb_npz
-        split: splits/cameo2022.csv
-        diffusion: false
-        augmented: false
-        align: false
-        demean: true
-        batch: 1
+    # cameo22_diff:
+    #     type: StructurePredictionEval
+    #     path: /data/cb/scratch/datasets/pdb_npz
+    #     split: splits/cameo2022.csv
+    #     diffusion: true
+    #     augmented: false
+    #     align: false
+    #     demean: true
+    #     batch: 100
+    #     struct:
+    #         rescale_time: ${tracks.StructureTrack.rescale_time}
+    #         sched_p: ${tracks.StructureTrack.t_emb_p}
+    #         sigma_max: ${tracks.StructureTrack.t_emb_max}
+    #         sigma_min: ${tracks.StructureTrack.t_emb_min}
+    #         type: ${tracks.StructureTrack.diffusion.type}
+    #         temp_factor: 0.5
+    #         sde_weight: 1.0
+    #         data_sigma: ${tracks.StructureTrack.diffusion.data_sigma}
+    #         sched: edm
+    #     steps: 50
+    # cameo22:
+    #     type: StructurePredictionEval
+    #     path: /data/cb/scratch/datasets/pdb_npz
+    #     split: splits/cameo2022.csv
+    #     diffusion: false
+    #     augmented: false
+    #     align: false
+    #     demean: true
+    #     batch: 1
     codesign_skew+1:
         type: CodesignEval
         num_samples: 100
@@ -297,7 +297,22 @@ evals:
         run_secondary: true
         run_plot: true
 
-
+    seq_gen_dplm: 
+        type: SequenceGenerationEval
+        num_samples: 100
+        sample_length: 300
+        batch: 100
+        steps: 300
+        temp_start: 0.5
+        temp_end: 0.5
+        strategy: dplm
+        logits: gumbel
+        remask: 0.0
+        topk_temp: 0.0
+        replace_unmasked: false
+        adjust_unmasked: false
+        allow_mutation: false
+        
 
 tracks:
     # register tracks here
@@ -317,10 +332,10 @@ tracks:
         t_emb_min: 0.05
         readout_adaLN: false
         embed_mask: false
-        interp_aligned_loss: true
+        interp_aligned_loss: false
         loss:
             mse: 1.0
-            aligned_mse: 1.0
+            aligned_mse: 0.0
             lddt: 0.0
         diffusion:
             type: EDMDiffusion
