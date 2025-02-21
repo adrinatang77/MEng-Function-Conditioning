@@ -127,6 +127,10 @@ class OpenProtTransformerBlock(nn.Module):
         relpos_attn=False,  # instead use trans relpos
         relpos_rope=False,
         relpos_values=False,
+        relpos_freqs=32,
+        relpos_max=100,
+        relpos_min=1,
+        custom_rope=False,
         embed_rots=False,
         embed_trans=False,
         no_qk_points=4,
@@ -137,7 +141,9 @@ class OpenProtTransformerBlock(nn.Module):
         update_x=True,
         adaLN=False,
         readout_adaLN=False,
-        rots_type="quat",
+        rots_type="vec",
+        dropout=0.0,
+        token_dropout=0.0,
     ):
         super().__init__()
         self.mha = GeometricMultiHeadAttention(
@@ -153,10 +159,15 @@ class OpenProtTransformerBlock(nn.Module):
             relpos_attn=relpos_attn,
             relpos_rope=relpos_rope,
             relpos_values=relpos_values,
+            relpos_freqs=relpos_freqs,
+            relpos_min=relpos_min,
+            relpos_max=relpos_max,
+            custom_rope=custom_rope,
             embed_rots=embed_rots,
             embed_trans=embed_trans,
             no_qk_points=no_qk_points,
             no_v_points=no_v_points,
+            dropout=token_dropout,
         )
         self.ff = FeedForward(dim, ff_expand * dim, layers=ff_layers)
 
@@ -165,13 +176,15 @@ class OpenProtTransformerBlock(nn.Module):
         self.frame_update = frame_update
         self.update_rots = update_rots
         self.rots_type = rots_type
-        self.readout_rots = readout_rots
+        # self.readout_rots = readout_rots
         self.tri_mul = tri_mul
         self.update_x = update_x
         self.adaLN = adaLN
         self.readout_adaLN = readout_adaLN
         self.mha_norm = nn.LayerNorm(dim, elementwise_affine=not adaLN)
         self.ff_norm = nn.LayerNorm(dim, elementwise_affine=not adaLN)
+        self.mha_dropout = nn.Dropout(p=dropout)
+        self.ff_dropout = nn.Dropout(p=dropout)
 
         if adaLN:
             self.adaLN_modulation = nn.Sequential(nn.SiLU(), nn.Linear(dim, 6 * dim))
@@ -198,10 +211,6 @@ class OpenProtTransformerBlock(nn.Module):
                 torch.nn.init.zeros_(self.linear_frame_update[-1].weight)
                 torch.nn.init.zeros_(self.linear_frame_update[-1].bias)
 
-        if readout_rots:
-            self.linear_rots_out = nn.Sequential(
-                nn.LayerNorm(dim), nn.Linear(dim, rot_dim)
-            )
         if pair_updates:
             self.sequence_to_pair = SequenceToPair(dim, pairwise_dim // 2, pairwise_dim)
 
@@ -227,7 +236,7 @@ class OpenProtTransformerBlock(nn.Module):
             torch.nn.init.zeros_(self.sequence_to_pair.o_proj.weight)
             torch.nn.init.zeros_(self.sequence_to_pair.o_proj.bias)
 
-    def forward(self, x, z, rots, trans, mask, x_cond=None, postcond_fn=None):
+    def forward(self, x, z, trans, mask, x_cond=None, postcond_fn=lambda x: x, relpos_mask=None, rots=None, idx=None):
 
         ### no pair2sequence
 
@@ -240,18 +249,24 @@ class OpenProtTransformerBlock(nn.Module):
 
         x_in = x
 
-        x = x + gate(
+        
+
+        x = x + self.mha_dropout(gate(
             self.mha(
                 x=modulate(self.mha_norm(x), shift_mha, scale_mha),
                 z=self.pair_norm(z) if hasattr(self, "pair_norm") else None,
                 mask=mask.bool(),
-                trans=postcond_fn(trans) if postcond_fn is not None else trans,
+                trans=postcond_fn(trans),
                 rots=rots,
+                relpos_mask=relpos_mask,
+                idx=idx,
             ),
             gate_mha,
-        )
+        ))
 
-        x = x + gate(self.ff(modulate(self.ff_norm(x), shift_mlp, scale_mlp)), gate_mlp)
+        x = x + self.ff_dropout(gate(self.ff(modulate(
+            self.ff_norm(x), shift_mlp, scale_mlp
+        )), gate_mlp))
 
         if self.pair_updates:
             z = z + self.sequence_to_pair(x)
@@ -264,23 +279,27 @@ class OpenProtTransformerBlock(nn.Module):
             if self.pair_ffn:
                 z = z + self.mlp_pair(self.pair_ff_norm(z))
 
+        
         if self.frame_update:
             if self.readout_adaLN:
                 update = self.linear_frame_update(x, x_cond)
             else:
                 update = self.linear_frame_update(x)
-            trans = trans + update
-
-        if self.readout_rots:
-            rotvec = self.linear_rots_out(x)
-            if self.rots_type == "quat":
-                rots = Rotation(quats=rotvec, normalize_quats=True).get_rot_mats()
-            elif self.rots_type == "vec":
-                rots = axis_angle_to_matrix(rotvec)
+            if self.update_rots:
+                # rigids = Rigid(trans=trans, rots=Rotation(rot_mats=rots))
+                # rigids = rigids.compose_q_update_vec(update)
+                # trans = rigids.get_trans()
+                # rots = rigids.get_rots().get_rot_mats()
+                
+                vec, rotvec = self.linear_frame_update(x).split(3, dim=-1)
+                trans = trans + vec # torch.einsum("blij,blj->bli", rots, vec)
+                rots = rots @ axis_angle_to_matrix(rotvec).mT
+            else:
+                trans = trans + update
 
         if not self.update_x:
             x = x_in
-        return x, z, rots, trans
+        return x, z, trans, rots
 
 
 class StructureModule(nn.Module):
@@ -304,7 +323,9 @@ class StructureModule(nn.Module):
             relpos_attn=cfg.ipa_relpos,
             relpos_values=cfg.ipa_relpos,
             relpos_rope=cfg.ipa_rope,
-            embed_trans=cfg.embed_trans,
+            relpos_freqs=cfg.sm_relpos[0],
+            relpos_min=cfg.sm_relpos[1],
+            relpos_max=cfg.sm_relpos[2],
         )
         if cfg.separate_ipa_blocks:
             self.ipa_blocks = nn.ModuleList()
@@ -317,45 +338,35 @@ class StructureModule(nn.Module):
                 nn.LayerNorm(cfg.dim), nn.Linear(cfg.dim, cfg.dim)
             )
 
-    def forward(self, x, z, rots, trans, mask, x_cond, postcond_fn):
-        if self.cfg.zero_frames_before_ipa:
-            trans = torch.zeros_like(trans)
-            rots = torch.zeros_like(rots) + torch.eye(
-                3, device=rots.device, dtype=rots.dtype
-            )
-
+    def forward(self, x, z, trans, mask, x_cond, postcond_fn, relpos_mask=None, idx=None):
+            
         if self.cfg.move_x_to_xcond:
             x_cond = x_cond + self.x_cond_linear(x)
 
         if self.cfg.zero_x_before_ipa:
             x = torch.zeros_like(x)
 
-        all_rots = [rots]
-        all_trans = [trans]
-        all_x = [x]
+        
+        trans = torch.zeros_like(trans) 
+        all_trans = []
+        all_x = []
         for i in range(self.cfg.ipa_blocks):
 
-            if self.cfg.detach_rots:
-                rots = rots.detach()
             if self.cfg.detach_trans:
                 trans = trans.detach()
-            if self.cfg.detach_x:
-                x = x.detach()
-
+            
             if self.cfg.separate_ipa_blocks:
                 block = self.ipa_blocks[i]
             else:
                 block = self.ipa_block
 
-            x, z, rots, trans = block(x, z, rots, trans, mask, x_cond, postcond_fn)
-            all_rots.append(rots)
+            x, z, trans, rots = block(x, z, trans, mask, x_cond, postcond_fn, relpos_mask=relpos_mask, idx=idx)
             all_trans.append(trans)
             all_x.append(x)
 
         return {
             "x": torch.stack(all_x),
             "trans": torch.stack(all_trans),
-            "rots": torch.stack(all_rots),
         }
 
 
@@ -364,84 +375,66 @@ class OpenProtModel(nn.Module):
         super().__init__()
         self.cfg = cfg
 
-        if cfg.pairwise_pos_emb:
-            self.pairwise_positional_embedding = RelativePosition(
-                cfg.position_bins, cfg.pairwise_dim
-            )
-        pair_args = dict(
-            pair_updates=True,
+        # if cfg.pairwise_pos_emb:
+        #     self.pairwise_positional_embedding = RelativePosition(
+        #         cfg.position_bins, cfg.pairwise_dim
+        #     )
+        default_block_args = dict(
+            dim=cfg.dim,
+            ff_expand=cfg.ff_expand,
+            heads=cfg.heads,
+            rope=cfg.rope,
+            custom_rope=cfg.custom_rope,
+            adaLN=cfg.trunk_adaLN,
             # pairwise_dim=cfg.pairwise_dim,
-            # pair_bias=cfg.pair_bias,
-            pair_values=cfg.pair_values,
-            pairwise_heads=cfg.pairwise_heads,
-            pair_ffn=cfg.pair_ffn,
-            pair_ff_expand=cfg.pair_ff_expand,
-            tri_mul=cfg.tri_mul,
+            # pair_bias=cfg.block_pair_bias,
+            # pair_values=cfg.block_pair_values,
+            dropout=cfg.dropout,
+            token_dropout=cfg.token_dropout,
         )
+
 
         self.blocks = nn.ModuleList()
-        pair_block_idx = list(
-            range(cfg.pair_blocks.start, cfg.pair_blocks.end, cfg.pair_blocks.interval)
-        )
-
+        
         for i in range(cfg.blocks):
-
-            self.blocks.append(
-                OpenProtTransformerBlock(
-                    dim=cfg.dim,
-                    heads=cfg.heads,
-                    ff_expand=cfg.ff_expand,
-                    rope=cfg.rope,
-                    adaLN=cfg.trunk_adaLN,
-                    pairwise_dim=cfg.pairwise_dim,
-                    pair_bias=cfg.block_pair_bias,
-                    **(pair_args if i in pair_block_idx else {}),
-                )
-            )
-
-        if cfg.readout_trans_before_sm:
-            if cfg.readout_adaLN:
-                self.trans_readout = FinalLayer(cfg.dim, 3)
-            else:
-                self.trans_readout = nn.Sequential(
-                    nn.LayerNorm(cfg.dim), nn.Linear(cfg.dim, 3)
-                )
-        if cfg.struct_module:
-            self.structure_module = StructureModule(cfg)
+            block_args = default_block_args 
+            self.blocks.append(OpenProtTransformerBlock(**block_args))
 
     def forward(self, inp):
 
         x = inp["x"]
         B, L, _ = x.shape
-        residx = torch.arange(L, device=x.device)[None].expand(B, -1)
+        
+        residx = inp['residx']
         mask = inp["pad_mask"]
-        z = inp.get("z", x.new_zeros(B, L, L, self.cfg.pairwise_dim))
-        if self.cfg.pairwise_pos_emb:
-            z = z + self.pairwise_positional_embedding(residx, mask=mask)
+        z = inp.get("z", None) # x.new_zeros(B, L, L, self.cfg.pairwise_dim))
+        # if self.cfg.pairwise_pos_emb:
+        #     z = z + self.pairwise_positional_embedding(residx.long(), mask=mask)
 
+        trans = inp.get("struct", None)
         rots = inp.get("rots", None)
-        trans = inp.get("trans", None)
+        
         x_cond = inp.get("x_cond", None)
         postcond_fn = inp.get("postcond_fn", None)
-
+        struct_mask = inp.get("struct_mask", None)
+        
         for i, block in enumerate(self.blocks):
 
-            if block.pair_updates and self.cfg.checkpoint:
-                x, z, rots, trans = torch.utils.checkpoint.checkpoint(
-                    block, x, z, rots, trans, mask, x_cond, use_reentrant=False
-                )
-            else:
-                x, z, rots, trans = block(x, z, rots, trans, mask, x_cond)
+            # if block.pair_updates and self.cfg.checkpoint:
+            #     x, z, trans, rots = torch.utils.checkpoint.checkpoint(
+            #         block, x, z, trans, mask, x_cond, relpos_mask=struct_mask, rots=rots, idx=residx, use_reentrant=False
+            #     )
+            # else:
+            x, z, trans, rots = block(
+                x,
+                z, 
+                trans,
+                mask,
+                x_cond,
+                # relpos_mask=struct_mask,
+                # rots=rots,
+                idx=residx
+            )
 
-        if self.cfg.readout_trans_before_sm:
-            if self.cfg.readout_adaLN:
-                trans = self.trans_readout(x, x_cond)
-            else:
-                trans = self.trans_readout(x)
-
-        if self.cfg.struct_module:
-            sm_out = self.structure_module(x, z, rots, trans, mask, x_cond, postcond_fn)
-        else:
-            sm_out = None
-
-        return {"x": x, "z": z, "sm": sm_out}
+        
+        return {"x": x, "z": z, "trans": trans, "rots": rots}

@@ -31,17 +31,21 @@ class OpenProtDataset(torch.utils.data.Dataset):
     def make_data(self, **kwargs):
         assert "name" in kwargs
         assert "seqres" in kwargs
+        for key in kwargs:
+            assert key in self.feats or key in ['name', 'seqres']
 
         data = OpenProtData()
 
         data["name"] = kwargs["name"]
         data["seqres"] = kwargs["seqres"]
-
+        data["dataset"] = self.cfg.name 
         L = len(data["seqres"])
         for feat, shape in self.feats.items():
             shape = [(n if n > 0 else L) for n in shape]
             if feat in kwargs:
-                data[feat] = kwargs[feat]
+                assert type(kwargs[feat]) is np.ndarray, feat
+                # assert kwargs[feat].dtype == np.float32, feat
+                data[feat] = kwargs[feat].astype(np.float32)
             else:
                 data[feat] = np.zeros(shape, dtype=np.float32)
 
@@ -57,7 +61,6 @@ class OpenProtData(dict):
 
     def crop(self, crop_len: int):
         L = len(self["seqres"])
-
         ### todo support tensors!
         if L >= crop_len:  # needs crop
             start = np.random.randint(0, L - crop_len + 1)
@@ -66,6 +69,8 @@ class OpenProtData(dict):
                 # special attribute
                 if key == "seqres":
                     self[key] = self[key][start:end]
+                    # with open("seqres.dump", "a") as f:
+                    #     f.write(self[key] + '\n')
 
                 # non-array attribute
                 elif type(self[key]) not in [torch.Tensor, np.ndarray]:
@@ -86,6 +91,7 @@ class OpenProtData(dict):
         return self
 
     def pad(self, pad_len: int):
+        clone = {**self}
         L = len(self["seqres"])
         if pad_len and L < pad_len:  # needs pad
             pad = pad_len - L
@@ -124,7 +130,12 @@ class OpenProtData(dict):
         self["pad_mask"] = pad_mask
         return self
 
-    def batch(datas):
+    def batch(datas, pad=True):
+        if pad:
+            lens = [len(data['seqres']) for data in datas]
+            for data in datas:
+                data.pad(max(lens))
+                
         batch = OpenProtData()
         key_union = list(set(sum([list(data.keys()) for data in datas], [])))
         for key in key_union:
@@ -141,6 +152,10 @@ class OpenProtData(dict):
             except Exception as e:
                 raise Exception(f"Key {key} exception: {e}")
         return batch
+
+    def trim(self):
+        pass
+        
 
     def to(self, device):
         for key in self.keys():

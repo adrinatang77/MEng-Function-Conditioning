@@ -18,6 +18,7 @@ setup_logging(cfg.logger)
 
 import torch
 import os
+import tqdm
 import pytorch_lightning as pl
 from pytorch_lightning.callbacks import ModelCheckpoint, ModelSummary
 
@@ -62,16 +63,13 @@ train_loader = torch.utils.data.DataLoader(
     collate_fn=OpenProtData.batch,
 )
 
-evals = OpenProtEvalManager(cfg, tracks, trainer.global_rank, trainer.world_size)
-eval_loader = torch.utils.data.DataLoader(
-    evals, batch_size=1, num_workers=0, shuffle=False, collate_fn=OpenProtData.batch
-)
+evals = OpenProtEvalManager(cfg, tracks)
 model = OpenProtWrapper(cfg, tracks, evals.evals)
 if cfg.pretrained is not None:
     ckpt = torch.load(cfg.pretrained)
     model.load_state_dict(ckpt["state_dict"], strict=False)
 
 if cfg.validate:
-    trainer.validate(model, eval_loader, ckpt_path=cfg.ckpt)
+    trainer.validate(model, evals.loaders, ckpt_path=cfg.ckpt)
 else:
-    trainer.fit(model, train_loader, eval_loader, ckpt_path=cfg.ckpt)
+    trainer.fit(model, train_loader, evals.loaders, ckpt_path=cfg.ckpt)

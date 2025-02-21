@@ -5,8 +5,14 @@ from .model import OpenProtModel
 from abc import abstractmethod
 from ..utils.misc_utils import autoimport
 import os
+import tqdm
 from ..tracks.manager import OpenProtTrackManager
-
+from ..utils import residue_constants as rc
+from ..utils.tensor_utils import tensor_tree_map
+from .multiflow_wrapper import MultiflowWrapper
+from omegaconf import OmegaConf
+from .ema import ExponentialMovingAverage
+from multiflow.data import so3_utils
 # from ..evals.manager import OpenProtEvalManager
 
 
@@ -16,14 +22,19 @@ class Wrapper(pl.LightningModule):
         self.save_hyperparameters("cfg")
         self.cfg = cfg
         self._logger = Logger(cfg.logger)
-
+        self.ema = None
+        self.cached_weights = None
+        
     def training_step(self, batch, batch_idx):
         self._logger.prefix = "train"
         out = self.general_step(batch)
         self._logger.step(self.trainer, "train")
         return out
 
-    def validation_step(self, batch, batch_idx):
+    def validation_step(self, batch, batch_idx, dataloader_idx=0):
+        if self.cfg.model.ema:
+            if self.cached_weights is None:
+                self.load_ema_weights()
         self._logger.prefix = "val"
         # self.general_step(batch)
         self.validation_step_extra(batch, batch_idx)
@@ -41,7 +52,22 @@ class Wrapper(pl.LightningModule):
 
     def on_validation_epoch_end(self):
         self._logger.epoch_end(self.trainer, prefix="val")
+        if self.cfg.model.ema:
+            self.restore_cached_weights()
 
+    def load_ema_weights(self):
+        clone_param = lambda t: t.detach().clone()
+        self.cached_weights = tensor_tree_map(clone_param, self.model.state_dict())
+        self.model.load_state_dict(self.ema.state_dict()["params"])
+
+    def restore_cached_weights(self):
+        self.model.load_state_dict(self.cached_weights)
+        self.cached_weights = None
+        
+    def on_before_zero_grad(self, *args, **kwargs):
+        if self.cfg.model.ema:
+            self.ema.update(self.model)
+            
     # uncomment this to debug
     def on_before_optimizer_step(self, optimizer):
         quit = False
@@ -57,7 +83,7 @@ class Wrapper(pl.LightningModule):
         cls = getattr(torch.optim, self.cfg.optimizer.type)
         all_params = filter(lambda p: p.requires_grad, self.model.parameters())
         # TEMPORARY AND HACKY
-        post_params = self.model.blocks[12:].parameters()
+        # post_params = self.model.blocks[12:].parameters()
         optimizer = cls(
             # [
             #     {"params": list(set(all_params) - set(post_params))},
@@ -96,14 +122,48 @@ class Wrapper(pl.LightningModule):
 class OpenProtWrapper(Wrapper):
     def __init__(self, cfg, tracks: OpenProtTrackManager, evals: dict):
         super().__init__(cfg)
+        
+        # if cfg.model.multiflow:
+            
+        #     mf_cfg = OmegaConf.load(cfg.model.multiflow_cfg)
+        #     self.model = MultiflowWrapper(mf_cfg)
+        #     if cfg.model.multiflow_ckpt:
+        #         ckpt = torch.load(cfg.model.multiflow_ckpt, map_location=self.device)
+        #         self.model.load_state_dict(ckpt['state_dict'], strict=True)
+        
+            
+        # else:
         self.model = OpenProtModel(cfg.model)
-        self.tracks = tracks
-
         tracks.add_modules(self.model)
 
+        self.tracks = tracks
         self.evals = evals
+        if self.cfg.model.ema:
+            self.ema = ExponentialMovingAverage(self.model, self.cfg.model.ema_decay)
 
+        
+    def on_save_checkpoint(self, checkpoint):
+        esm_keys = {k for k in checkpoint['state_dict'].items() if "model.esm." in k}
+        checkpoint['state_dict'] = {k: v for k, v in checkpoint['state_dict'].items() if k not in esm_keys}
+
+        if self.cached_weights is not None:
+            self.restore_cached_weights()
+        if self.cfg.model.ema:
+            checkpoint["ema"] = self.ema.state_dict()
+
+    def on_load_checkpoint(self, checkpoint):
+        state_dict = self.state_dict()
+        esm_keys = {k for k in state_dict.items() if "model.esm." in k}
+        checkpoint['state_dict'] |= {k: state_dict[k] for k in esm_keys}
+        if self.cfg.model.ema:
+            ema = checkpoint["ema"]
+            self.ema.load_state_dict(ema)
+            
+        
     def transfer_batch_to_device(self, batch, device, dataloader_idx):
+        if self.cfg.model.ema:
+            if self.ema.device != device:
+                self.ema.to(device)
         return batch.to(device)
 
     def get_lr(self):
@@ -111,7 +171,7 @@ class OpenProtWrapper(Wrapper):
             return param_group["lr"]
 
     def forward(self, noisy_batch):
-
+        
         ## embed the tracks into an input dict
         inp = self.tracks.embed(self.model, noisy_batch)
 
@@ -127,10 +187,10 @@ class OpenProtWrapper(Wrapper):
 
         self._logger.register_masks(batch)
         self._logger.masked_log("toks", batch["pad_mask"], sum=True)
-
+    
         ## corrupt all the tracks
         noisy_batch, target = self.tracks.corrupt(batch, logger=self._logger)
-
+        
         out, readout = self.forward(noisy_batch)
 
         ## compute the loss
@@ -146,6 +206,69 @@ class OpenProtWrapper(Wrapper):
 
         return (loss * batch["pad_mask"]).sum() / batch["pad_mask"].sum()
 
+    def multiflow_loss(self, batch):
+        loss_mask = batch['mask']
+        gt_trans_1 = batch['gt_trans']
+        gt_rotmats_1 = batch['gt_rots']
+        gt_aatypes_1 = batch['gt_aatype']
+        rotmats_t = batch['noisy_rots']
+        gt_rot_vf = so3_utils.calc_rot_vf(
+            rotmats_t, gt_rotmats_1.type(torch.float32))
+        
+        # Timestep used for normalization.
+        r3_t = batch['r3_t'] # (B, 1)
+        so3_t = batch['so3_t'] # (B, 1)
+        cat_t = batch['cat_t'] # (B, 1)
+        r3_norm_scale = 1 - torch.min(
+            r3_t[..., None], torch.tensor(0.9)) # (B, 1, 1)
+        so3_norm_scale = 1 - torch.min(
+            so3_t[..., None], torch.tensor(0.9)) # (B, 1, 1)
+        cat_norm_scale = 1.0
+
+        
+            
+        pred_trans_1 = batch['pred_trans']
+        pred_rotmats_1 = batch['pred_rots']
+        pred_logits = batch['pred_aatype'] # (B, N, aatype_pred_num_tokens)
+        pred_rots_vf = so3_utils.calc_rot_vf(rotmats_t, pred_rotmats_1)
+
+        num_batch, num_res = gt_aatypes_1.shape
+        ce_loss = torch.nn.functional.cross_entropy(
+            pred_logits.reshape(-1, 21),
+            gt_aatypes_1.flatten().long(),
+            reduction='none',
+        ).reshape(num_batch, num_res) / cat_norm_scale
+        
+        aatypes_loss = ce_loss * loss_mask # torch.sum(ce_loss * loss_mask, dim=-1) / (loss_denom / 3)
+        
+        # Translation VF loss
+        trans_error = (gt_trans_1 - pred_trans_1) / r3_norm_scale * 0.1
+        
+        trans_loss = (trans_error**2 * loss_mask[...,None]).sum(-1) / 3
+        
+        trans_loss = torch.clamp(2 * trans_loss, max=5)
+        # Rotation VF loss
+        
+        rots_vf_error = (gt_rot_vf - pred_rots_vf) / so3_norm_scale
+        rots_vf_loss = torch.sum(
+            rots_vf_error ** 2 * loss_mask[..., None],
+            dim=(-1),
+        ) / 3 
+
+        
+        # trans_loss = torch.nan_to_num(trans_loss, 0.0)
+        # rots_vf_loss = torch.nan_to_num(rots_vf_loss, 0.0)
+        # aatypes_loss = torch.nan_to_num(aatypes_loss, 0.0)
+        
+        loss = trans_loss + rots_vf_loss + aatypes_loss
+        
+        return {
+            'trans_loss': trans_loss,
+            'rots_vf_loss': rots_vf_loss,
+            # 'auxiliary_loss': auxiliary_loss,
+            'aatypes_loss': aatypes_loss
+        }
+        
     def on_validation_epoch_end(self):
         savedir = f'{os.environ["MODEL_DIR"]}/eval_step{self.trainer.global_step}'
         for name, eval_ in self.evals.items():
@@ -159,8 +282,18 @@ class OpenProtWrapper(Wrapper):
         super().on_validation_epoch_end()
 
     def validation_step_extra(self, batch, batch_idx):
-        name = batch["eval"][0]
+        name = batch["dataset"][0]
         savedir = (
             f'{os.environ["MODEL_DIR"]}/eval_step{self.trainer.global_step}/{name}'
         )
-        self.evals[name].run_batch(self, batch, savedir=savedir, logger=self._logger)
+        os.makedirs(savedir, exist_ok=True)
+        noisy_batch = batch.copy("name", "pad_mask")
+        for track in self.tracks.values():
+            track.corrupt(batch, noisy_batch, {})
+        self.evals[name].run_batch(
+            self,
+            batch,
+            noisy_batch,
+            savedir=savedir,
+            logger=self._logger
+        )

@@ -22,5 +22,11 @@ class OpenProtEval(OpenProtDataset):
         pass
 
     @abstractmethod
-    def run_batch(self, model: OpenProtWrapper, batch: dict, device=None):
+    def run_batch(
+        self,
+        model: OpenProtWrapper,
+        batch: dict,
+        noisy_batch: dict = None,
+        device=None
+    ):
         NotImplemented

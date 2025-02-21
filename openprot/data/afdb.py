@@ -1,11 +1,14 @@
 import torch
 import numpy as np
 import pandas as pd
-import foldcomp
+try:
+    import foldcomp
+except:
+    print("Could not import foldcomp")
 from ..utils import protein
 from ..utils import residue_constants as rc
 from .data import OpenProtDataset
-
+from ..utils.prot_utils import seqres_to_aatype
 
 class AFDBDataset(OpenProtDataset):
 
@@ -47,7 +50,8 @@ class AFDBDataset(OpenProtDataset):
         return self.make_data(
             name=name,
             seqres=seqres,
-            seq_mask=np.ones(len(seqres)),
-            atom37=prot.atom_positions.astype(np.float32),
-            atom37_mask=prot.atom_mask.astype(np.float32),
+            residx=np.arange(len(seqres), dtype=np.float32),
+            seq_mask=np.ones(len(seqres), dtype=np.float32),
+            struct=prot.atom_positions[:,1].astype(np.float32),
+            struct_mask=prot.atom_mask[:,1].astype(np.float32),
         )

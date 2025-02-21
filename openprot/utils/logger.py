@@ -51,7 +51,7 @@ def gather_log(log, world_size):
         return log
     log_list = [None] * world_size
     torch.distributed.all_gather_object(log_list, log)
-    log = {key: sum([lg[key] for lg in log_list], []) for key in log}
+    log = {key: sum([lg.get(key, []) for lg in log_list], []) for key in log}
     return log
 
 

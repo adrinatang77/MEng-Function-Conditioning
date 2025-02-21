@@ -1,4 +1,10 @@
+byprot
+cameo
+fasta
+*.pyc
 workdir
+.cache
+trash
 .ipynb_checkpoints
 *.ipynb
 *.csv

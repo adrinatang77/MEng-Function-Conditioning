@@ -1,20 +1,20 @@
 ckpt: null
-pretrained: null # workdir/trimul-vanilla-disto/last.ckpt # workdir/nodiff-relpos-pade/last.ckpt # load weights from here first
+pretrained: null  #  load weights from here first
 validate: false # if true, only validate the model, don't train
 logger:
     # set to true to log to neptune.ai
     neptune: false
-    run_id: null  
+    run_id: null
     # please change "test" to something unique to your task
-    project: openprot/diffusion
+    project: openprot/struct-merge
     # will log to workdir and neptune.ai with this name
-    name: struct-gen-notri-edm3 # struct-gen-notri-gaussianfm+pdb
+    name: fm-struct-gen-linear 
     # if not null, will duplicate stdout and stderr to workdir/{name}/{logfile}
-    logfile: null # std.out
+    logfile: null
     # if null, will log every epoch, otherwise every this number of steps
-    train_log_freq: 10
+    train_log_freq: 100
     val_log_freq: null 
-    ckpt_freq: 10000000
+    ckpt_freq: 50000000000
     save_freq: 5000
 trainer:
     accelerator: auto
@@ -27,15 +27,18 @@ trainer:
     num_sanity_val_steps: 0
     gradient_clip_val: 1.0
     accumulate_grad_batches: 1
-    val_check_interval: 5000
+    val_check_interval: 10000
     check_val_every_n_epoch: 1
     logger: false
+    precision: 16-mixed
 
 # custom args to OpenProtDataset and elsewhere
 data: 
     num_workers: 32
-    batch: 32
-    crop: 256
+    buffer: 1000
+    max_toks: 8192
+    batch: null
+    crop: 512 
     seed: 137
 
 # These are the raw features which are expected to be supplied by the Datasets
@@ -48,13 +51,15 @@ features:
     # sequence feats
     seq_mask: [-1]
     seq_noise: [-1]
+    seq_weight: [-1]
     # structure feats are unconventional
     # because they really mix 3 modalities
     atom37: [-1, 37, 3]
     atom37_mask: [-1, 37]
-    trans_noise: [-1]
-    rots_noise: [-1]
-    # torsion_noise: [-1]
+    struct_noise: [-1]
+    struct_weight: [-1]
+    
+    
 datasets:
     pdb:
         type: PDBDataset
@@ -69,120 +74,124 @@ datasets:
         blacklist: null 
         plddt_thresh: null 
         index: /scratch/projects/cgai/openprot/afdbreps_l-256_plddt_80.txt
-
-            
+    synthetic: 
+        type: MultiflowDataset
+        path: /scratch/projects/cgai/openprot/processed_synthetic
+        
 tasks:
-    StructureGeneration:
+    Codesign:
         fraction: 1.0
-        beta: [1, 2]
-        uniform_prob: 0.5
-        max_noise_prob: 0.0
+        weight: 1.0
+        
+        seq_weight: 1.0
+        seq_beta: [1, 2]
+        seq_max_noise_prob: 0.0
+        seq_uniform_prob: 1.0
+        
+        struct_weight: 1.0
+        struct_beta: [1, 2]
+        struct_max_noise_prob: 0.0
+        struct_uniform_prob: 0.5
+        
         seed: 137
         random_rot: true
+        sched_p: ${tracks.StructureTrack.t_emb_p}
+        sigma_max: ${tracks.StructureTrack.t_emb_max}
+        sigma_min: ${tracks.StructureTrack.t_emb_min}
+        
         datasets:
-            afdb_genie:
-                fraction: 0.75
-                start: 0
-                seed: 142
-            pdb:
+            synthetic:
                 fraction: 0.25
                 start: 0
-                seed: 142
-evals:
-    struct_gen_sde_0.5:
-        type: StructureGenerationEval
+                seed: 41
+            pdb:
+                fraction: 0.75
+                start: 0
+                seed: 42
+            
+evals: 
+    codesign_random:
+        type: CodesignEval
         num_samples: 100
+        batch: 100
         sample_length: 128
-        nsteps: 200
-        sched_type: 'log'
-        sde_weight: 10.0
-        temp_factor: 0.5
-        sde_cutoff_time: 0.0
-        sde_cutoff_width: 0.00001
+        steps: 200
+        sched_p: ${tracks.StructureTrack.t_emb_p}
+        sigma_max: ${tracks.StructureTrack.t_emb_max}
+        sigma_min: ${tracks.StructureTrack.t_emb_min}
+        struct:
+            temp_factor: 0.5
+        seq:
+            temp: 0.1
+            strategy: purity
+            noise: 20
+            logits: standard
+            adjust_unmasked: false
+            replace_unmasked: false
         run_designability: true
-    struct_gen_sde_0.7:
-        type: StructureGenerationEval
-        num_samples: 100
-        sample_length: 128
-        nsteps: 200
-        sched_type: 'log'
-        sde_weight: 10.0
-        temp_factor: 0.7
-        sde_cutoff_time: 0.0
-        sde_cutoff_width: 0.00001
-        run_designability: true
-    struct_gen_sde_1.0:
-        type: StructureGenerationEval
-        num_samples: 100
-        sample_length: 128
-        nsteps: 200
-        sched_type: 'log'
-        sde_weight: 10.0
-        temp_factor: 1.0
-        sde_cutoff_time: 0.0
-        sde_cutoff_width: 0.00001
-        run_designability: true
-    
 
+        
+        # order: random
 tracks:
     # register tracks here
     StructureTrack: 
         loss_weight: 1.0
+        embed_trans: true
+        embed_pairwise: false
+        readout_trans: false
         readout_pairwise: false
-        embed_trans: edm
-        # trunk or sm
-        readout_trans: trunk
         postcondition: true
         int_loss_weight: 0.5
-        postcond_before_relpos: true
-        embed_pairwise: false
-        embed_t: false
+        t_emb_p: 1
+        t_emb_max: 1
+        t_emb_min: 0
+        embed_sigma: false
         
-        clamp_pade: false
-        clamp_nape: true
-        clamp_mse: false
-        nape_cutoff: 15
         losses:
-            mse: 1.0
+            lddt: 1.0
+            # distogram: 0.3
+            mse: 0.225
         diffusion:
-            # type: GaussianFM
-            # prior_sigma: 15.0
-            # center_noise: true
-            # center_pos: true
-            # train_align: false
-            # inf_align: false
-            # prediction: "velocity"
-            type: EDMDiffusion
-            sched_p: 7
+            type: GaussianFM
             data_sigma: 15
-            sigma_max: 160
-            sigma_min: 0.05
             aligned_loss: true
+            train_align: false
     SequenceTrack:
         esm: null # esm2_3B # esm2_650M # esm2_8M_270K
-        corrupt: mask #  discrete_fm
-        mask_rate: 0.0
-        loss_weight: 0.0 
-        rate_matrix_path: ./openprot/blosum62.csv
-        noise_schedule: cos
+        loss_weight: 1.0 
+        mask_rate: 1.0
+        rand_rate: 0.0
+        esm_lm_head: false
+        embed_t: false
+
 
 model: # custom args
+    dplm_ckpt: null
     checkpoint: false
-    dim: 1024
+    dim: 512
     pairwise_dim: 128
     heads: 16
     pairwise_heads: 4
-    blocks: 12
+    blocks: 30
+    dropout: 0.0
+    token_dropout: 0.0
+
     
+    trunk_relpos: [32, 1, 1000]
+    sm_relpos: [32, 1, 100]
     # topology of the network
     pair_blocks:
         start: 0
         end: 0
         interval: 1
+    relpos_blocks:
+        start: 0
+        end: 0
+        interval: 4
     struct_module: true
-    block_pair_bias: false
+    
     pairwise_pos_emb: false
-    structure_module: true
+    block_pair_bias: false
     ff_expand: 4
     position_bins: 32
     pair_ffn: true
@@ -190,35 +199,40 @@ model: # custom args
     pair_bias: true
     pair_ff_expand: 4
     tri_mul: false
-    rope: true
+    rope: false
+    custom_rope: true
+    
 
     ### ipa args
-    move_x_to_xcond: false
     readout_trans_before_sm: false
-    ipa_relpos: true
-    ipa_frame_update: true
-    zero_frames_before_ipa: false
-    zero_x_before_ipa: false
-    readout_adaLN: false
+    zero_frames_before_ipa: true
     
-    ipa_blocks: 0
+    ipa_blocks: 8
     separate_ipa_blocks: false
     ipa_pair_values: false
-    ipa_pair_bias: true
-    embed_trans: false
-    detach_rots: true
+    ipa_pair_bias: false
     detach_trans: true
-    detach_x: false
     trunk_adaLN: true
-    sm_adaLN: false
+    sm_adaLN: true
+    readout_adaLN: true
+    
+    move_x_to_xcond: true
+    ipa_relpos: true
+    ipa_nipa: false
+    ipa_rope: false
+    ipa_frame_update: true
+    zero_x_before_ipa: false
 
 
 optimizer:
     type: AdamW
     lr: 1e-4
+    # betas: [0.9, 0.98]
+    # eps: 1e-8
+    # weight_decay: 0.01
+    # fused: true
     scheduler: 
         total_steps: 1000000
         warmup_steps: 1000
         start_decay: 10000
         end_factor: 1.00
-        

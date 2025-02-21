@@ -1,20 +1,20 @@
-ckpt: null # 
-pretrained: null # workdir/trimul-vanilla-disto/last.ckpt # workdir/nodiff-relpos-pade/last.ckpt # load weights from here first
+ckpt: workdir/merge-std-1e4+tok-dropout/last.ckpt # 
+pretrained: null  #  load weights from here first
 validate: false # if true, only validate the model, don't train
 logger:
     # set to true to log to neptune.ai
-    neptune: false
-    run_id: null  
+    neptune: true
+    run_id: STRUC1-431
     # please change "test" to something unique to your task
     project: openprot/struct-merge
     # will log to workdir and neptune.ai with this name
-    name: esm-test
+    name: merge-std-1e4+tok-dropout # invfold-1e3-relpos-256-bs4
     # if not null, will duplicate stdout and stderr to workdir/{name}/{logfile}
-    logfile: null # std.out
+    logfile: std.out
     # if null, will log every epoch, otherwise every this number of steps
-    train_log_freq: 10
+    train_log_freq: 100
     val_log_freq: null 
-    ckpt_freq: 10000000
+    ckpt_freq: 50000000000
     save_freq: 5000
 trainer:
     accelerator: auto
@@ -27,14 +27,16 @@ trainer:
     num_sanity_val_steps: 0
     gradient_clip_val: 1.0
     accumulate_grad_batches: 1
-    val_check_interval: 5000
+    val_check_interval: 10000
     check_val_every_n_epoch: 1
     logger: false
+    precision: 16-mixed
 
 # custom args to OpenProtDataset and elsewhere
 data: 
     num_workers: 32
-    batch: 8
+    batch: 32
+    buffer: null
     crop: 256
     seed: 137
 
@@ -48,14 +50,15 @@ features:
     # sequence feats
     seq_mask: [-1]
     seq_noise: [-1]
+    seq_weight: [-1]
     # structure feats are unconventional
     # because they really mix 3 modalities
     atom37: [-1, 37, 3]
     atom37_mask: [-1, 37]
-    trans_noise: [-1]
-    rots_noise: [-1]
-    # torsion_noise: [-1]
-
+    struct_noise: [-1]
+    struct_weight: [-1]
+    
+    
 datasets:
     pdb:
         type: PDBDataset
@@ -75,53 +78,84 @@ datasets:
         path: /scratch/projects/cgai/openprot/data/afdb_rep_v4/afdb_rep_v4
         annotations: /scratch/projects/cgai/openprot/data/afdb_rep_v4.pkl.gz
         blacklist: /scratch/projects/cgai/openprot/cameo_afdb_blacklist.tsv
-        plddt_thresh: 70
+        plddt_thresh: 80
         index: null
-        
-    # UnirefDataset:
-    #     #path: /data/cb/scratch/datasets/uniref50.fasta
-    #     #index: /data/cb/scratch/datasets/uniref50.index
-    #     path: /scratch/projects/cgai/openprot/data/uniref50.fasta
-    #     index: /scratch/projects/cgai/openprot/data/uniref50.index
-            
+    uniref:
+        type: UnirefDataset
+        path: /scratch/projects/cgai/openprot/data/uniref50.fasta
+        index: /scratch/projects/cgai/openprot/data/uniref50.index  
+
 tasks:
-    # SequenceGeneration:
-    #     fraction: 0.1
-    #     mask_rate: 0.15
+    InverseFolding:
+        fraction: 0.33
+        weight: 1.0
+        beta: [1, 2]
+        uniform_prob: 1.0
+        seed: 137
+        random_rot: true
+        sigma: 0.2
+        reweight: false
+        datasets:
+            pdb:
+                fraction: 0.25
+                start: 0
+                seed: 37
+            afdb:
+                fraction: 0.75
+                start: 0
+                seed: 38
+    # SequenceUnmasking: 
+    #     fraction: 0.25
+    #     weight: 1.0
+    #     # beta: [1, 2]
+    #     # uniform_prob: 0.0
+    #     beta: [3, 9]
+    #     uniform_prob: 0.2 
     #     seed: 137
     #     datasets:
-    #         UnirefDataset: 
+    #         uniref:
     #             fraction: 1.0
     #             start: 0
-    #             seed: 137
+    #             seed: 39
     StructurePrediction:
-        fraction: 0.0
-        # beta: [1, 2]
+        fraction: 0.33
+        weight: 1.0
+        beta: [1, 2]
         uniform_prob: 0.0
         max_noise_prob: 1.0
         seed: 137
         random_rot: true
+        sched_p: ${tracks.StructureTrack.t_emb_p}
+        sigma_max: ${tracks.StructureTrack.t_emb_max}
+        sigma_min: ${tracks.StructureTrack.t_emb_min}
         datasets:
             afdb:
                 fraction: 0.75
                 start: 0
-                seed: 142
+                seed: 40
             pdb:
                 fraction: 0.25
                 start: 0
-                seed: 142
+                seed: 41
     StructureGeneration:
-        fraction: 1.0
+        fraction: 0.34
+        weight: 1.0
         beta: [1, 2]
         uniform_prob: 0.5
-        max_noise_prob: 0.0
         seed: 137
         random_rot: true
+        sched_p: ${tracks.StructureTrack.t_emb_p}
+        sigma_max: ${tracks.StructureTrack.t_emb_max}
+        sigma_min: ${tracks.StructureTrack.t_emb_min}
         datasets:
             afdb_genie:
-                fraction: 1.0
+                fraction: 0.75
                 start: 0
-                seed: 142
+                seed: 41
+            pdb:
+                fraction: 0.25
+                start: 0
+                seed: 42
             
 evals: 
     cameo22:
@@ -132,143 +166,128 @@ evals:
         augmented: false
         align: false
         demean: true
-    # struct_gen_ode:
-    #     type: StructureGenerationEval
-    #     num_samples: 100
-    #     sample_length: 128
-    #     nsteps: 200
-    #     sde_weight: 0.0
-    #     sched_type: 'log'
-    #     temp_factor: 0.3
-    #     sde_cutoff_time: 0.0
-    #     sde_cutoff_width: 0.00001
-    #     run_designability: true
+        batch: 1
     struct_gen_sde_0.5:
         type: StructureGenerationEval
         num_samples: 100
+        batch: 100
         sample_length: 128
-        nsteps: 200
-        sched_type: 'log'
-        sde_weight: 10.0
+        steps: 200
+        sched_p: ${tracks.StructureTrack.t_emb_p}
+        sigma_max: ${tracks.StructureTrack.t_emb_max}
+        sigma_min: ${tracks.StructureTrack.t_emb_min}
         temp_factor: 0.5
-        sde_cutoff_time: 0.0
-        sde_cutoff_width: 0.00001
         run_designability: true
-    struct_gen_sde_0.7:
-        type: StructureGenerationEval
-        num_samples: 100
-        sample_length: 128
-        nsteps: 200
-        sched_type: 'log'
-        sde_weight: 10.0
-        temp_factor: 0.7
-        sde_cutoff_time: 0.0
-        sde_cutoff_width: 0.00001
-        run_designability: true
-    struct_gen_sde_1.0:
-        type: StructureGenerationEval
-        num_samples: 100
-        sample_length: 128
-        nsteps: 200
-        sched_type: 'log'
-        sde_weight: 10.0
-        temp_factor: 1.0
-        sde_cutoff_time: 0.0
-        sde_cutoff_width: 0.00001
-        run_designability: true
-    
-
+    cameo22_invfold:
+        type: InverseFoldingEval
+        path: ./cameo
+        split: splits/cameo2022.csv
+        temp: 0.1
+        sigma: 0.2
+        batch: 1
+        logits: standard
+        strategy: random
+        adjust_unmasked: false
+        
 tracks:
     # register tracks here
     StructureTrack: 
         loss_weight: 1.0
-        readout_pairwise: true
-        
-        embed_trans: edm
-        readout_trans: true
-        int_loss_weight: 0.5
-        multiply_out: 15.0
-        
-        rot_augment: 1
+        embed_trans: true
         embed_pairwise: false
-        struct_module: true
+        embed_sigma: true
+        readout_trans: false
+        readout_pairwise: false
+        postcondition: true
+        int_loss_weight: 0.5
+        t_emb_p: 7
+        t_emb_max: 160
+        t_emb_min: 0.05
         
-        clamp_pade: false
-        clamp_nape: true
-        clamp_mse: false
-        nape_cutoff: 15
         losses:
-            pade: 0.1
             lddt: 1.0
-            distogram: 0.3
-            mse: 0.001
-            # nape: 0.0
-            diffusion: 1.0
+            # distogram: 0.3
+            mse: 0.225
         diffusion:
-            # type: GaussianFM
-            # prior_sigma: 15.0
-            # center_noise: true
-            # center_pos: true
-            # train_align: false
-            # inf_align: false
-            # prediction: "velocity"
             type: EDMDiffusion
-            sched_p: 7
             data_sigma: 15
-            sigma_max: 160
+            aligned_loss: true
     SequenceTrack:
-        esm: esm2_3B # esm2_650M # esm2_8M_270K
-        corrupt: mask
-        mask_rate: 0.0
-        loss_weight: 0.0
+        esm: null # esm2_3B # esm2_650M # esm2_8M_270K
+        loss_weight: 1.0 
+        mask_rate: 1.0
+        rand_rate: 0.0
+        esm_lm_head: true
+        tied_weights: false
+        embed_t: false
+
 
 model: # custom args
-    checkpoint: true
-    dim: 1024
+    dplm_ckpt: null
+    checkpoint: false
+    dim: 640
     pairwise_dim: 128
     heads: 16
     pairwise_heads: 4
-    blocks: 20
-    
+    blocks: 30
+    token_dropout: 0.1
+    dropout: 0.0
+
+    trunk_relpos: [32, 1, 1000]
+    sm_relpos: [32, 1, 100]
     # topology of the network
     pair_blocks:
         start: 0
-        end: 12
+        end: 0
+        interval: 1
+    relpos_blocks:
+        start: 0
+        end: 4
         interval: 1
     struct_module: true
-    sm_block_idx: 12
     
-    pairwise_pos_emb: true
-    
+    pairwise_pos_emb: false
+    block_pair_bias: false
     ff_expand: 4
     position_bins: 32
     pair_ffn: true
     pair_values: false
     pair_bias: true
     pair_ff_expand: 4
-    tri_mul: true
-    rope: true
+    tri_mul: false
+    rope: false
+    custom_rope: true
 
     ### ipa args
-
+    readout_trans_before_sm: false
     zero_frames_before_ipa: true
     
     ipa_blocks: 8
     separate_ipa_blocks: false
     ipa_pair_values: false
-    ipa_pair_bias: true
-    detach_rots: true
+    ipa_pair_bias: false
     detach_trans: true
     trunk_adaLN: true
     sm_adaLN: true
+    readout_adaLN: true
+    
+    move_x_to_xcond: true
+    ipa_relpos: true
+    ipa_nipa: false
+    ipa_rope: false
+    ipa_frame_update: true
+    zero_x_before_ipa: false
 
 
 optimizer:
     type: AdamW
-    lr: 5e-4
+    lr: 1e-4
+    # betas: [0.9, 0.98]
+    # eps: 1e-8
+    # weight_decay: 0.01
+    # fused: true
     scheduler: 
         total_steps: 1000000
         warmup_steps: 1000
         start_decay: 10000
         end_factor: 1.00
-        
