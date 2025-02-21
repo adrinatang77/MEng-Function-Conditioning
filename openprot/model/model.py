@@ -375,10 +375,10 @@ class OpenProtModel(nn.Module):
         super().__init__()
         self.cfg = cfg
 
-        if cfg.pairwise_pos_emb:
-            self.pairwise_positional_embedding = RelativePosition(
-                cfg.position_bins, cfg.pairwise_dim
-            )
+        # if cfg.pairwise_pos_emb:
+        #     self.pairwise_positional_embedding = RelativePosition(
+        #         cfg.position_bins, cfg.pairwise_dim
+        #     )
         default_block_args = dict(
             dim=cfg.dim,
             ff_expand=cfg.ff_expand,
@@ -386,9 +386,9 @@ class OpenProtModel(nn.Module):
             rope=cfg.rope,
             custom_rope=cfg.custom_rope,
             adaLN=cfg.trunk_adaLN,
-            pairwise_dim=cfg.pairwise_dim,
-            pair_bias=cfg.block_pair_bias,
-            pair_values=cfg.block_pair_values,
+            # pairwise_dim=cfg.pairwise_dim,
+            # pair_bias=cfg.block_pair_bias,
+            # pair_values=cfg.block_pair_values,
             dropout=cfg.dropout,
             token_dropout=cfg.token_dropout,
         )
@@ -407,9 +407,9 @@ class OpenProtModel(nn.Module):
         
         residx = inp['residx']
         mask = inp["pad_mask"]
-        z = inp.get("z", x.new_zeros(B, L, L, self.cfg.pairwise_dim))
-        if self.cfg.pairwise_pos_emb:
-            z = z + self.pairwise_positional_embedding(residx.long(), mask=mask)
+        z = inp.get("z", None) # x.new_zeros(B, L, L, self.cfg.pairwise_dim))
+        # if self.cfg.pairwise_pos_emb:
+        #     z = z + self.pairwise_positional_embedding(residx.long(), mask=mask)
 
         trans = inp.get("struct", None)
         rots = inp.get("rots", None)
@@ -420,12 +420,21 @@ class OpenProtModel(nn.Module):
         
         for i, block in enumerate(self.blocks):
 
-            if block.pair_updates and self.cfg.checkpoint:
-                x, z, trans, rots = torch.utils.checkpoint.checkpoint(
-                    block, x, z, trans, mask, x_cond, relpos_mask=struct_mask, rots=rots, idx=residx, use_reentrant=False
-                )
-            else:
-                x, z, trans, rots = block(x, z, trans, mask, x_cond, relpos_mask=struct_mask, rots=rots, idx=residx)
+            # if block.pair_updates and self.cfg.checkpoint:
+            #     x, z, trans, rots = torch.utils.checkpoint.checkpoint(
+            #         block, x, z, trans, mask, x_cond, relpos_mask=struct_mask, rots=rots, idx=residx, use_reentrant=False
+            #     )
+            # else:
+            x, z, trans, rots = block(
+                x,
+                z, 
+                trans,
+                mask,
+                x_cond,
+                # relpos_mask=struct_mask,
+                # rots=rots,
+                idx=residx
+            )
 
         
         return {"x": x, "z": z, "trans": trans, "rots": rots}

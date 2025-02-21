@@ -123,18 +123,18 @@ class OpenProtWrapper(Wrapper):
     def __init__(self, cfg, tracks: OpenProtTrackManager, evals: dict):
         super().__init__(cfg)
         
-        if cfg.model.multiflow:
+        # if cfg.model.multiflow:
             
-            mf_cfg = OmegaConf.load(cfg.model.multiflow_cfg)
-            self.model = MultiflowWrapper(mf_cfg)
-            if cfg.model.multiflow_ckpt:
-                ckpt = torch.load(cfg.model.multiflow_ckpt, map_location=self.device)
-                self.model.load_state_dict(ckpt['state_dict'], strict=True)
+        #     mf_cfg = OmegaConf.load(cfg.model.multiflow_cfg)
+        #     self.model = MultiflowWrapper(mf_cfg)
+        #     if cfg.model.multiflow_ckpt:
+        #         ckpt = torch.load(cfg.model.multiflow_ckpt, map_location=self.device)
+        #         self.model.load_state_dict(ckpt['state_dict'], strict=True)
         
             
-        else:
-            self.model = OpenProtModel(cfg.model)
-            tracks.add_modules(self.model)
+        # else:
+        self.model = OpenProtModel(cfg.model)
+        tracks.add_modules(self.model)
 
         self.tracks = tracks
         self.evals = evals
@@ -185,104 +185,13 @@ class OpenProtWrapper(Wrapper):
 
     def general_step(self, batch):
 
-        
-  
-        # batch['pad_mask'] = batch['seq_mask'] = batch['struct_mask'] # to make losses comparable
         self._logger.register_masks(batch)
         self._logger.masked_log("toks", batch["pad_mask"], sum=True)
     
         ## corrupt all the tracks
         noisy_batch, target = self.tracks.corrupt(batch, logger=self._logger)
         
-        # if self.cfg.model.multiflow:
-        #     L = batch['pad_mask'].shape[1]
-        #     mf_batch = {
-        #         'trans': batch['struct'],
-        #         'rots': batch['rots'],
-        #         'seqres': batch['aatype'],
-        #         'res_mask': batch['struct_mask'],
-        #         'diffuse_mask': batch['struct_mask'],
-        #         'mask': batch['struct_mask'],
-        #         'chain_idx': torch.zeros_like(batch['pad_mask'], dtype=torch.long),
-        #         'res_idx': batch['residx'],
-        #     }
-        #     losses = self.model.general_step(mf_batch)
-        #     loss = 0
-        #     for key in losses:
-        #         loss += losses[key]
-        #         self._logger.log(f"mutliflow/{key}", losses[key], batch['struct_mask'])
-        #     self._logger.log("loss", loss, batch['struct_mask'])
-        #     return (loss * batch["struct_mask"]).sum() / batch["struct_mask"].sum()
-
-
-        if self.cfg.model.multiflow:
-            B = batch['pad_mask'].shape[0]
-            L = batch['pad_mask'].shape[1]
-            mf_batch = {
-                'res_mask': batch['struct_mask'],
-                'diffuse_mask': batch['struct_mask'],
-                'chain_idx': torch.zeros_like(batch['pad_mask'], dtype=torch.long),
-                'res_idx': batch['residx']
-            } | {
-                'trans_t': noisy_batch['struct'],
-                'rotmats_t': noisy_batch['rots'],
-                'aatypes_t': noisy_batch['aatype'],
-                'so3_t': 1-noisy_batch['struct_noise'][...,0:1],
-                'r3_t': 1-noisy_batch['struct_noise'][...,0:1],
-                'cat_t': torch.zeros_like(noisy_batch['struct_noise']),
-                'trans_sc': torch.zeros_like(noisy_batch['struct']),
-                'aatypes_sc': noisy_batch['struct'].new_zeros(B, L, 21),
-            }
-            interpolant_batch = {
-                'trans_1': batch['struct'],
-                'rotmats_1': batch['rots'],
-                'aatypes_1': batch['aatype'],
-                'r3_t': 1-noisy_batch['struct_noise'][...,0:1],
-                'so3_t': 1-noisy_batch['struct_noise'][...,0:1],
-                'res_mask': batch['struct_mask'],
-                'diffuse_mask': batch['struct_mask'],
-            }
-            
-            # self.model.interpolant._device = self.device
-            # interpolant_out = self.model.interpolant.corrupt_batch(interpolant_batch)
-            
-            # mf_batch['trans_t'] = interpolant_out['trans_t']
-            # target['noisy_rots'] = mf_batch['rotmats_t'] = interpolant_out['rotmats_t']
-            # mf_batch['r3_t'] = mf_batch['so3_t'] = interpolant_out['r3_t']
-            # mf_batch['aatypes_t'] = interpolant_out['aatypes_t']
-            # mf_batch['cat_t'] = interpolant_out['cat_t']
-
-            # target['rots_noise'] = target['struct_noise'] = torch.ones_like(target['struct_noise']) - interpolant_out['r3_t']
-            
-            out = self.model.model(mf_batch)
-
-            readout = {
-                'trans': out['pred_trans'][None],
-                'rots': out['pred_rotmats'],
-                'aatype': out['pred_logits'],
-            }
-
-            # loss_batch = {
-            #     'gt_trans': batch['struct'],
-            #     'gt_rots': batch['rots'],
-            #     'gt_aatype': batch['aatype'],
-            #     'noisy_rots': mf_batch['rotmats_t'],
-            #     'pred_trans': readout['trans'][0],
-            #     'pred_rots': readout['rots'],
-            #     'pred_aatype': readout['aatype'],
-            #     'r3_t': mf_batch['r3_t'],
-            #     'so3_t': mf_batch['so3_t'],
-            #     'cat_t': mf_batch['cat_t'],
-            #     'mask': batch['struct_mask'],
-            # }
-            
-
-            # losses = self.multiflow_loss(loss_batch)
-            # for key in losses:
-            #     self._logger.log(f"mutliflow/{key}", losses[key], batch['struct_mask'])
-             
-        else:
-            out, readout = self.forward(noisy_batch)
+        out, readout = self.forward(noisy_batch)
 
         ## compute the loss
         loss = self.tracks.compute_loss(

@@ -1,16 +1,16 @@
 ckpt: 
 pretrained:  #  load weights from here first
-validate: false # if true, only validate the model, don't train
+validate: true # if true, only validate the model, don't train
 logger:
     # set to true to log to neptune.ai
-    neptune: true
+    neptune: false
     run_id: 
     # please change "test" to something unique to your task
     project: openprot/struct-merge
     # will log to workdir and neptune.ai with this name
-    name: codesign-inverse-reweigh
+    name: default
     # if not null, will duplicate stdout and stderr to workdir/{name}/{logfile}
-    logfile: std.out
+    logfile: 
     # if null, will log every epoch, otherwise every this number of steps
     train_log_freq: 100
     val_log_freq: null 
@@ -18,7 +18,7 @@ logger:
     save_freq: 1000
 trainer:
     accelerator: auto
-    devices: 8
+    devices: 1
     max_epochs: 1
     max_steps: 1000000
     enable_progress_bar: false
@@ -62,7 +62,12 @@ features:
     ref_conf: [-1, 3]
     residx: [-1]
     chain: [-1]
-    
+
+edm:
+    sched_p: 7
+    sigma_max: 160
+    sigma_min: 0.05
+    sigma_data: 15
     
 datasets:
     pdb:
@@ -79,25 +84,24 @@ datasets:
         blacklist: 
         plddt_thresh: 
         index: /data/cb/scratch/datasets/afdbreps_l-256_plddt_80.txt
-    
+    uniref:
+        type: UnirefDataset
+        # path: /scratch/projects/cgai/openprot/data/uniref50.fasta
+        path: /data/cb/scratch/datasets/uniref50.fasta
+        # index: /scratch/projects/cgai/openprot/data/uniref50.idx.npy  
+        index: /data/cb/scratch/datasets/uniref50.idx.npy  
+
 tasks:
         
     StructureGeneration:
-        rescale_time: ${tracks.StructureTrack.rescale_time}
-        sched_p: ${tracks.StructureTrack.t_emb_p}
-        sigma_max: ${tracks.StructureTrack.t_emb_max}
-        sigma_min: ${tracks.StructureTrack.t_emb_min}
-        rots: false
-
         fraction: 0.1
-        weight: 1.0
-        struct_weight: 1.0
-        struct_beta: [1, 2]
-        struct_max_noise_prob: 0.0
-        struct_uniform_prob: 0.5
+        edm: ${edm}
+        struct:
+            beta: [1, 2]
+            max_noise_prob: 0.0
+            uniform_prob: 0.5
         
         seed: 137
-        random_rot: true
         
         datasets:
             afdb_genie:
@@ -111,13 +115,13 @@ tasks:
 
     InverseFolding:
         fraction: 0.1
-        weight: 1.0
-        beta: [1, 2]
-        uniform_prob: 1.0
+        edm: ${edm}
+        seq:
+            beta: [1, 2]
+            uniform_prob: 1.0
+            max_noise_prob: 0.0
         seed: 137
-        random_rot: true
-        sigma: ${tracks.StructureTrack.t_emb_min}
-        reweight: inverse
+        
         datasets:
             pdb:
                 fraction: 0.25
@@ -129,26 +133,18 @@ tasks:
                 seed: 384
 
     Codesign:
-        fraction: 0.8
-        weight: 1.0
-        
-        seq_weight: 1.0
-        seq_beta: [1, 2]
-        seq_max_noise_prob: 0.05
-        seq_uniform_prob: 0.95
-        seq_reweight: inverse
-        
-        struct_weight: 1.0
-        struct_beta: [1, 2]
-        struct_max_noise_prob: 0.05
-        struct_uniform_prob: 0.95
+        fraction: 0.6
+        edm: ${edm}
+        seq:
+            beta: [1, 2]
+            max_noise_prob: 0.05
+            uniform_prob: 0.95
+        struct:
+            beta: [1, 2]
+            max_noise_prob: 0.05
+            uniform_prob: 0.95
         
         seed: 137
-        random_rot: true
-        rescale_time: ${tracks.StructureTrack.rescale_time}
-        sched_p: ${tracks.StructureTrack.t_emb_p}
-        sigma_max: ${tracks.StructureTrack.t_emb_max}
-        sigma_min: ${tracks.StructureTrack.t_emb_min}
         datasets:
             pdb:
                 fraction: 0.25
@@ -159,69 +155,55 @@ tasks:
                 start: 0
                 seed: 384
                 
-    # StructurePrediction:
-    #     fraction: 0.1
-    #     weight: 1.0
-    #     beta: [1, 2]
-    #     uniform_prob: 0.0
-    #     max_noise_prob: 1.0
-    #     seed: 137
-    #     random_rot: true
-    #     rescale_time: ${tracks.StructureTrack.rescale_time}
-    #     sched_p: ${tracks.StructureTrack.t_emb_p}
-    #     sigma_max: ${tracks.StructureTrack.t_emb_max}
-    #     sigma_min: ${tracks.StructureTrack.t_emb_min}
-    #     datasets:
-    #         afdb_genie:
-    #             fraction: 0.75
-    #             start: 0
-    #             seed: 40
-    #         pdb:
-    #             fraction: 0.25
-    #             start: 0
-    #             seed: 41
+    StructurePrediction:
+        fraction: 0.1
+        edm: ${edm}
+        struct:
+            beta: [1, 2]
+            uniform_prob: 0.0
+            max_noise_prob: 1.0
+        seed: 137
+        datasets:
+            afdb_genie:
+                fraction: 0.75
+                start: 0
+                seed: 40
+            pdb:
+                fraction: 0.25
+                start: 0
+                seed: 41
 
-    # SequenceUnmasking: 
-    #     fraction: 0.1
-    #     weight: 1.0
-    #     beta: [3, 9]
-    #     uniform_prob: 1.0
-    #     seed: 137
-    #     datasets:
-    #         uniref:
-    #             fraction: 1.0
-    #             start: 0
-    #             seed: 40
+    SequenceUnmasking: 
+        fraction: 0.1
+        edm: ${edm}
+        seq:
+            beta: [3, 9]
+            uniform_prob: 1.0
+            max_noise_prob: 0.0
+        seed: 137
+        datasets:
+            uniref:
+                fraction: 1.0
+                start: 0
+                seed: 40
             
 evals: 
-    # cameo22_diff:
-    #     type: StructurePredictionEval
-    #     path: /data/cb/scratch/datasets/pdb_npz
-    #     split: splits/cameo2022.csv
-    #     diffusion: true
-    #     augmented: false
-    #     align: false
-    #     demean: true
-    #     batch: 100
-    #     struct:
-    #         rescale_time: ${tracks.StructureTrack.rescale_time}
-    #         sched_p: ${tracks.StructureTrack.t_emb_p}
-    #         sigma_max: ${tracks.StructureTrack.t_emb_max}
-    #         sigma_min: ${tracks.StructureTrack.t_emb_min}
-    #         type: ${tracks.StructureTrack.diffusion.type}
-    #         temp_factor: 0.5
-    #         sde_weight: 1.0
-    #         data_sigma: ${tracks.StructureTrack.diffusion.data_sigma}
-    #         sched: edm
-    #     steps: 50
+    cameo22_diff:
+        type: StructurePredictionEval
+        path: /data/cb/scratch/datasets/pdb_npz
+        split: splits/cameo2022.csv
+        diffusion: true
+        batch: 100
+        struct:
+            edm: ${edm}
+            temp_factor: 0.5
+            sde_weight: 1.0
+        steps: 50
     # cameo22:
     #     type: StructurePredictionEval
     #     path: /data/cb/scratch/datasets/pdb_npz
     #     split: splits/cameo2022.csv
     #     diffusion: false
-    #     augmented: false
-    #     align: false
-    #     demean: true
     #     batch: 1
     codesign_skew+1:
         type: CodesignEval
@@ -233,16 +215,9 @@ evals:
         truncate: 
         dir:
         struct:
-            rescale_time: ${tracks.StructureTrack.rescale_time}
-            sched_p: ${tracks.StructureTrack.t_emb_p}
-            sigma_max: ${tracks.StructureTrack.t_emb_max}
-            sigma_min: ${tracks.StructureTrack.t_emb_min}
-            type: ${tracks.StructureTrack.diffusion.type}
+            edm: ${edm}
             temp_factor: 0.5
             sde_weight: 1.0
-            data_sigma: ${tracks.StructureTrack.diffusion.data_sigma}
-            sched: edm
-            max_t: 0.95
         seq:
             temp_start: 0.1
             temp_end: 0.1
@@ -270,16 +245,9 @@ evals:
         truncate:
         dir:
         struct:
-            rescale_time: ${tracks.StructureTrack.rescale_time}
-            sched_p: ${tracks.StructureTrack.t_emb_p}
-            sigma_max: ${tracks.StructureTrack.t_emb_max}
-            sigma_min: ${tracks.StructureTrack.t_emb_min}
-            type: ${tracks.StructureTrack.diffusion.type}
+            edm: ${edm}
             temp_factor: 0.5
             sde_weight: 1.0
-            data_sigma: ${tracks.StructureTrack.diffusion.data_sigma}
-            sched: edm
-            max_t: 0.95
         seq:
             temp_start: 1.0
             temp_end: 0.1
@@ -318,20 +286,10 @@ tracks:
     # register tracks here
     StructureTrack: 
         loss_weight: 1.0
-        embed_trans: true
-        embed_pairwise: false
-        readout_trans: trunk
-        copy_trans: false
-        readout_pairwise: false
-        postcondition: true
-        int_loss_weight: 0.5
         embed_sigma: false
-        rescale_time: true
-        t_emb_p: 7
-        t_emb_max: 160
-        t_emb_min: 0.05
-        readout_adaLN: false
         embed_mask: false
+        edm: ${edm}
+        readout_adaLN: false
         interp_aligned_loss: false
         loss:
             mse: 1.0
@@ -339,57 +297,32 @@ tracks:
             lddt: 0.0
         diffusion:
             type: EDMDiffusion
-            data_sigma: 15
+            data_sigma: ${edm.sigma_data}
             train_align: false
-            rescale_time: ${tracks.StructureTrack.rescale_time}
+            rescale_time: ${edm.sigma_data}
         
     SequenceTrack:
         esm: # esm2_3B # esm2_650M # esm2_8M_270K
         loss_weight: 3.0 
-        mask_rate: 1.0
-        rand_rate: 0.0
         esm_lm_head: true
-        sup_all: false
         tied_weights: false
-        embed_t: false
-        readout: trunk
+        reweight: linear
+        reweight_eps: 0.01
         init: 
         all_atom: false
 
 
 model: # custom args
-    dplm_ckpt: null
-    multiflow: false
-    multiflow_cfg: multiflow_config.yaml
-    multiflow_ckpt: null # ./weights/last.ckpt
     ema: false
-    checkpoint: false
     dim: 512
-    pairwise_dim: 128
     heads: 16
-    pairwise_heads: 4
     blocks: 30
     dropout: 0.2
     token_dropout: 0.0
     
-    trunk_relpos: false
-    trunk_frame_update: false
-    trunk_update_rots: false
-    trunk_ipa_frames: false
-    embed_rots: false
-    trunk_ipa: false
-    
-    pairwise_pos_emb: false
-    
     ff_expand: 4
-    position_bins: 32
-    # whether non-pair blocks still have pair bias
-    block_pair_bias: false 
-    block_pair_values: false
-    tri_mul: false
     rope: false
     custom_rope: true
-
     ## adaLN args
     trunk_adaLN: true
     

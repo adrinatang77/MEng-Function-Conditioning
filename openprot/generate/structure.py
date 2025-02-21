@@ -25,12 +25,7 @@ class EDMDiffusionStepper:
             
         x = batch['struct']
         t2, t1 = sched['structure']
-
-        if not self.cfg.rescale_time:
-            # translate to EDM definitions of time
-            t2 = t2 / (1-t2) * self.cfg.data_sigma
-            t1 = t1 / (1-t1) * self.cfg.data_sigma
-            
+    
         dt = t2 - t1
         g = np.sqrt(2 * t2)
 

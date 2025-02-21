@@ -43,23 +43,19 @@ class StructurePredictionEval(OpenProtEval):
 
     def run_diffusion(self, model, batch, noisy_batch, savedir):
         def edm_sched_fn(t):
-            p = self.cfg.struct.sched_p
-            sigma_max = self.cfg.struct.sigma_max
-            sigma_min = self.cfg.struct.sigma_min 
+            p = self.cfg.struct.edm.sched_p
+            sigma_max = self.cfg.struct.edm.sigma_max
+            sigma_min = self.cfg.struct.edm.sigma_min 
             return (
                 sigma_min ** (1 / p)
                 + (1-t) * (sigma_max ** (1 / p) - sigma_min ** (1 / p))
             ) ** p
 
         
-        StructureStepper = {
-            'EDMDiffusion': EDMDiffusionStepper,
-            'GaussianFM': GaussianFMStepper,
-        }[self.cfg.struct.type]
         sampler = OpenProtSampler(schedules={
             'structure': edm_sched_fn,
         }, steppers=[
-            StructureStepper(self.cfg.struct)
+            EDMDiffusionStepper(self.cfg.struct)
         ])
         
         sample_batch, extra = sampler.sample(model, noisy_batch, self.cfg.steps)
