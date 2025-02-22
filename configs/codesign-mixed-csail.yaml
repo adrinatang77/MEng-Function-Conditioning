@@ -1,6 +1,6 @@
 ckpt: 
 pretrained:  #  load weights from here first
-validate: true # if true, only validate the model, don't train
+validate: false # if true, only validate the model, don't train
 logger:
     # set to true to log to neptune.ai
     neptune: false
@@ -39,7 +39,7 @@ data:
     max_sq_toks: null # 400000
     max_toks: 8192
     batch: null
-    crop: 384
+    crop: 1024
     seed: 137
 
 # These are the raw features which are expected to be supplied by the Datasets
@@ -70,122 +70,89 @@ edm:
     sigma_data: 15
     
 datasets:
-    pdb:
-        type: PDBDataset
-        path: /data/cb/scratch/datasets/pdb_npz
+    boltz:
+        type: BoltzDataset
+        path: /data/cb/scratch/datasets/boltz/processed_data/
         cutoff: 2018-05-01
-        clusters: /data/cb/scratch/datasets/pdb_npz/pdb_clusters
-        blacklist: 
-        struct_mask: false
-    afdb_genie:
-        type: AFDBDataset
-        path: /data/cb/scratch/datasets/afdb_rep_v4/afdb_rep_v4
-        annotations: /data/cb/scratch/datasets/afdb_rep_v4.pkl.gz
-        blacklist: 
-        plddt_thresh: 
-        index: /data/cb/scratch/datasets/afdbreps_l-256_plddt_80.txt
-    uniref:
-        type: UnirefDataset
-        # path: /scratch/projects/cgai/openprot/data/uniref50.fasta
-        path: /data/cb/scratch/datasets/uniref50.fasta
-        # index: /scratch/projects/cgai/openprot/data/uniref50.idx.npy  
-        index: /data/cb/scratch/datasets/uniref50.idx.npy  
+        mol_type: lig
+    # pdb:
+    #     type: PDBDataset
+    #     path: /data/cb/scratch/datasets/pdb_npz
+    #     cutoff: 2018-05-01
+    #     clusters: /data/cb/scratch/datasets/pdb_npz/pdb_clusters
+    #     blacklist: 
+    # afdb_genie:
+    #     type: AFDBDataset
+    #     path: /data/cb/scratch/datasets/afdb_rep_v4/afdb_rep_v4
+    #     annotations: /data/cb/scratch/datasets/afdb_rep_v4.pkl.gz
+    #     blacklist: 
+    #     plddt_thresh: 
+    #     index: /data/cb/scratch/datasets/afdbreps_l-256_plddt_80.txt
+    # uniref:
+    #     type: UnirefDataset
+    #     # path: /scratch/projects/cgai/openprot/data/uniref50.fasta
+    #     path: /data/cb/scratch/datasets/uniref50.fasta
+    #     # index: /scratch/projects/cgai/openprot/data/uniref50.idx.npy  
+    #     index: /data/cb/scratch/datasets/uniref50.idx.npy  
 
 tasks:
         
-    StructureGeneration:
-        fraction: 0.1
-        edm: ${edm}
-        struct:
-            beta: [1, 2]
-            max_noise_prob: 0.0
-            uniform_prob: 0.5
+    # StructureGeneration:
+    #     fraction: 0.1
+    #     edm: ${edm}
+    #     struct:
+    #         beta: [1, 2]
+    #         uniform_prob: 0.5
         
-        seed: 137
+    #     datasets:
+    #         afdb_genie: 0.75
+    #         pdb: 0.25
+    #             
+    # InverseFolding:
+    #     fraction: 0.1
+    #     edm: ${edm}
+    #     seq:
+    #         uniform_prob: 1.0
         
-        datasets:
-            afdb_genie:
-                fraction: 0.75
-                start: 0
-                seed: 424
-            pdb:
-                fraction: 0.25
-                start: 0
-                seed: 424
-
-    InverseFolding:
-        fraction: 0.1
-        edm: ${edm}
-        seq:
-            beta: [1, 2]
-            uniform_prob: 1.0
-            max_noise_prob: 0.0
-        seed: 137
-        
-        datasets:
-            pdb:
-                fraction: 0.25
-                start: 0
-                seed: 374
-            afdb_genie:
-                fraction: 0.75
-                start: 0
-                seed: 384
+    #     datasets:
+    #         pdb: 0.25
+    #         afdb_genie: 0.75
 
     Codesign:
-        fraction: 0.6
+        fraction: 1.0
         edm: ${edm}
         seq:
-            beta: [1, 2]
-            max_noise_prob: 0.05
+            max_prob: 0.05
             uniform_prob: 0.95
         struct:
-            beta: [1, 2]
-            max_noise_prob: 0.05
+            max_prob: 0.05
             uniform_prob: 0.95
         
-        seed: 137
         datasets:
-            pdb:
-                fraction: 0.25
-                start: 0
-                seed: 374
-            afdb_genie:
-                fraction: 0.75
-                start: 0
-                seed: 384
+            boltz: 1.0
+            # pdb: 0.25
+            # afdb_genie: 0.75
                 
-    StructurePrediction:
-        fraction: 0.1
-        edm: ${edm}
-        struct:
-            beta: [1, 2]
-            uniform_prob: 0.0
-            max_noise_prob: 1.0
-        seed: 137
-        datasets:
-            afdb_genie:
-                fraction: 0.75
-                start: 0
-                seed: 40
-            pdb:
-                fraction: 0.25
-                start: 0
-                seed: 41
+    # StructurePrediction:
+    #     fraction: 0.1
+    #     edm: ${edm}
+    #     struct:
+    #         beta: [1, 2]
+    #         uniform_prob: 0.0
+    #         max_noise_prob: 1.0
+    #     datasets:
+    #         afdb_genie: 0.75
+    #         pdb: 0.25
 
-    SequenceUnmasking: 
-        fraction: 0.1
-        edm: ${edm}
-        seq:
-            beta: [3, 9]
-            uniform_prob: 1.0
-            max_noise_prob: 0.0
-        seed: 137
-        datasets:
-            uniref:
-                fraction: 1.0
-                start: 0
-                seed: 40
+    # SequenceUnmasking: 
+    #     fraction: 0.1
+    #     edm: ${edm}
+    #     seq:
+    #         beta: [3, 9]
+    #         uniform_prob: 1.0
+    #         max_noise_prob: 0.0
+    #     datasets:
+    #         uniref: 1.0
             
 evals: 
     # cameo22_diff:
@@ -289,6 +256,7 @@ tracks:
         embed_sigma: false
         embed_mask: false
         edm: ${edm}
+        all_atom: true
         readout_adaLN: false
         interp_aligned_loss: false
         loss:
@@ -308,8 +276,8 @@ tracks:
         tied_weights: false
         reweight: linear
         reweight_eps: 0.01
-        init: 
-        all_atom: false
+        init: 0.02
+        all_atom: true
 
 
 model: # custom args
@@ -319,12 +287,12 @@ model: # custom args
     blocks: 30
     dropout: 0.2
     token_dropout: 0.0
-    
+    pair_bias: true
+    pair_dim: 2
     ff_expand: 4
     rope: false
     custom_rope: true
-    ## adaLN args
-    trunk_adaLN: true
+    adaLN: true
     
     
 

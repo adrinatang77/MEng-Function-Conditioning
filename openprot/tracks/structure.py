@@ -113,6 +113,8 @@ class StructureTrack(OpenProtTrack):
             model.trans_out = nn.Sequential(
                 nn.LayerNorm(model.cfg.dim), nn.Linear(model.cfg.dim, 3)
             )
+        if self.cfg.all_atom:
+            model.ref_in = nn.Linear(3, model.cfg.dim)
 
     def corrupt(self, batch, noisy_batch, target, logger=None):
 
@@ -136,7 +138,9 @@ class StructureTrack(OpenProtTrack):
             self.cfg.edm.sigma_max,
             batch["struct_noise"]
         ) # used to compute diffusion loss
-        
+
+        noisy_batch['ref_conf'] = batch['ref_conf']
+        noisy_batch['mol_type'] = batch['mol_type']
         noisy_batch["struct"] = noisy
         noisy_batch['struct_noise'] = noise_level
         noisy_batch["struct_mask"] = batch["struct_mask"] # inf-time centering
@@ -161,6 +165,13 @@ class StructureTrack(OpenProtTrack):
         precond = self.diffusion.precondition(coords, noise)
         inp["x"] += model.trans_in(precond)
 
+        if self.cfg.all_atom:
+            inp["x"] += torch.where(
+                (batch['mol_type'] == 3)[...,None],
+                model.ref_in(batch['ref_conf']),
+                0.0
+            )
+
         # embed sigma
         def sigma_transform(noise_level):
             t_emb = noise_level ** (1/self.cfg.edm.sched_p)
@@ -174,8 +185,6 @@ class StructureTrack(OpenProtTrack):
         if self.cfg.embed_sigma:
             inp["x"] += t_emb
                 
-        # finally provide the raw struct for relpos
-        inp["struct"] = coords
         inp["postcond_fn"] = lambda x: self.diffusion.postcondition(
             coords, x, noise,
         )

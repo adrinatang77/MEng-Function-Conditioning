@@ -183,22 +183,16 @@ class SequenceTrack(OpenProtTrack):
 
         tokens = batch["aatype"]
         rand_mask = torch.rand_like(batch['seq_noise']) < batch['seq_noise']
+        rand_mask &= batch['mol_type'] == 0 # corrupt protein sequences only
 
         mask = rand_mask | ~batch["seq_mask"].bool() # these will be input as MASK
         sup = rand_mask & batch["seq_mask"].bool() # these will be actually supervised
         
-        # rand = torch.rand_like(batch['seq_noise'])
-        # randaa = torch.randint(0, 20, rand.shape, device=rand.device)
-        # randaa = torch.where(rand < self.cfg.mask_rate, MASK_IDX, randaa)
-        # randaa = torch.where(
-        #     rand < (self.cfg.mask_rate + self.cfg.rand_rate),
-        #     randaa,
-        #     tokens
-        # )
         noisy_batch["aatype"] = torch.where(rand_mask, MASK_IDX, tokens)
 
-        present = ~batch["seq_noise"].bool() & batch["seq_mask"].bool()
-        target["seq_occupancy"] = present.sum(-1) / (1+batch['seq_mask'].sum(-1))        
+        # present = ~batch["seq_noise"].bool() & batch["seq_mask"].bool()
+        # target["seq_occupancy"] = present.sum(-1) / (1+batch['seq_mask'].sum(-1))        
+        
         target["seq_supervise"] = torch.where(sup, batch["seq_weight"], 0.0)
         if self.cfg.reweight == 'linear':
             target["seq_supervise"] *= (1-batch['seq_noise'])
@@ -206,12 +200,8 @@ class SequenceTrack(OpenProtTrack):
             target["seq_supervise"] *= 1/(batch['seq_noise'] + self.cfg.reweight_eps)
         target["aatype"] = tokens
         noisy_batch['residx'] = batch['residx']
+        noisy_batch['chain'] = batch['chain']
         
-        # oh = torch.nn.functional.one_hot(tokens, num_classes=self.ntoks)
-        # dist = oh.float().mean(1)
-        # dist /= dist.sum(-1, keepdims=True)
-        # ppl = (-torch.nansum(dist * dist.log(), -1)).exp()
-
         if logger:
             logger.masked_log("seq/toks", batch["seq_mask"], sum=True)
             
@@ -236,11 +226,18 @@ class SequenceTrack(OpenProtTrack):
 
         inp["x"] += model.seq_embed(batch["aatype"])
         inp['residx'] = batch['residx'] # temporary
+        
+        if self.cfg.all_atom:
+            assert 'z' not in inp
+            inp['z'] = torch.nn.functional.one_hot(
+                (batch['chain'][:,None] == batch['chain'][:,:,None]).long(),
+                num_classes=2,
+            ).float()
 
     def predict(self, model, inp, out, readout):
         readout["aatype"] = model.seq_out(out["x"])
         if not model.training:
-            readout["aatype"][...,MASK_IDX] = -np.inf
+            readout["aatype"][...,MASK_IDX:] = -np.inf # only predict proteins
         
     def compute_loss(self, readout, target, logger=None, eps=1e-6, **kwargs):
         

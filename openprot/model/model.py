@@ -375,20 +375,15 @@ class OpenProtModel(nn.Module):
         super().__init__()
         self.cfg = cfg
 
-        # if cfg.pairwise_pos_emb:
-        #     self.pairwise_positional_embedding = RelativePosition(
-        #         cfg.position_bins, cfg.pairwise_dim
-        #     )
         default_block_args = dict(
             dim=cfg.dim,
             ff_expand=cfg.ff_expand,
             heads=cfg.heads,
             rope=cfg.rope,
             custom_rope=cfg.custom_rope,
-            adaLN=cfg.trunk_adaLN,
-            # pairwise_dim=cfg.pairwise_dim,
-            # pair_bias=cfg.block_pair_bias,
-            # pair_values=cfg.block_pair_values,
+            adaLN=cfg.adaLN,
+            pairwise_dim=cfg.pair_dim,
+            pair_bias=cfg.pair_bias,
             dropout=cfg.dropout,
             token_dropout=cfg.token_dropout,
         )

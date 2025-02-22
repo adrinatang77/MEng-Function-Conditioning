@@ -16,7 +16,7 @@ class SequenceUnmasking(CodesignTask):
         self.add_structure_noise(data, noise_level=1.01)
         
         data["/seq_gen"] = np.ones((), dtype=np.float32)
-        i = int(20 * noise_level)
-        data[f"/seq_gen_{i}"] = np.ones((), dtype=np.float32)
+        # i = int(20 * noise_level)
+        # data[f"/seq_gen_{i}"] = np.ones((), dtype=np.float32)
         
         return data
