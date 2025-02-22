@@ -6,6 +6,22 @@ from scipy.spatial.transform import Rotation as R
 
 class CodesignTask(OpenProtTask):
 
+    def sample_motifs(self, data):
+        L = len(data['seqres'])
+        s = np.random.rand() * (self.cfg.motif.ymax - self.cfg.motif.ymin) + self.cfg.motif.ymin
+        s = int(s * L)
+        m = np.random.randint(1, max(s, 1) + 1)
+
+        is_motif = np.zeros(len(data['seqres']), dtype=bool)
+        for i in range(m):
+            j = np.random.randint(0, L)
+            end = s - m + i - is_motif.sum()
+            if end > 0:
+                l = np.random.randint(1, end+1)
+                is_motif[j:j+l] = True
+        data['seq_noise'][is_motif] = 0
+        data['struct_noise'][is_motif] = 0
+
     def center_random_rot(self, data, eps=1e-6):
         # center the structures
         pos = data["struct"]
@@ -121,6 +137,10 @@ class Codesign(CodesignTask):
 
         self.add_sequence_noise(data, sup=True)
         self.add_structure_noise(data, sup=True)
+
+        if np.random.rand() > self.cfg.motif_prob:
+            self.sample_motifs(data)
+            
         data["/codesign"] = np.ones((), dtype=np.float32)
         
         return data

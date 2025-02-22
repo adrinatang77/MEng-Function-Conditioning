@@ -39,7 +39,7 @@ data:
     max_sq_toks: # 400000
     max_toks: 8192
     batch: null
-    crop: 384
+    crop: 1024
     seed: 137
     all_atom: true
 
@@ -69,6 +69,10 @@ edm:
     sigma_max: 160
     sigma_min: 0.05
     sigma_data: 15
+
+motif:
+    ymin: 0.05
+    ymax: 0.5
     
 datasets:
     boltz:
@@ -122,6 +126,8 @@ tasks:
     Codesign:
         fraction: 1.0
         edm: ${edm}
+        motif: ${motif}
+        motif_prob: 0.5
         seq:
             max_prob: 0.05
             uniform_prob: 0.95
@@ -288,7 +294,7 @@ model: # custom args
     blocks: 30
     dropout: 0.2
     token_dropout: 0.0
-    all_atom: true # ${data.all_atom}
+    all_atom: ${data.all_atom}
     ff_expand: 4
     rope: false
     custom_rope: true
