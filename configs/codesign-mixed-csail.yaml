@@ -266,6 +266,7 @@ tracks:
         all_atom: ${data.all_atom}
         readout_adaLN: false
         interp_aligned_loss: false
+        hotspot_prob: 0.5
         loss:
             mse: 1.0
             aligned_mse: 0.0
@@ -274,7 +275,6 @@ tracks:
             type: EDMDiffusion
             data_sigma: ${edm.sigma_data}
             train_align: false
-            rescale_time: ${edm.sigma_data}
         
     SequenceTrack:
         esm: # esm2_3B # esm2_650M # esm2_8M_270K

@@ -5,7 +5,18 @@ from scipy.spatial.transform import Rotation as R
 
 
 class CodesignTask(OpenProtTask):
-
+### Algorithm 1 Motif-scaffolding data augmentation
+# Require: Protein backbone T; Min and max motif percent γmin = 0.05, γmax = 0.5.
+# 1: s ∼ Uniform{⌊N · γmin⌋, . . . , ⌊N · γmax⌋} ▷ Sample maximum motif size.
+# 2: m ∼ Uniform{1, . . . , s} ▷ Sample maximum number of motifs.
+# 3: TM ← ∅
+# 4: for i ∈ {1, . . . , m} do
+# 5: j ∼ Uniform{1, . . . , N} \ TM ▷ Sample location for each motif
+# 6: ℓ ∼ Uniform{1, . . . , s − m + i − |TM|} ▷ Sample length of each motif.
+# 7: TM ← TM ∪ {Tj , . . . , Tmin(j+ℓ,N)} ▷ Append to existing motif.
+# 8: end for
+# 9: TS ← {T1, . . . , TN } \ TM ▷ Assign rest of residues as the scaffold
+# 10: return TM, TS
     def sample_motifs(self, data):
         L = len(data['seqres'])
         s = np.random.rand() * (self.cfg.motif.ymax - self.cfg.motif.ymin) + self.cfg.motif.ymin

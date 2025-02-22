@@ -115,9 +115,24 @@ class StructureTrack(OpenProtTrack):
             )
         if self.cfg.all_atom:
             model.ref_in = nn.Linear(3, model.cfg.dim)
+            model.hotspot_in = nn.Parameter(torch.zeros(model.cfg.dim))
 
+    def get_hotspots(self, batch):
+        cmap = (batch['struct'][:,None] - batch['struct'][:,:,None]).square().sum(-1).sqrt() < 8.0
+        cmap &= batch['chain'][:,None] != batch['chain'][:,:,None]
+        cmap &= batch['struct_mask'][:,None].bool() & batch['struct_mask'][:,:,None].bool()
+        cmap = torch.any(cmap, -1)
+
+        chain_idx = batch['mol_type'] + 0.01 * batch['chain']
+        lig_chain = torch.max(chain_idx, -1).values
+        cmap &= chain_idx == lig_chain[:,None]
+
+        cmap &= (torch.rand_like(cmap, dtype=float) < 0.5)
+        return cmap
+        
     def corrupt(self, batch, noisy_batch, target, logger=None):
 
+        noisy_batch['hotspot'] = self.get_hotspots(batch)
         # add noise
         noisy, target_tensor = self.diffusion.add_noise(
             batch["struct"], batch["struct_noise"], batch["struct_mask"].bool() 
@@ -169,6 +184,11 @@ class StructureTrack(OpenProtTrack):
             inp["x"] += torch.where(
                 (batch['mol_type'] == 3)[...,None],
                 model.ref_in(batch['ref_conf']),
+                0.0
+            )
+            inp["x"] += torch.where(
+                batch['hotspot'][...,None],
+                model.hotspot_in[None,None],
                 0.0
             )
 
