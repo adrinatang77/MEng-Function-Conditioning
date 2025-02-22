@@ -116,6 +116,7 @@ class OpenProtTransformerBlock(nn.Module):
         pairwise_heads=4,
         rope=False,  # rotate scalar queries and keys
         pair_bias=False,  # use pairs to bias
+        pair_bias_linear=False,
         pair_updates=False,
         pair_ffn=False,
         pair_ff_expand=1,
@@ -141,6 +142,7 @@ class OpenProtTransformerBlock(nn.Module):
         update_x=True,
         adaLN=False,
         readout_adaLN=False,
+        chain_mask=False,
         rots_type="vec",
         dropout=0.0,
         token_dropout=0.0,
@@ -153,6 +155,8 @@ class OpenProtTransformerBlock(nn.Module):
             rope=rope,
             pair_bias=pair_bias,
             pair_values=pair_values,
+            pair_bias_linear=pair_bias_linear,
+            chain_mask=chain_mask,
             ipa_attn=ipa_attn,
             ipa_values=ipa_values,
             ipa_frames=ipa_frames,
@@ -191,7 +195,7 @@ class OpenProtTransformerBlock(nn.Module):
             nn.init.constant_(self.adaLN_modulation[-1].weight, 0)
             nn.init.constant_(self.adaLN_modulation[-1].bias, 0)
 
-        if pair_bias or pair_values:
+        if (pair_bias and pair_bias_linear) or pair_values:
             self.pair_norm = nn.LayerNorm(pairwise_dim)
 
         rot_dim = {"quat": 4, "vec": 3}[rots_type]
@@ -236,7 +240,19 @@ class OpenProtTransformerBlock(nn.Module):
             torch.nn.init.zeros_(self.sequence_to_pair.o_proj.weight)
             torch.nn.init.zeros_(self.sequence_to_pair.o_proj.bias)
 
-    def forward(self, x, z, trans, mask, x_cond=None, postcond_fn=lambda x: x, relpos_mask=None, rots=None, idx=None):
+    def forward(
+        self,
+        x,
+        z,
+        trans,
+        mask,
+        x_cond=None,
+        postcond_fn=lambda x: x,
+        relpos_mask=None,
+        rots=None,
+        idx=None,
+        chain=None,
+    ):
 
         ### no pair2sequence
 
@@ -254,12 +270,13 @@ class OpenProtTransformerBlock(nn.Module):
         x = x + self.mha_dropout(gate(
             self.mha(
                 x=modulate(self.mha_norm(x), shift_mha, scale_mha),
-                z=self.pair_norm(z) if hasattr(self, "pair_norm") else None,
+                z=self.pair_norm(z) if hasattr(self, "pair_norm") else z,
                 mask=mask.bool(),
                 trans=postcond_fn(trans),
                 rots=rots,
                 relpos_mask=relpos_mask,
                 idx=idx,
+                chain=chain,
             ),
             gate_mha,
         ))
@@ -382,14 +399,16 @@ class OpenProtModel(nn.Module):
             rope=cfg.rope,
             custom_rope=cfg.custom_rope,
             adaLN=cfg.adaLN,
-            pairwise_dim=cfg.pair_dim,
-            pair_bias=cfg.pair_bias,
+            chain_mask=cfg.all_atom,
             dropout=cfg.dropout,
             token_dropout=cfg.token_dropout,
         )
 
 
         self.blocks = nn.ModuleList()
+        # if cfg.all_atom:
+        #     self.z_emb = nn.Embedding(2, cfg.blocks * cfg.heads)
+        #     torch.nn.init.zeros_(self.z_emb.weight)
         
         for i in range(cfg.blocks):
             block_args = default_block_args 
@@ -402,34 +421,18 @@ class OpenProtModel(nn.Module):
         
         residx = inp['residx']
         mask = inp["pad_mask"]
-        z = inp.get("z", None) # x.new_zeros(B, L, L, self.cfg.pairwise_dim))
-        # if self.cfg.pairwise_pos_emb:
-        #     z = z + self.pairwise_positional_embedding(residx.long(), mask=mask)
-
+        z = inp.get("z", None)
+        chain = inp.get("chain", None)
+            
         trans = inp.get("struct", None)
         rots = inp.get("rots", None)
-        
         x_cond = inp.get("x_cond", None)
         postcond_fn = inp.get("postcond_fn", None)
         struct_mask = inp.get("struct_mask", None)
         
         for i, block in enumerate(self.blocks):
 
-            # if block.pair_updates and self.cfg.checkpoint:
-            #     x, z, trans, rots = torch.utils.checkpoint.checkpoint(
-            #         block, x, z, trans, mask, x_cond, relpos_mask=struct_mask, rots=rots, idx=residx, use_reentrant=False
-            #     )
-            # else:
-            x, z, trans, rots = block(
-                x,
-                z, 
-                trans,
-                mask,
-                x_cond,
-                # relpos_mask=struct_mask,
-                # rots=rots,
-                idx=residx
-            )
+            x = block(x, z, trans, mask, x_cond=x_cond, idx=residx, chain=chain)[0]
 
         
         return {"x": x, "z": z, "trans": trans, "rots": rots}

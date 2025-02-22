@@ -221,16 +221,17 @@ class StructureTrack(OpenProtTrack):
             loss = self.cfg.loss['aligned_mse'] * aligned_mse 
             loss += self.cfg.loss['lddt'] * soft_lddt
             loss += self.cfg.loss['mse'] * mse
-            
-        lddt = compute_lddt(
-            readout["trans"], target["struct"], target["struct_mask"]
-        )
-        rmsd = compute_rmsd(
-            readout["trans"], target["struct"], target["struct_mask"]
-        )
-        pseudo_tm = compute_pseudo_tm(
-            readout["trans"], target["struct"], target["struct_mask"]
-        )
+
+        with torch.no_grad():
+            lddt = compute_lddt(
+                readout["trans"], target["struct"], target["struct_mask"]
+            )
+            rmsd = compute_rmsd(
+                readout["trans"], target["struct"], target["struct_mask"]
+            )
+            pseudo_tm = compute_pseudo_tm(
+                readout["trans"], target["struct"], target["struct_mask"]
+            )
         if logger:
             logger.masked_log("struct/lddt", lddt, dims=0)
             logger.masked_log("struct/rmsd", rmsd, dims=0)

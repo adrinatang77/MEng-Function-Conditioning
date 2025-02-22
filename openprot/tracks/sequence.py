@@ -228,11 +228,8 @@ class SequenceTrack(OpenProtTrack):
         inp['residx'] = batch['residx'] # temporary
         
         if self.cfg.all_atom:
-            assert 'z' not in inp
-            inp['z'] = torch.nn.functional.one_hot(
-                (batch['chain'][:,None] == batch['chain'][:,:,None]).long(),
-                num_classes=2,
-            ).float()
+            inp['chain'] = batch['chain']
+            # inp['z'] = (batch['chain'][:,None] == batch['chain'][:,:,None]).long()
 
     def predict(self, model, inp, out, readout):
         readout["aatype"] = model.seq_out(out["x"])
