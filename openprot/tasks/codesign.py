@@ -139,7 +139,7 @@ class CodesignTask(OpenProtTask):
 
 class Codesign(CodesignTask):
     def register_loss_masks(self):
-        return ["/codesign"]
+        return ["/codesign", "/codesign/lig"]
 
     def prep_data(self, data, crop=None):
 
@@ -149,10 +149,13 @@ class Codesign(CodesignTask):
         self.add_sequence_noise(data, sup=True)
         self.add_structure_noise(data, sup=True)
 
-        if np.random.rand() > self.cfg.motif_prob:
+        if np.random.rand() < self.cfg.motif_prob:
             self.sample_motifs(data)
             
-        data["/codesign"] = np.ones((), dtype=np.float32)
+        if data["dataset"] == "boltz_lig":
+            data["/codesign/lig"] = np.ones((), dtype=np.float32)
+        else:
+            data["/codesign"] = np.ones((), dtype=np.float32)
         
         return data
     

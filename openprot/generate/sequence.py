@@ -45,7 +45,10 @@ class SequenceUnmaskingStepper:
             temp = self.cfg.temp_start * t + (1-t) * self.cfg.temp_end
 
         probs = logits.softmax(-1)
-        oh = torch.nn.functional.one_hot(batch['aatype'], num_classes=NUM_TOKENS)
+        oh = torch.nn.functional.one_hot(
+            batch['aatype'], 
+            num_classes=probs.shape[-1]
+        )
         denom = 0.5 * oh + 0.05
         new_probs = probs / denom
         new_probs /= new_probs.sum(-1, keepdims=True)

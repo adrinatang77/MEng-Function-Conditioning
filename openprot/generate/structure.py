@@ -29,7 +29,7 @@ class EDMDiffusionStepper:
         dt = t2 - t1
         g = np.sqrt(2 * t2)
 
-        x0 = out['trans'][-1]
+        x0 = out['trans']
         x0 = masked_center(x0, batch['struct_mask'].bool())
         
         extra['preds'].append(x0)

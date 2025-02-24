@@ -106,6 +106,9 @@ class StructureTrack(OpenProtTrack):
         pass 
 
     def add_modules(self, model):
+        if self.cfg.embed_mask:
+            model.frame_mask = nn.Parameter(torch.zeros(model.cfg.dim))
+            model.frame_mask_cond = nn.Parameter(torch.zeros(model.cfg.dim))
         model.trans_in = nn.Linear(3, model.cfg.dim)
         if self.cfg.readout_adaLN:
             model.trans_out = FinalLayer(model.cfg.dim, 3)

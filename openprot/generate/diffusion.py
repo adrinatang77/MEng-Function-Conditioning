@@ -62,10 +62,9 @@ class GaussianFM(Diffusion):
 class EDMDiffusion(Diffusion):
 
     def get_sigma(self, t, eps=1e-4):
-        if self.cfg.rescale_time:
-            return t
-        else:
-            return t / (1-t+eps) * self.cfg.data_sigma
+        return t
+        # else:
+        #     return t / (1-t+eps) * self.cfg.data_sigma
 
     def add_noise(self, pos, t, mask=None):
 
