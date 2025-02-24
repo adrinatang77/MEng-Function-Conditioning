@@ -82,7 +82,12 @@ class BoltzDataset(OpenProtDataset):
             seqres = '*'*len(atoms)
             coords = atoms['coords']
             mask = atoms['is_present']
-            residx = ones * 0.0
+            if np.unique(resis['res_idx']).size > 1:
+                residx = resis['atom_idx'] - astart
+                residx = (np.arange(len(atoms)) >= residx[:,None]).sum(0)
+                residx = resis['res_idx'][residx-1]
+            else:
+                residx = ones * 0.0
             ref_conf = atoms['conformer']
             
         return {

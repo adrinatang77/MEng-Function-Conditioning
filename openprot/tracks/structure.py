@@ -121,7 +121,7 @@ class StructureTrack(OpenProtTrack):
             model.hotspot_in = nn.Parameter(torch.zeros(model.cfg.dim))
 
     def get_hotspots(self, batch):
-        cmap = (batch['struct'][:,None] - batch['struct'][:,:,None]).square().sum(-1).sqrt() < 8.0
+        cmap = (batch['struct'][:,None] - batch['struct'][:,:,None]).square().sum(-1).sqrt() < 15.0
         cmap &= batch['chain'][:,None] != batch['chain'][:,:,None]
         cmap &= batch['struct_mask'][:,None].bool() & batch['struct_mask'][:,:,None].bool()
         cmap = torch.any(cmap, -1)
@@ -300,6 +300,8 @@ class StructureTrack(OpenProtTrack):
             aligned=aligned,
         ) 
         # mse = torch.clamp(2 * mse, max=5)
+
+        # print(mse.shape, (mse * mask).sum() / mask.expand(mse.shape).sum())
 
         if aligned: key = 'aligned_mse'
         else: key = 'mse'

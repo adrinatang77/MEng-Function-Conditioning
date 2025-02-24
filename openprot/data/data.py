@@ -59,19 +59,40 @@ class OpenProtData(dict):
             data[key] = self[key]
         return data
 
+    def get_contiguous_crop(self, crop_len):
+        L = len(self["seqres"])
+        start = np.random.randint(0, L - crop_len + 1)
+        end = start + crop_len
+        return list(range(start, end))
+
+    def get_spatial_crop(self, crop_len):
+        cmap = np.square(self['struct'][None] - self['struct'][:,None]).sum(-1)**0.5 < 15.0
+        cmap &= self['chain'][None] != self['chain'][:,None]
+        cmap &= self['struct_mask'][None].astype(bool) & self['struct_mask'][:,None].astype(bool)
+        cmap = np.any(cmap, -1)
+
+        if cmap.sum() == 0:
+            return self.get_contiguous_crop(crop_len)
+            
+        i = np.random.choice(np.nonzero(cmap)[0])
+
+        dist = np.square(self['struct'] - self['struct'][i]).sum(-1)**0.5
+        dist[self['struct_mask']==0] = float('inf')
+        idx = np.argsort(dist)[:crop_len]
+        return sorted(idx)        
+        
     def crop(self, crop_len: int):
         L = len(self["seqres"])
-        ### todo support tensors!
         if L >= crop_len:  # needs crop
-            start = np.random.randint(0, L - crop_len + 1)
-            end = start + crop_len
+            if np.unique(self['chain']).size > 1:
+                idx = self.get_spatial_crop(crop_len)
+            else:
+                idx = self.get_contiguous_crop(crop_len)
             for key in self.keys():
                 # special attribute
                 if key == "seqres":
-                    self[key] = self[key][start:end]
-                    # with open("seqres.dump", "a") as f:
-                    #     f.write(self[key] + '\n')
-
+                    self[key] = [self[key][i] for i in idx]
+                
                 # non-array attribute
                 elif type(self[key]) not in [torch.Tensor, np.ndarray]:
                     pass
@@ -82,16 +103,15 @@ class OpenProtData(dict):
 
                 # pairwise attribute
                 elif key[0] == "_":
-                    self[key] = self[key][start:end, start:end]
+                    self[key] = self[key][idx, idx]
 
                 # regular attribute
                 else:
-                    self[key] = self[key][start:end]
+                    self[key] = self[key][idx]
 
         return self
 
     def pad(self, pad_len: int):
-        clone = {**self}
         L = len(self["seqres"])
         if pad_len and L < pad_len:  # needs pad
             pad = pad_len - L
