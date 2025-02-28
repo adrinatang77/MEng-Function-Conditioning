@@ -1,4 +1,4 @@
-ckpt: workdir/boltz-lig-test/last.ckpt
+ckpt: # workdir/boltz-lig-only/last.ckpt
 pretrained:  #  load weights from here first
 validate: true # if true, only validate the model, don't train
 logger:
@@ -8,7 +8,7 @@ logger:
     # please change "test" to something unique to your task
     project: openprot/struct-merge
     # will log to workdir and neptune.ai with this name
-    name: default # boltz-lig-test
+    name: struct-gen-only
     # if not null, will duplicate stdout and stderr to workdir/{name}/{logfile}
     logfile: # std.out
     # if null, will log every epoch, otherwise every this number of steps
@@ -18,7 +18,7 @@ logger:
     save_freq: 1000
 trainer:
     accelerator: auto
-    devices: 1
+    devices: 8
     max_epochs: 1
     max_steps: 1000000
     enable_progress_bar: false
@@ -41,7 +41,7 @@ data:
     batch: null
     crop: 384
     seed: 137
-    all_atom: true
+    all_atom: false
 
 # These are the raw features which are expected to be supplied by the Datasets
 # before they are TOKENIZED by the Tracks.
@@ -103,44 +103,43 @@ datasets:
 tasks:
         
     StructureGeneration:
-        fraction: 0.1
+        fraction: 1.0
         edm: ${edm}
         struct:
-            beta: [1, 2]
-            uniform_prob: 0.5
+            uniform_prob: 1.0
         
         datasets:
             afdb_genie: 0.75
             pdb: 0.25
                 
-    InverseFolding:
-        fraction: 0.1
-        edm: ${edm}
-        seq:
-            uniform_prob: 1.0
+    # InverseFolding:
+    #     fraction: 0.1
+    #     edm: ${edm}
+    #     seq:
+    #         uniform_prob: 1.0
         
-        datasets:
-            pdb: 0.25
-            afdb_genie: 0.75
+    #     datasets:
+    #         pdb: 0.25
+    #         afdb_genie: 0.75
 
-    Codesign:
-        fraction: 0.8
-        edm: ${edm}
-        motif: ${motif}
-        motif_prob: 0.0
-        seq:
-            zero_prob: 0.0
-            max_prob: 0.05
-            uniform_prob: 0.95
-        struct:
-            zero_prob: 0.0
-            max_prob: 0.05
-            uniform_prob: 0.95
+    # Codesign:
+    #     fraction: 0.8
+    #     edm: ${edm}
+    #     motif: ${motif}
+    #     motif_prob: 0.0
+    #     seq:
+    #         zero_prob: 0.0
+    #         max_prob: 0.05
+    #         uniform_prob: 0.95
+    #     struct:
+    #         zero_prob: 0.0
+    #         max_prob: 0.05
+    #         uniform_prob: 0.95
         
-        datasets:
-            pdb: 0.25
-            afdb_genie: 0.5
-            boltz_lig: 0.25
+    #     datasets:
+    #         pdb: 0.25
+    #         afdb_genie: 0.5
+    #         boltz_lig: 0.25
                 
     # StructurePrediction:
     #     fraction: 0.1
@@ -182,38 +181,52 @@ evals:
     #     diffusion: false
     #     batch: 1
 
-    binder:
-        type: BinderEval
-        path: /data/cb/scratch/datasets/boltz/ccd.pkl
-        
-        num_samples: 10
+    struct_gen_sde_0.5:
+        type: StructureGenerationEval
+        num_samples: 100
         batch: 100
         sample_length: 128
         steps: 200
-        skew: 1.0
-        truncate: 
-        dir:
         struct:
             edm: ${edm}
             temp_factor: 0.5
-            sde_weight: 1.0
+            sde_weight: 3.0
             align: false
-        seq:
-            temp_start: 0.1
-            temp_end: 0.1
-            strategy: random
-            noise: 20
-            logits: standard
-            adjust_unmasked: false # pseudo-masked logits
-            replace_unmasked: false # logit of current toks
-            topk_temp: 0.0
-            allow_mutation: false
-        schedule: {}
         run_designability: true
-        run_pmpnn_designability: true
-        run_diversity: true
-        run_secondary: true
-        run_plot: true
+        run_diversity: false
+
+    # binder:
+    #     type: BinderEval
+    #     path: /data/cb/scratch/datasets/boltz/ccd.pkl
+        
+    #     num_samples: 10
+    #     batch: 100
+    #     sample_length: 128
+    #     steps: 200
+    #     skew: 0.0
+    #     truncate: 
+    #     dir:
+    #     struct:
+    #         edm: ${edm}
+    #         temp_factor: 1.0
+    #         sde_weight: 1.0
+    #         align: false
+    #     seq:
+    #         temp_start: 1.0
+    #         temp_end: 0.1
+    #         strategy: dplm
+    #         noise: 20
+    #         logits: gumbel
+    #         adjust_unmasked: false # pseudo-masked logits
+    #         replace_unmasked: true # logit of current toks
+    #         topk_temp: 0.0
+    #         allow_mutation: false
+    #     schedule: {}
+    #     run_designability: true
+    #     run_pmpnn_designability: true
+    #     run_diversity: true
+    #     run_secondary: true
+    #     run_plot: true
         
     # codesign_skew+1:
     #     type: CodesignEval
@@ -302,6 +315,7 @@ tracks:
         all_atom: ${data.all_atom}
         readout_adaLN: false
         interp_aligned_loss: false
+        hotspots: false
         hotspot_prob: 0.5
         loss:
             mse: 1.0
@@ -312,15 +326,15 @@ tracks:
             data_sigma: ${edm.sigma_data}
             train_align: false
         
-    SequenceTrack:
-        esm: # esm2_3B # esm2_650M # esm2_8M_270K
-        loss_weight: 3.0 
-        esm_lm_head: true
-        tied_weights: false
-        reweight: 
-        reweight_eps: 0.01
-        init: 0.02
-        all_atom: ${data.all_atom}
+    # SequenceTrack:
+    #     esm: # esm2_3B # esm2_650M # esm2_8M_270K
+    #     loss_weight: 3.0 
+    #     esm_lm_head: true
+    #     tied_weights: false
+    #     reweight: 
+    #     reweight_eps: 0.01
+    #     init: 0.02
+    #     all_atom: ${data.all_atom}
 
 
 model: # custom args

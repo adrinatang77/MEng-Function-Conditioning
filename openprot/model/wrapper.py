@@ -287,7 +287,7 @@ class OpenProtWrapper(Wrapper):
             f'{os.environ["MODEL_DIR"]}/eval_step{self.trainer.global_step}/{name}'
         )
         os.makedirs(savedir, exist_ok=True)
-        noisy_batch = batch.copy("name", "pad_mask")
+        noisy_batch = batch.copy("name", "pad_mask", "residx", "chain")
         for track in self.tracks.values():
             track.corrupt(batch, noisy_batch, {})
         self.evals[name].run_batch(

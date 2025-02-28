@@ -225,12 +225,7 @@ class SequenceTrack(OpenProtTrack):
             inp["x"] += model.esm_s_mlp(esm_s)
 
         inp["x"] += model.seq_embed(batch["aatype"])
-        inp['residx'] = batch['residx'] # temporary
         
-        if self.cfg.all_atom:
-            inp['chain'] = batch['chain']
-            # inp['z'] = (batch['chain'][:,None] == batch['chain'][:,:,None]).long()
-
     def predict(self, model, inp, out, readout):
         readout["aatype"] = model.seq_out(out["x"])
         if not model.training:

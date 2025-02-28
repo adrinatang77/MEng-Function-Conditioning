@@ -50,9 +50,9 @@ class BinderEval(CodesignEval):
             name=key,
             seqres="*"*K,
             seq_mask=np.ones(K),
-            struct=coords + np.array([10, 0, 0]),
+            struct=np.zeros((K, 3)), # coords + np.array([10, 0, 0]),
             struct_mask=np.ones(K),
-            struct_noise=np.ones(K) * min_noise,
+            struct_noise=np.ones(K) * max_noise,
             atom_num=np.array(nums),
             mol_type=np.ones(K)*3,
             ref_conf=coords,
@@ -76,13 +76,13 @@ class BinderEval(CodesignEval):
 
         schedules = {
             'structure': self.struct_sched_fn,
-            'sequence': self.seq_sched_fn,
+            #'sequence': self.seq_sched_fn,
         }
 
         mask = batch['mol_type'] == 0
         sampler = OpenProtSampler(schedules, steppers=[
-            EDMDiffusionStepper(self.cfg.struct, mask=mask),
-            SequenceUnmaskingStepper(self.cfg.seq, mask=mask)
+            EDMDiffusionStepper(self.cfg.struct, mask=None),
+            #SequenceUnmaskingStepper(self.cfg.seq, mask=mask)
         ])
 
         # noisy_batch['pad_mask'] = (noisy_batch['mol_type'] == 0).float()
@@ -91,16 +91,15 @@ class BinderEval(CodesignEval):
         pred_traj = torch.stack(extra['preds'])
         samp_traj = torch.stack(extra['traj'])
 
-        for key in ['struct', 'aatype']:
-            batch[key] = sample[key]
-
+        batch['struct'] = sample['struct']
+        # batch['aatype'] = sample['aatype']
         
         datas = batch.unbatch()
         
         for i, data in enumerate(datas):
 
             L = self.cfg.sample_length
-            data.update_seqres()
+            # data.update_seqres()
             name = data["name"]
             struct = Structure.from_chains([
                 Polypeptide(data['seqres'][:L], name='A'),

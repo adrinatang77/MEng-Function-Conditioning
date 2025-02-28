@@ -111,6 +111,7 @@ class StructureTrack(OpenProtTrack):
             )
         if self.cfg.all_atom:
             model.ref_in = nn.Linear(3, model.cfg.dim)
+        if self.cfg.hotspots:
             model.hotspot_in = nn.Parameter(torch.zeros(model.cfg.dim))
 
     def get_hotspots(self, batch):
@@ -185,11 +186,12 @@ class StructureTrack(OpenProtTrack):
                 model.ref_in(batch['ref_conf']),
                 0.0
             )
-            # inp["x"] += torch.where(
-            #     batch['hotspot'][...,None],
-            #     model.hotspot_in[None,None],
-            #     0.0
-            # )
+            if self.cfg.hotspots:
+                inp["x"] += torch.where(
+                    batch['hotspot'][...,None],
+                    model.hotspot_in[None,None],
+                    0.0
+                )
 
         # embed sigma
         def sigma_transform(noise_level):
