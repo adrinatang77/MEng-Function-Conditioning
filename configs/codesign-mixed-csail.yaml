@@ -1,16 +1,16 @@
-ckpt: 
+ckpt: workdir/boltz-lig-test/last.ckpt
 pretrained:  #  load weights from here first
-validate: false # if true, only validate the model, don't train
+validate: true # if true, only validate the model, don't train
 logger:
     # set to true to log to neptune.ai
-    neptune: true
+    neptune: false
     run_id: #STRUC1-725
     # please change "test" to something unique to your task
     project: openprot/struct-merge
     # will log to workdir and neptune.ai with this name
-    name: allatom-test-512
+    name: default # boltz-lig-test
     # if not null, will duplicate stdout and stderr to workdir/{name}/{logfile}
-    logfile: std.out
+    logfile: # std.out
     # if null, will log every epoch, otherwise every this number of steps
     train_log_freq: 100
     val_log_freq: null 
@@ -18,7 +18,7 @@ logger:
     save_freq: 1000
 trainer:
     accelerator: auto
-    devices: 8
+    devices: 1
     max_epochs: 1
     max_steps: 1000000
     enable_progress_bar: false
@@ -34,12 +34,12 @@ trainer:
 
 # custom args to OpenProtDataset and elsewhere
 data: 
-    num_workers: 8
+    num_workers: 0
     buffer: 1000
     max_sq_toks: # 400000
     max_toks: 8192
     batch: null
-    crop: 512
+    crop: 384
     seed: 137
     all_atom: true
 
@@ -75,6 +75,11 @@ motif:
     ymax: 0.5
     
 datasets:
+    boltz_lig:
+        type: BoltzDataset
+        path: /data/cb/scratch/datasets/boltz/processed_data/
+        cutoff: 2018-05-01
+        mol_type: lig
     pdb:
         type: PDBDataset
         path: /data/cb/scratch/datasets/pdb_npz
@@ -134,7 +139,8 @@ tasks:
         
         datasets:
             pdb: 0.25
-            afdb_genie: 0.75
+            afdb_genie: 0.5
+            boltz_lig: 0.25
                 
     # StructurePrediction:
     #     fraction: 0.1
@@ -175,9 +181,12 @@ evals:
     #     split: splits/cameo2022.csv
     #     diffusion: false
     #     batch: 1
-    codesign_skew+1:
-        type: CodesignEval
-        num_samples: 100
+
+    binder:
+        type: BinderEval
+        path: /data/cb/scratch/datasets/boltz/ccd.pkl
+        
+        num_samples: 10
         batch: 100
         sample_length: 128
         steps: 200
@@ -188,6 +197,7 @@ evals:
             edm: ${edm}
             temp_factor: 0.5
             sde_weight: 1.0
+            align: false
         seq:
             temp_start: 0.1
             temp_end: 0.1
@@ -204,36 +214,66 @@ evals:
         run_diversity: true
         run_secondary: true
         run_plot: true
+        
+    # codesign_skew+1:
+    #     type: CodesignEval
+    #     num_samples: 100
+    #     batch: 100
+    #     sample_length: 128
+    #     steps: 200
+    #     skew: 1.0
+    #     truncate: 
+    #     dir:
+    #     struct:
+    #         edm: ${edm}
+    #         temp_factor: 0.5
+    #         sde_weight: 1.0
+    #     seq:
+    #         temp_start: 0.1
+    #         temp_end: 0.1
+    #         strategy: random
+    #         noise: 20
+    #         logits: standard
+    #         adjust_unmasked: false # pseudo-masked logits
+    #         replace_unmasked: false # logit of current toks
+    #         topk_temp: 0.0
+    #         allow_mutation: false
+    #     schedule: {}
+    #     run_designability: true
+    #     run_pmpnn_designability: true
+    #     run_diversity: true
+    #     run_secondary: true
+    #     run_plot: true
 
-    codesign_skew+0:
-        type: CodesignEval
-        num_samples: 25
-        batch: 100
-        sample_length: 128
-        steps: 200
-        skew: 0.0
-        truncate:
-        dir:
-        struct:
-            edm: ${edm}
-            temp_factor: 0.5
-            sde_weight: 1.0
-        seq:
-            temp_start: 1.0
-            temp_end: 0.1
-            strategy: dplm
-            noise: 20
-            logits: gumbel
-            adjust_unmasked: false # pseudo-masked logits
-            replace_unmasked: true # logit of current toks
-            topk_temp: 0.0
-            allow_mutation: false
-        schedule: {}
-        run_designability: true
-        run_pmpnn_designability: true
-        run_diversity: true
-        run_secondary: true
-        run_plot: true
+    # codesign_skew+0:
+    #     type: CodesignEval
+    #     num_samples: 100
+    #     batch: 100
+    #     sample_length: 128
+    #     steps: 200
+    #     skew: 0.0
+    #     truncate:
+    #     dir:
+    #     struct:
+    #         edm: ${edm}
+    #         temp_factor: 0.5
+    #         sde_weight: 1.0
+    #     seq:
+    #         temp_start: 1.0
+    #         temp_end: 0.1
+    #         strategy: dplm
+    #         noise: 20
+    #         logits: gumbel
+    #         adjust_unmasked: false # pseudo-masked logits
+    #         replace_unmasked: true # logit of current toks
+    #         topk_temp: 0.0
+    #         allow_mutation: false
+    #     schedule: {}
+    #     run_designability: true
+    #     run_pmpnn_designability: true
+    #     run_diversity: true
+    #     run_secondary: true
+    #     run_plot: true
 
     # seq_gen_dplm: 
     #     type: SequenceGenerationEval

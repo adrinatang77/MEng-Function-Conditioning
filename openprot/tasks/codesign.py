@@ -156,6 +156,6 @@ class Codesign(CodesignTask):
             data["/codesign/lig"] = np.ones((), dtype=np.float32)
         else:
             data["/codesign"] = np.ones((), dtype=np.float32)
-        
+        breakpoint()
         return data
     

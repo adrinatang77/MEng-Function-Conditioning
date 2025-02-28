@@ -94,13 +94,6 @@ class StructureTrack(OpenProtTrack):
     def setup(self):
         self.diffusion = getattr(diffusion, self.cfg.diffusion.type)(self.cfg.diffusion)
         self._igso3 = None
-    @property
-    def igso3(self):
-        if self._igso3 is None:
-            sigma_grid = torch.linspace(0.1, 1.5, 1000)
-            self._igso3 = so3_utils.SampleIGSO3(
-                1000, sigma_grid, cache_dir='.cache')
-        return self._igso3
 
     def tokenize(self, data):
         pass 
@@ -121,7 +114,9 @@ class StructureTrack(OpenProtTrack):
             model.hotspot_in = nn.Parameter(torch.zeros(model.cfg.dim))
 
     def get_hotspots(self, batch):
-        cmap = (batch['struct'][:,None] - batch['struct'][:,:,None]).square().sum(-1).sqrt() < 15.0
+        cmap = (
+            batch['struct'][:,None] - batch['struct'][:,:,None]
+        ).square().sum(-1).sqrt() < 15.0
         cmap &= batch['chain'][:,None] != batch['chain'][:,:,None]
         cmap &= batch['struct_mask'][:,None].bool() & batch['struct_mask'][:,:,None].bool()
         cmap = torch.any(cmap, -1)
@@ -135,8 +130,9 @@ class StructureTrack(OpenProtTrack):
         
     def corrupt(self, batch, noisy_batch, target, logger=None):
 
-        noisy_batch['hotspot'] = self.get_hotspots(batch)
+        # noisy_batch['hotspot'] = self.get_hotspots(batch)
         # add noise
+        
         noisy, target_tensor = self.diffusion.add_noise(
             batch["struct"], batch["struct_noise"], batch["struct_mask"].bool() 
         ) # the mask is used to center the coords
@@ -189,11 +185,11 @@ class StructureTrack(OpenProtTrack):
                 model.ref_in(batch['ref_conf']),
                 0.0
             )
-            inp["x"] += torch.where(
-                batch['hotspot'][...,None],
-                model.hotspot_in[None,None],
-                0.0
-            )
+            # inp["x"] += torch.where(
+            #     batch['hotspot'][...,None],
+            #     model.hotspot_in[None,None],
+            #     0.0
+            # )
 
         # embed sigma
         def sigma_transform(noise_level):

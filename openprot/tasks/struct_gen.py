@@ -19,4 +19,5 @@ class StructureGeneration(CodesignTask):
         
         data["/struct_gen"] = np.ones((), dtype=np.float32)
 
+        
         return data

@@ -15,13 +15,19 @@ def topk_masking(scores, k, mask=None, temp=1.0):
     return new
 
 class SequenceUnmaskingStepper:
-    def __init__(self, cfg=None):
+    def __init__(self, cfg=None, mask=None):
         self.cfg = cfg
+        self.mask = mask
         
     def set_step(self, batch, sched, extra={}):
         pass
         
     def advance(self, batch, sched, out, extra={}):
+
+        if self.mask is not None:
+            mask = self.mask
+        else:
+            mask = batch['pad_mask'].bool()
 
         if 'seq_traj' not in extra: extra['seq_traj'] = []
         
@@ -36,8 +42,8 @@ class SequenceUnmaskingStepper:
         logits = out['aatype'] 
         
         
-        is_unmask = (batch['aatype'] != MASK_IDX)
-        is_mask = (batch['aatype'] == MASK_IDX)
+        is_unmask = (batch['aatype'] != MASK_IDX) & mask
+        is_mask = (batch['aatype'] == MASK_IDX) & mask
 
         if 'seq_temp' in sched:
             temp, _ = sched['seq_temp']
@@ -77,29 +83,6 @@ class SequenceUnmaskingStepper:
             logits = logits + gumbel_noise 
             scores_, sample_ = (logits / temp).log_softmax(dim=-1).max(dim=-1) 
 
-        # if self.cfg.strategy == 'one_stage':            
-        #     remask_prob = self.cfg.remask * max(0, 0.1 - 0.2*s)
-        #     num_remask = int(torch.distributions.Binomial(
-        #         is_unmask.sum().item(), remask_prob
-        #     ).sample().item())
-           
-        #     topk = topk_masking(
-        #         -curr_tok_logits,
-        #         num_remask, 
-        #         is_unmask,
-        #         temp=self.cfg.topk_temp
-        #     )
-            
-        #     batch['aatype'] = torch.where(topk, MASK_IDX, batch['aatype'])
-            
-        #     topk = topk_masking(
-        #         scores_, 
-        #         num_mask - new_num_mask,
-        #         is_mask,
-        #         temp=self.cfg.topk_temp
-        #     )
-        #     batch['aatype'] = torch.where(topk, sample_, batch['aatype'])
-
         if self.cfg.strategy == 'dplm':
 
             if self.cfg.replace_unmasked:
@@ -109,6 +92,7 @@ class SequenceUnmaskingStepper:
             topk = topk_masking(
                 scores_,
                 L - new_num_mask, 
+                mask=mask,
                 temp=self.cfg.topk_temp
             )
             
@@ -124,11 +108,12 @@ class SequenceUnmaskingStepper:
             topk = topk_masking(
                 torch.rand_like(scores_),
                 num_mask - new_num_mask,
-                is_mask
+                mask=is_mask & mask,
             )
             batch['aatype'] = torch.where(topk, sample_, batch['aatype'])
 
         elif self.cfg.strategy == 'purity':
+            raise Exception('doesnt work with maskig')
             
             logits_1_wo_mask = logits[:, :, 0:-1] # (B, D, S-1)
             pt_x1_probs = torch.softmax(logits_1_wo_mask / temp, dim=-1) # (B, D, S-1)

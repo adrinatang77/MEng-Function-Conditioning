@@ -27,21 +27,6 @@ class CodesignEval(OpenProtEval):
                 + (1-t) * (sigma_max ** (1 / p) - sigma_min ** (1 / p))
             ) ** p
 
-        
-
-        # max_t = self.cfg.struct.max_t
-        # def log_sched_fn(t):
-        #     exp = 10 ** (-2*t)
-        #     return max_t * (exp - 1e-2) / (1 - 1e-2)
-
-        # if self.cfg.struct.sched == 'linear':
-        #     sched_fn = lambda t: max_t * (1-t)
-        # elif self.cfg.struct.sched == 'edm':
-        # elif self.cfg.struct.sched == 'log':
-        #     sched_fn = log_sched_fn
-        # else:
-        #     raise Exception("unrecognized schedule")
-
         sched_fn = edm_sched_fn
         def t_skew_func(t, skew):
             midpoint_y = 0.5 + skew / 2# [0, 1]
