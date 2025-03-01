@@ -76,7 +76,7 @@ class StructureGenerationEval(OpenProtEval):
             if logger is not None:
                 for col in pmpnn_df.columns:
                     for val in pmpnn_df[col].tolist():
-                        logger.log(f"{self.cfg.name}/pmpnn_{col}", val)
+                        logger.log(f"{self.cfg.name}/{col}", val)
 
 
             # os.makedirs(f"{savedir}/designable", exist_ok=True)

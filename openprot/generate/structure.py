@@ -26,7 +26,7 @@ class EDMDiffusionStepper:
         )
         
     def advance(self, batch, sched, out, extra={}):
-
+        
         if self.mask is not None:
             mask = self.mask
         else:

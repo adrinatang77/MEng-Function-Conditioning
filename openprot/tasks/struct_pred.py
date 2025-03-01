@@ -7,7 +7,7 @@ from .codesign import CodesignTask
 class StructurePrediction(CodesignTask):
 
     def register_loss_masks(self):
-        return ["/struct_pred", "/struct_pred/t1"]
+        return ["/struct_pred"] # , "/struct_pred/t1"]
 
     def prep_data(self, data, crop=None, eps=1e-6):
 
@@ -17,9 +17,9 @@ class StructurePrediction(CodesignTask):
         noise_level = self.add_structure_noise(data, sup=True)
         
         data["/struct_pred"] = np.ones((), dtype=np.float32)
-        if noise_level > 1 - eps:
-            data["/struct_pred/t1"] = np.ones((), dtype=np.float32)
-        else:
-            data["/struct_pred/t1"] = np.zeros((), dtype=np.float32)
+        # if noise_level > 1 - eps:
+        #     data["/struct_pred/t1"] = np.ones((), dtype=np.float32)
+        # else:
+        #     data["/struct_pred/t1"] = np.zeros((), dtype=np.float32)
 
         return data

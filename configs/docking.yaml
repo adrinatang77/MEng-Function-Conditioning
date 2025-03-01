@@ -1,14 +1,14 @@
-ckpt: workdir/struct-gen-boltz-lig-prot-only/last.ckpt
+ckpt: # workdir/docking-test2/last.ckpt
 pretrained:  #  load weights from here first
 validate: false # if true, only validate the model, don't train
 logger:
     # set to true to log to neptune.ai
     neptune: true
-    run_id: STRUC1-756
+    run_id: #STRUC1-725
     # please change "test" to something unique to your task
     project: openprot/struct-merge
     # will log to workdir and neptune.ai with this name
-    name: struct-gen-boltz-lig-prot-only
+    name: docking-test3
     # if not null, will duplicate stdout and stderr to workdir/{name}/{logfile}
     logfile: std.out
     # if null, will log every epoch, otherwise every this number of steps
@@ -18,7 +18,7 @@ logger:
     save_freq: 1000
 trainer:
     accelerator: auto
-    devices: 8
+    devices: 4
     max_epochs: 1
     max_steps: 1000000
     enable_progress_bar: false
@@ -27,14 +27,14 @@ trainer:
     num_sanity_val_steps: 0
     gradient_clip_val: 1.0
     accumulate_grad_batches: 1
-    val_check_interval: 10000
+    val_check_interval: 5000
     check_val_every_n_epoch: 1
     logger: false
     precision: 16-mixed
 
 # custom args to OpenProtDataset and elsewhere
 data: 
-    num_workers: 8
+    num_workers: 0
     buffer: 1000
     max_sq_toks: # 400000
     max_toks: 8192
@@ -102,57 +102,28 @@ datasets:
 
 tasks:
         
-    StructureGeneration:
+    # StructureGeneration:
+    #     fraction: 1.0
+    #     edm: ${edm}
+    #     struct:
+    #         prot_only: true
+    #         beta: [1, 2]
+    #         uniform_prob: 0.5
+        
+    #     datasets:
+    #         afdb_genie: 0.75
+    #         boltz_lig: 0.25
+                
+                  
+    StructurePrediction:
         fraction: 1.0
         edm: ${edm}
         struct:
-            prot_only: true
             beta: [1, 2]
             uniform_prob: 0.5
-        
+            lig_only: true
         datasets:
-            afdb_genie: 0.75
-            boltz_lig: 0.25
-                
-    # InverseFolding:
-    #     fraction: 0.1
-    #     edm: ${edm}
-    #     seq:
-    #         uniform_prob: 1.0
-        
-    #     datasets:
-    #         pdb: 0.25
-    #         afdb_genie: 0.75
-
-    # Codesign:
-    #     fraction: 0.8
-    #     edm: ${edm}
-    #     motif: ${motif}
-    #     motif_prob: 0.0
-    #     seq:
-    #         zero_prob: 0.0
-    #         max_prob: 0.05
-    #         uniform_prob: 0.95
-    #     struct:
-    #         zero_prob: 0.0
-    #         max_prob: 0.05
-    #         uniform_prob: 0.95
-        
-    #     datasets:
-    #         pdb: 0.25
-    #         afdb_genie: 0.5
-    #         boltz_lig: 0.25
-                
-    # StructurePrediction:
-    #     fraction: 0.1
-    #     edm: ${edm}
-    #     struct:
-    #         beta: [1, 2]
-    #         uniform_prob: 0.0
-    #         max_noise_prob: 1.0
-    #     datasets:
-    #         afdb_genie: 0.75
-    #         pdb: 0.25
+            boltz_lig: 1.0
 
     # SequenceUnmasking: 
     #     fraction: 0.1
@@ -165,6 +136,18 @@ tasks:
     #         uniref: 1.0
             
 evals: 
+    docking:
+        type: DockingEval
+        batch: 10
+        split: splits/plinder.csv
+        path: /data/cb/scratch/datasets/boltz/processed_data/
+        ccd: /data/cb/scratch/datasets/boltz/ccd.pkl
+        steps: 100
+        struct:
+            edm: ${edm}
+            temp_factor: 0.5
+            sde_weight: 1.0
+            align: false
     # cameo22_diff:
     #     type: StructurePredictionEval
     #     path: /data/cb/scratch/datasets/pdb_npz
@@ -183,19 +166,19 @@ evals:
     #     diffusion: false
     #     batch: 1
 
-    struct_gen_sde_0.5:
-        type: StructureGenerationEval
-        num_samples: 100
-        batch: 100
-        sample_length: 128
-        steps: 200
-        struct:
-            edm: ${edm}
-            temp_factor: 0.5
-            sde_weight: 1.0
-            align: false
-        run_designability: true
-        run_diversity: false
+    # struct_gen_sde_0.5:
+    #     type: StructureGenerationEval
+    #     num_samples: 100
+    #     batch: 100
+    #     sample_length: 128
+    #     steps: 200
+    #     struct:
+    #         edm: ${edm}
+    #         temp_factor: 0.5
+    #         sde_weight: 1.0
+    #         align: false
+    #     run_designability: true
+    #     run_diversity: false
 
     # binder:
     #     type: BinderEval
@@ -341,7 +324,7 @@ tracks:
 
 model: # custom args
     ema: false
-    dim: 512
+    dim: 256
     heads: 16
     blocks: 30
     dropout: 0.2

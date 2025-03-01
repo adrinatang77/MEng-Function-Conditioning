@@ -7,6 +7,7 @@ from modelcif import Assembly, AsymUnit, Entity, System, dumper
 from modelcif.model import AbInitioModel, Atom, ModelGroup
 from rdkit import Chem
 from .mmcif import parse_mmcif
+import networkx as nx
 
 periodic_table = Chem.GetPeriodicTable()
 
@@ -48,6 +49,32 @@ CHAIN = [
     ("res_num", np.dtype("i4")),
 ]
 
+def rmsdalign(
+    a, b, weights=None, return_trans=False
+):  # alignes B to A  # [*, N, 3]
+    B = a.shape[:-2]
+    N = a.shape[-2]
+    if weights is None:
+        weights = np.ones((*B, N))
+    weights = weights[...,None]
+    a_mean = (a * weights).sum(-2, keepdims=True) / weights.sum(-2, keepdims=True)
+    a = a - a_mean
+    b_mean = (b * weights).sum(-2, keepdims=True) / weights.sum(-2, keepdims=True)
+    b = b - b_mean
+    B = np.einsum("...ji,...jk->...ik", weights * a, b)
+    u, s, vh = np.linalg.svd(B)
+
+    # Correct improper rotation if necessary (as in Kabsch algorithm)
+    sgn = np.sign(np.linalg.det((u @ vh)))
+    s[..., -1] *= sgn
+    u[..., :, -1] *= sgn[...,None]
+    C = u @ vh  # c rotates B to A
+    if return_trans:
+        return C, a_mean - b_mean @ C.transpose(-1, -2)
+    else:
+        return b @ C.transpose(-1, -2) + a_mean
+
+    
 def convert_atom_name(name: str) -> tuple[int, int, int, int]:
     name = name.strip()
     name = [ord(c) - 32 for c in name]
@@ -98,7 +125,56 @@ class Residue:
             ))
         self.atoms = np.array(atoms, dtype=ATOM)
         return self
+
+    def get_bonds(self):
+        mol = CCD[self.name]
+        bonds = []
+        names = self.get_atom_names()
+        for b in mol.GetBonds():
+            i = names.index(b.GetBeginAtom().GetProp('name'))
+            j = names.index(b.GetEndAtom().GetProp('name'))
+            bonds.append((i, j))
+        return bonds
         
+    def get_distortion(self):
+        bonds = np.array(self.get_bonds())
+        lens = self.atoms['coords'][bonds[:,0]] - self.atoms['coords'][bonds[:,1]]
+        lens = np.square(lens).sum(-1)**0.5
+
+        ref_lens = self.atoms['conformer'][bonds[:,0]] - self.atoms['conformer'][bonds[:,1]]
+        ref_lens = np.square(ref_lens).sum(-1)**0.5
+        
+        return np.square(ref_lens - lens).mean() ** 0.5
+        
+        
+    def to_graph(self):
+        
+        nxg = nx.Graph()
+        mol = CCD[self.name]
+        
+    
+        for atom in mol.GetAtoms():
+            nxg.add_node(atom.GetProp('name'), element=atom.GetSymbol().upper())
+    
+        # This will list all edges twice - once for every atom of the pair.
+        # But as of NetworkX 3.0 adding the same edge twice has no effect,
+        # so we're good.
+        nxg.add_edges_from([(
+            b.GetBeginAtom().GetProp('name'),
+            b.GetEndAtom().GetProp('name')
+        ) for b in mol.GetBonds()])
+        
+        return nxg
+        
+        # if by_atom_index:
+        #     nxg = networkx.relabel_nodes(nxg,
+        #                                  {a: b for a, b in zip(
+        #                                      [a.name for a in residue.atoms],
+        #                                      range(len(residue.atoms)))},
+        #                                  True)
+        # return nxg
+
+
 
 class Chain:
 
@@ -158,7 +234,7 @@ class Chain:
 
         if self.mol_type < 3:
             seq = [
-                alphabet[c] if c in alphabet else chem_comp(item)
+                alphabet[c] if c in alphabet else chem_comp(c)
                 for c in self.get_seqres()
             ]
         else:
@@ -328,10 +404,13 @@ class Structure:
         out = fh.getvalue()
         return out
 
-    def get_chain(self, idx, key=None):
+    def get_chain(self, idx=None, key=None):
         
         chain = Chain()
-        
+
+        if idx is None:
+            idx = np.argwhere(self.chains['name'] == key).flatten()[0]
+            
         row = self.chains[idx]
         chain.idx = idx
         chain.name = row['name']
@@ -348,6 +427,84 @@ class Structure:
         chain.atoms = self.atoms[astart:astart+acount]
         
         return chain
+
+    def ligand_rmsd(self, other, prot_idx=0, lig_idx=1):
+        my_prot = self.get_chain(prot_idx)
+        my_prot = my_prot.get_central_atoms()
+
+        my_lig = self.get_chain(lig_idx)
+
+        dmat = my_prot['coords'][None] - my_lig.atoms['coords'][:,None]
+        dmat = (dmat**2).sum(-1) ** 0.5
+        dmat = dmat < 8
+        dmat &= my_prot['is_present'][None]
+        dmat &= my_lig.atoms['is_present'][:,None]
+
+        bs_mask = np.any(dmat, 0)
+        
+        other_prot = other.get_chain(prot_idx).get_central_atoms()
+
+        bs_mask &= other_prot['is_present']
+
+        R, t = rmsdalign(
+            my_prot['coords'][bs_mask], 
+            other_prot['coords'][bs_mask], 
+            return_trans=True
+        )
+        
+        
+        other.atoms['coords'] = other.atoms['coords'] @ R.T + t
+        other_prot = other.get_chain(prot_idx).get_central_atoms()
+
+        other_lig = other.get_chain(lig_idx)
+        
+        graph = my_lig.get_residue(0).to_graph()
+        
+
+        gm = nx.algorithms.isomorphism.GraphMatcher(
+            graph, graph, node_match=lambda x, y: x["element"] == y["element"]
+        )
+        symmetries = []
+        for i, isomorphism in enumerate(gm.isomorphisms_iter()):
+            """
+            if i >= max_symmetries:
+                raise TooManySymmetriesError(
+                    "Too many symmetries between %s and %s" % (
+                        str(model_ligand), str(target_ligand)))
+            """
+            symmetries.append((list(isomorphism.values()),
+                               list(isomorphism.keys())))
+
+        my_names = my_lig.get_residue(0).get_atom_names()
+        other_names = other_lig.get_residue(0).get_atom_names()
+
+        best = np.inf
+        
+        if len(symmetries) > 1e2:
+            return np.nan
+        
+        for my_key, other_key in symmetries:
+            my_key = [my_names.index(k) for k in my_key]
+            other_key = [other_names.index(k) for k in other_key]
+
+            my_coords = my_lig.atoms['coords'][my_key]
+            other_coords = other_lig.atoms['coords'][other_key]
+
+            my_mask = my_lig.atoms['is_present'][my_key]
+            other_mask = other_lig.atoms['is_present'][other_key]
+
+            mask = (my_mask & other_mask).astype(float)
+            
+            dist = np.square(my_coords - other_coords).sum(-1)
+            
+            rmsd = ((dist * mask).sum() / mask.sum())**0.5
+            best = min(best, rmsd)
+        return best
+        
+            
+        
+
+
 
 # struct = Structure.from_npz(f"/data/cb/scratch/datasets/boltz/processed_data/structures/a3/1a3n.npz")
 

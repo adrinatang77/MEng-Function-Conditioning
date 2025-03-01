@@ -50,9 +50,9 @@ class BinderEval(CodesignEval):
             name=key,
             seqres="*"*K,
             seq_mask=np.ones(K),
-            struct=np.zeros((K, 3)), # coords + np.array([10, 0, 0]),
+            struct=coords, # coords + np.array([10, 0, 0]),
             struct_mask=np.ones(K),
-            struct_noise=np.ones(K) * max_noise,
+            struct_noise=np.ones(K) * min_noise,
             atom_num=np.array(nums),
             mol_type=np.ones(K)*3,
             ref_conf=coords,
@@ -81,7 +81,7 @@ class BinderEval(CodesignEval):
 
         mask = batch['mol_type'] == 0
         sampler = OpenProtSampler(schedules, steppers=[
-            EDMDiffusionStepper(self.cfg.struct, mask=None),
+            EDMDiffusionStepper(self.cfg.struct, mask=mask),
             #SequenceUnmaskingStepper(self.cfg.seq, mask=mask)
         ])
 

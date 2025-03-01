@@ -2,7 +2,7 @@ from .task import OpenProtTask
 import numpy as np
 from ..utils import residue_constants as rc
 from scipy.spatial.transform import Rotation as R
-
+import torch
 
 class CodesignTask(OpenProtTask):
 ### Algorithm 1 Motif-scaffolding data augmentation
@@ -132,6 +132,31 @@ class CodesignTask(OpenProtTask):
         if sup:
             data["struct_weight"] = np.ones(L, dtype=np.float32)
 
+        if self.cfg.struct.get('prot_only', False):
+            data["struct_noise"] = np.where(
+                data['mol_type'] == 0,
+                data['struct_noise'],
+                self.cfg.edm.sigma_min,
+            )
+            data["struct_weight"] = np.where(
+                data['mol_type'] == 0,
+                data['struct_weight'],
+                0.0,
+            )
+        
+        if self.cfg.struct.get('lig_only', False):
+            data["struct_noise"] = np.where(
+                data['mol_type'] == 3,
+                data['struct_noise'],
+                self.cfg.edm.sigma_min,
+            )
+            data["struct_weight"] = np.where(
+                data['mol_type'] == 3,
+                data['struct_weight'],
+                0.0,
+            )
+
+        
 
         self.center_random_rot(data)
 
@@ -156,6 +181,6 @@ class Codesign(CodesignTask):
             data["/codesign/lig"] = np.ones((), dtype=np.float32)
         else:
             data["/codesign"] = np.ones((), dtype=np.float32)
-        breakpoint()
+        
         return data
     
