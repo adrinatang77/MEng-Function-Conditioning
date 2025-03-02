@@ -182,7 +182,7 @@ class StructureTrack(OpenProtTrack):
 
         if self.cfg.all_atom:
             inp["x"] += torch.where(
-                (batch['mol_type'] == 3)[...,None],
+                batch['ref_conf_mask'][...,None],
                 model.ref_in(batch['ref_conf']),
                 0.0
             )

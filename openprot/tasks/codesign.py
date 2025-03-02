@@ -46,7 +46,8 @@ class CodesignTask(OpenProtTask):
         idx = np.unique(data['chain'])
         for i in idx: # note that multi-residue ligands will be wrong
             conf = data["ref_conf"][data['chain'] == i]
-            conf -= conf.mean(0)
+            conf_mask = data['ref_conf_mask'][data['chain'] == i][...,None]
+            conf -= (conf * conf_mask).sum(-2) / (conf_mask.sum(-2) + eps)
             randrot = R.random().as_matrix()
             conf @= randrot.T
             data["ref_conf"][data['chain'] == i] = conf
@@ -122,39 +123,42 @@ class CodesignTask(OpenProtTask):
         
         L = len(data["seqres"])
         if noise_level is None:
-            data["struct_noise"] = np.zeros(L, dtype=np.float32)
-            idx = np.unique(data['chain'])
-            for i in idx:
-                data["struct_noise"][data['chain'] == i] = sample_noise_level()
+            # data["struct_noise"] = np.zeros(L, dtype=np.float32)
+            # idx = np.unique(data['chain'])
+            # for i in idx:
+            #     data["struct_noise"][data['chain'] == i] = sample_noise_level()
+            data["struct_noise"] = np.ones(L, dtype=np.float32) * sample_noise_level()
         else:
             data["struct_noise"] = np.ones(L, dtype=np.float32) * noise_level
 
         if sup:
-            data["struct_weight"] = np.ones(L, dtype=np.float32)
+            data["struct_weight"] = np.where(
+                data['mol_type'] == 3, 3.0, 1.0,
+            )
 
-        if self.cfg.struct.get('prot_only', False):
-            data["struct_noise"] = np.where(
-                data['mol_type'] == 0,
-                data['struct_noise'],
-                self.cfg.edm.sigma_min,
-            )
-            data["struct_weight"] = np.where(
-                data['mol_type'] == 0,
-                data['struct_weight'],
-                0.0,
-            )
+        # if self.cfg.struct.get('prot_only', False):
+        #     data["struct_noise"] = np.where(
+        #         data['mol_type'] == 0,
+        #         data['struct_noise'],
+        #         self.cfg.edm.sigma_min,
+        #     )
+        #     data["struct_weight"] = np.where(
+        #         data['mol_type'] == 0,
+        #         data['struct_weight'],
+        #         0.0,
+        #     )
         
-        if self.cfg.struct.get('lig_only', False):
-            data["struct_noise"] = np.where(
-                data['mol_type'] == 3,
-                data['struct_noise'],
-                self.cfg.edm.sigma_min,
-            )
-            data["struct_weight"] = np.where(
-                data['mol_type'] == 3,
-                data['struct_weight'],
-                0.0,
-            )
+        # if self.cfg.struct.get('lig_only', False):
+        #     data["struct_noise"] = np.where(
+        #         data['mol_type'] == 3,
+        #         data['struct_noise'],
+        #         self.cfg.edm.sigma_min,
+        #     )
+        #     data["struct_weight"] = np.where(
+        #         data['mol_type'] == 3,
+        #         data['struct_weight'],
+        #         0.0,
+        #     )
 
         
 

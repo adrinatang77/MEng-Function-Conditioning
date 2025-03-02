@@ -396,8 +396,7 @@ class OpenProtModel(nn.Module):
             dim=cfg.dim,
             ff_expand=cfg.ff_expand,
             heads=cfg.heads,
-            rope=cfg.rope,
-            custom_rope=cfg.custom_rope,
+            custom_rope=not cfg.all_atom,
             adaLN=cfg.adaLN,
             chain_mask=cfg.all_atom,
             dropout=cfg.dropout,
@@ -406,13 +405,24 @@ class OpenProtModel(nn.Module):
 
 
         self.blocks = nn.ModuleList()
-        # if cfg.all_atom:
-        #     self.z_emb = nn.Embedding(2, cfg.blocks * cfg.heads)
-        #     torch.nn.init.zeros_(self.z_emb.weight)
-        
+
         for i in range(cfg.blocks):
             block_args = default_block_args 
             self.blocks.append(OpenProtTransformerBlock(**block_args))
+
+    def get_z(self, inp):
+        
+        SAME_NONPOLY_CHAIN = 65
+        DIFF_CHAIN = 66
+        same_chain = inp['chain'][:,None] == inp['chain'][:,:,None]
+        is_poly = (inp['mol_type'][:,None] < 3) & (inp['mol_type'][:,:,None] < 3)
+        
+        res_offset = inp['residx'][:,None] - inp['residx'][:,:,None]
+        res_offset = torch.clamp(res_offset.int(), min=-32, max=32)
+        idx = torch.where(same_chain & is_poly, res_offset + 32, -1)
+        idx.masked_fill_(same_chain & ~is_poly, SAME_NONPOLY_CHAIN)
+        idx.masked_fill_(~same_chain, DIFF_CHAIN)
+        return idx
 
     def forward(self, inp):
 
@@ -421,7 +431,10 @@ class OpenProtModel(nn.Module):
         
         residx = inp['residx']
         mask = inp["pad_mask"]
-        z = inp.get("z", None)
+
+        assert "z" not in inp
+        z = self.get_z(inp)
+        
         chain = inp.get("chain", None)
             
         trans = inp.get("struct", None)

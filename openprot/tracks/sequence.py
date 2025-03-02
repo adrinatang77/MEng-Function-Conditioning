@@ -199,8 +199,6 @@ class SequenceTrack(OpenProtTrack):
         elif self.cfg.reweight == 'inverse':
             target["seq_supervise"] *= 1/(batch['seq_noise'] + self.cfg.reweight_eps)
         target["aatype"] = tokens
-        noisy_batch['residx'] = batch['residx']
-        noisy_batch['chain'] = batch['chain']
         
         if logger:
             logger.masked_log("seq/toks", batch["seq_mask"], sum=True)

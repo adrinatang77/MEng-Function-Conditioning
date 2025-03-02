@@ -57,6 +57,7 @@ class BoltzDataset(OpenProtDataset):
                 'struct': chain.atoms['coords'],
                 'struct_mask': chain.atoms['is_present'],
                 'ref_conf': chain.atoms['conformer'],
+                'ref_conf_mask': ones,
                 'residx': chain.get_atom_residx(),
                 'chain': ones * chain.idx,
             }
@@ -69,6 +70,7 @@ class BoltzDataset(OpenProtDataset):
                 'struct': chain.get_central_atoms()['coords'],
                 'struct_mask': chain.get_central_atoms()['is_present'],
                 'ref_conf': np.zeros((L, 3)),
+                'ref_conf_mask': np.zeros(L),
                 'residx': chain.residues['res_idx'],
                 'chain': ones * chain.idx,
             }
