@@ -1,6 +1,6 @@
 ckpt: # workdir/docking-test2/last.ckpt
 pretrained:  #  load weights from here first
-validate: false # if true, only validate the model, don't train
+validate: true # if true, only validate the model, don't train
 logger:
     # set to true to log to neptune.ai
     neptune: false
@@ -147,7 +147,7 @@ evals:
             edm: ${edm}
             temp_factor: 0.5
             sde_weight: 1.0
-            align: false
+            align: true
     # cameo22_diff:
     #     type: StructurePredictionEval
     #     path: /data/cb/scratch/datasets/pdb_npz

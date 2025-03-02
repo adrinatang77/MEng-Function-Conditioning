@@ -156,6 +156,10 @@ class SequenceTrack(OpenProtTrack):
                 model.seq_out.decoder.weight = model.seq_embed.weight
         else:
             model.seq_out = nn.Linear(model.cfg.dim, self.ntoks)
+
+        if self.cfg.all_atom:
+            model.mol_type_cond = nn.Embedding(4, model.cfg.dim)
+        
         
         if self.cfg.esm is not None:
 
@@ -223,6 +227,10 @@ class SequenceTrack(OpenProtTrack):
             inp["x"] += model.esm_s_mlp(esm_s)
 
         inp["x"] += model.seq_embed(batch["aatype"])
+
+        if self.cfg.all_atom:
+            inp["x_cond"] += model.mol_type_cond(batch['mol_type'].int())
+        
         
     def predict(self, model, inp, out, readout):
         readout["aatype"] = model.seq_out(out["x"])

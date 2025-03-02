@@ -154,11 +154,16 @@ class StructureTrack(OpenProtTrack):
             batch["struct_noise"]
         ) # used to compute diffusion loss
 
-        noisy_batch['ref_conf'] = batch['ref_conf']
-        noisy_batch['mol_type'] = batch['mol_type']
+        for key in [
+            'ref_conf',
+            'ref_conf_mask',
+            'struct_mask', # inf time centering
+            'mol_type'
+        ]:
+            noisy_batch[key] = batch[key]    
+        
         noisy_batch["struct"] = noisy
         noisy_batch['struct_noise'] = noise_level
-        noisy_batch["struct_mask"] = batch["struct_mask"] # inf-time centering
         
         # training targets
         target['struct_noise'] = noise_level
@@ -182,7 +187,7 @@ class StructureTrack(OpenProtTrack):
 
         if self.cfg.all_atom:
             inp["x"] += torch.where(
-                batch['ref_conf_mask'][...,None],
+                batch['ref_conf_mask'][...,None].bool(),
                 model.ref_in(batch['ref_conf']),
                 0.0
             )

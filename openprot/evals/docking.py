@@ -34,40 +34,6 @@ class DockingEval(OpenProtEval):
         
     def run(self, model):
         NotImplemented
-
-    def unpack_chain(self, chain):
-
-        if chain.mol_type == 3:
-            L = len(chain.atoms)
-        else:
-            L = len(chain.residues)
-            
-        ones = np.ones(L, dtype=np.float32)
-
-        if chain.mol_type == 3:
-            return {
-                'seqres': '*'*L,
-                'atom_num': chain.atoms['element'],
-                'mol_type': ones * chain.mol_type,
-                'seq_mask': ones,
-                'struct': chain.atoms['coords'] * 0.0,
-                'struct_mask': chain.atoms['is_present'],
-                'ref_conf': chain.atoms['conformer'],
-                'residx': chain.get_atom_residx(),
-                'chain': ones * chain.idx,
-            }
-        else:
-            return {
-                'seqres': chain.get_seqres(),
-                'atom_num': np.zeros(L),
-                'mol_type': ones * chain.mol_type,
-                'seq_mask': chain.get_seqres_mask(),
-                'struct': chain.get_central_atoms()['coords'],
-                'struct_mask': chain.get_central_atoms()['is_present'],
-                'ref_conf': np.zeros((L, 3)),
-                'residx': chain.residues['res_idx'],
-                'chain': ones * chain.idx,
-            }
                 
 
     def __len__(self):
@@ -82,22 +48,25 @@ class DockingEval(OpenProtEval):
             f"{self.cfg.path}/structures/{pdb_id[1:3]}/{pdb_id}.npz"
         )
 
+        chain = struct.get_chain(key=prot)
+        coords = chain.get_central_atoms()['coords']
+        coords_mask = chain.get_central_atoms()['is_present']
+        
+        L = len(chain.residues)
         prot_data = self.make_data(
             name=f"{pdb_id}_{prot}_",
-            **self.unpack_chain(struct.get_chain(key=prot))
+            seqres=chain.get_seqres(),
+            seq_mask=chain.get_seqres_mask(),
+            struct_mask=chain.get_central_atoms()['is_present'], 
+            struct_noise=np.ones(L) * self.cfg.struct.edm.sigma_max,
+            ref_conf=masked_center(coords, coords_mask),
+            ref_conf_mask=coords_mask,
+            residx=chain.residues['res_idx'],
+            chain=np.ones(L) * chain.idx,
         )
-        prot_data['struct_noise'].fill(self.cfg.struct.edm.sigma_min)
-        # lig = self.make_data(
-        #     name=f"_{item.ligand_ccd_code}",
-        #     **self.unpack_chain(struct.get_chain(key=lig))
-        # )
-        prot_data['struct'] = masked_center(
-            prot_data['struct'],
-            prot_data['struct_mask']
-        )
+
         mol = self.ccd[item.ligand_ccd_code]
         coords = mol.GetConformer().GetPositions()
-        coords -= coords.mean(0)
         nums = [a.GetAtomicNum() for a in mol.GetAtoms()]
         
         K = len(coords)
@@ -105,12 +74,12 @@ class DockingEval(OpenProtEval):
             name=item.ligand_ccd_code,
             seqres="*"*K,
             seq_mask=np.ones(K),
-            struct=np.zeros((K, 3)), 
             struct_mask=np.ones(K),
             struct_noise=np.ones(K) * self.cfg.struct.edm.sigma_max,
             atom_num=np.array(nums),
             mol_type=np.ones(K)*3,
-            ref_conf=coords,
+            ref_conf=masked_center(coords),
+            ref_conf_mask=np.ones(K),
             chain=np.ones(K) * int(np.argwhere(struct.chains['name'] == lig))
         )
         

@@ -7,7 +7,7 @@ from .codesign import CodesignTask
 class Docking(CodesignTask):
 
     def register_loss_masks(self):
-        return ["/docking"] # , "/struct_pred/t1"]
+        return ["/struct_pred"] # , "/struct_pred/t1"]
 
     def prep_data(self, data, crop=None, eps=1e-6):
 
