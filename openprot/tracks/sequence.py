@@ -156,6 +156,10 @@ class SequenceTrack(OpenProtTrack):
                 model.seq_out.decoder.weight = model.seq_embed.weight
         else:
             model.seq_out = nn.Linear(model.cfg.dim, self.ntoks)
+
+        if self.cfg.all_atom:
+            model.mol_type_cond = nn.Embedding(4, model.cfg.dim)
+        
         
         if self.cfg.esm is not None:
 
@@ -181,45 +185,28 @@ class SequenceTrack(OpenProtTrack):
     def corrupt(self, batch, noisy_batch, target, logger=None):
         eps = 1e-6
 
-        
         tokens = batch["aatype"]
+        rand_mask = torch.rand_like(batch['seq_noise']) < batch['seq_noise']
+        rand_mask &= batch['mol_type'] == 0 # corrupt protein sequences only
+
+        mask = rand_mask | ~batch["seq_mask"].bool() # these will be input as MASK
+        sup = rand_mask & batch["seq_mask"].bool() # these will be actually supervised
         
-        mask = batch["seq_noise"].bool() | ~batch["seq_mask"].bool() # these will be input as MASK
-        sup = batch["seq_noise"].bool() & batch["seq_mask"].bool() # these will be actually supervised
-        # sup &= (tokens != 
+        noisy_batch["aatype"] = torch.where(rand_mask, MASK_IDX, tokens)
 
+        # present = ~batch["seq_noise"].bool() & batch["seq_mask"].bool()
+        # target["seq_occupancy"] = present.sum(-1) / (1+batch['seq_mask'].sum(-1))        
         
-        rand = torch.rand_like(batch['seq_noise'])
-        randaa = torch.randint(0, 20, rand.shape, device=rand.device)
-        randaa = torch.where(rand < self.cfg.mask_rate, MASK_IDX, randaa)
-        randaa = torch.where(
-            rand < (self.cfg.mask_rate + self.cfg.rand_rate),
-            randaa,
-            tokens
-        )
-        noisy_batch["aatype"] = torch.where(mask, MASK_IDX, tokens)
-
-        present = ~batch["seq_noise"].bool() & batch["seq_mask"].bool()
-        target["seq_occupancy"] = present.sum(-1) / (1+batch['seq_mask'].sum(-1))        
-        noisy_batch["seq_noise"] = batch["seq_noise"]
-
+        target["seq_supervise"] = torch.where(sup, batch["seq_weight"], 0.0)
+        if self.cfg.reweight == 'linear':
+            target["seq_supervise"] *= (1-batch['seq_noise'])
+        elif self.cfg.reweight == 'inverse':
+            target["seq_supervise"] *= 1/(batch['seq_noise'] + self.cfg.reweight_eps)
         target["aatype"] = tokens
-        target["noisy_aatype"] = noisy_batch["aatype"] # temporary
-        if self.cfg.sup_all:
-            target["seq_supervise"] = torch.where(batch['seq_mask'].bool(), batch['seq_weight'], 0.0)
-        else:
-            target["seq_supervise"] = torch.where(sup, batch["seq_weight"], 0.0)
-
-        noisy_batch['residx'] = batch['residx']
-        oh = torch.nn.functional.one_hot(tokens, num_classes=self.ntoks)
-        dist = oh.float().mean(1)
-        dist /= dist.sum(-1, keepdims=True)
-        ppl = (-torch.nansum(dist * dist.log(), -1)).exp()
-
+        
         if logger:
             logger.masked_log("seq/toks", batch["seq_mask"], sum=True)
-            logger.log("seq/data_ppl", ppl)
-
+            
     def embed(self, model, batch, inp):
         def _af2_idx_to_esm_idx(aa, mask):
             aa = (aa + 1).masked_fill(mask != 1, 0)
@@ -240,21 +227,15 @@ class SequenceTrack(OpenProtTrack):
             inp["x"] += model.esm_s_mlp(esm_s)
 
         inp["x"] += model.seq_embed(batch["aatype"])
-        if self.cfg.embed_t:
-            t_emb = sinusoidal_embedding(
-                batch["seq_noise"], model.cfg.dim // 2, 1, 0.01
-            )
-            inp["x"] += torch.where(batch["aatype"] != MASK_IDX, noise_embed, 0.0)
 
-        inp['residx'] = batch['residx'] # temporary
-
+        if self.cfg.all_atom:
+            inp["x_cond"] += model.mol_type_cond(batch['mol_type'].int())
+        
+        
     def predict(self, model, inp, out, readout):
-        if self.cfg.readout == 'trunk':
-            readout["aatype"] = model.seq_out(out["x"])
-        elif self.cfg.readout == 'sm':
-            readout["aatype"] = model.seq_out(out["sm"]["x"][-1])
+        readout["aatype"] = model.seq_out(out["x"])
         if not model.training:
-            readout["aatype"][...,MASK_IDX] = -np.inf
+            readout["aatype"][...,MASK_IDX:] = -np.inf # only predict proteins
         
     def compute_loss(self, readout, target, logger=None, eps=1e-6, **kwargs):
         

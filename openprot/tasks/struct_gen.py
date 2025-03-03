@@ -2,9 +2,9 @@ from .task import OpenProtTask
 import numpy as np
 from ..utils import residue_constants as rc
 from scipy.spatial.transform import Rotation as R
+from .codesign import CodesignTask
 
-
-class StructureGeneration(OpenProtTask):
+class StructureGeneration(CodesignTask):
 
     def register_loss_masks(self):
         return ["/struct_gen"]
@@ -14,40 +14,10 @@ class StructureGeneration(OpenProtTask):
         if crop is not None:
             data.crop(crop)
 
+        self.add_sequence_noise(data, noise_level=1.01)
+        self.add_structure_noise(data, sup=True)
         
-
-        rand = np.random.rand()
-        if rand < self.cfg.struct_max_noise_prob:
-            noise_level = 1.0
-        elif rand < self.cfg.struct_max_noise_prob + self.cfg.struct_uniform_prob:
-            noise_level = np.random.rand()
-        else:
-            noise_level = np.random.beta(*self.cfg.struct_beta)
-
-        L = len(data["seqres"])
-        data["seq_noise"] = np.ones(L, dtype=np.float32)
-        #####
-        if self.cfg.rescale_time:
-            p = self.cfg.sched_p
-            noise_level = (
-                self.cfg.sigma_min ** (1 / p)
-                + noise_level * (self.cfg.sigma_max ** (1 / p) - self.cfg.sigma_min ** (1 / p))
-            ) ** p
-        #####
-        
-        data["struct_noise"] = np.ones(L, dtype=np.float32) * noise_level
-        data["struct_weight"] = np.ones(L, dtype=np.float32) * self.cfg.struct_weight
-
-        # center the structures
-        pos = data["struct"] # data["atom37"][..., rc.atom_order["CA"], :]
-        mask = data["struct_mask"][...,None] # data["atom37_mask"][..., rc.atom_order["CA"], None]
-        com = (pos * mask).sum(-2) / (mask.sum(-2) + eps)
-        data["struct"] -= com
-
-        if self.cfg.random_rot:
-            randrot = R.random().as_matrix()
-            data["struct"] @= randrot.T
-
         data["/struct_gen"] = np.ones((), dtype=np.float32)
 
+        
         return data

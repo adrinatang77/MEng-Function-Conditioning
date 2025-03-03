@@ -2,85 +2,193 @@ from .task import OpenProtTask
 import numpy as np
 from ..utils import residue_constants as rc
 from scipy.spatial.transform import Rotation as R
+import torch
 
+class CodesignTask(OpenProtTask):
+### Algorithm 1 Motif-scaffolding data augmentation
+# Require: Protein backbone T; Min and max motif percent γmin = 0.05, γmax = 0.5.
+# 1: s ∼ Uniform{⌊N · γmin⌋, . . . , ⌊N · γmax⌋} ▷ Sample maximum motif size.
+# 2: m ∼ Uniform{1, . . . , s} ▷ Sample maximum number of motifs.
+# 3: TM ← ∅
+# 4: for i ∈ {1, . . . , m} do
+# 5: j ∼ Uniform{1, . . . , N} \ TM ▷ Sample location for each motif
+# 6: ℓ ∼ Uniform{1, . . . , s − m + i − |TM|} ▷ Sample length of each motif.
+# 7: TM ← TM ∪ {Tj , . . . , Tmin(j+ℓ,N)} ▷ Append to existing motif.
+# 8: end for
+# 9: TS ← {T1, . . . , TN } \ TM ▷ Assign rest of residues as the scaffold
+# 10: return TM, TS
+    def sample_motifs(self, data):
+        L = len(data['seqres'])
+        s = np.random.rand() * (self.cfg.motif.ymax - self.cfg.motif.ymin) + self.cfg.motif.ymin
+        s = int(s * L)
+        m = np.random.randint(1, max(s, 1) + 1)
 
-class Codesign(OpenProtTask):
+        is_motif = np.zeros(len(data['seqres']), dtype=bool)
+        for i in range(m):
+            j = np.random.randint(0, L)
+            end = s - m + i - is_motif.sum()
+            if end > 0:
+                l = np.random.randint(1, end+1)
+                is_motif[j:j+l] = True
+        data['seq_noise'][is_motif] = 0
+        data['struct_noise'][is_motif] = 0
 
-    def register_loss_masks(self):
-        return ["/codesign"]
-
-    def prep_data(self, data, crop=None):
-
-        if crop is not None:
-            data.crop(crop)
-
-        self.add_sequence_noise(data)
-        self.add_structure_noise(data)
-        data["/codesign"] = np.ones((), dtype=np.float32)
-        
-        return data
-        
-
-        
-
-    def add_sequence_noise(self, data, eps=1e-6):
-        rand = np.random.rand()
-        if rand < self.cfg.seq_max_noise_prob:
-            noise_level = 1.0
-        elif rand < self.cfg.seq_max_noise_prob + self.cfg.seq_uniform_prob:
-            noise_level = np.random.rand()
-        else:
-            noise_level = np.random.beta(*self.cfg.seq_beta)
-
-        mask = data["seq_mask"] * (data["mol_type"] == 0).astype(np.float32)
-        
-        L = len(data["seqres"])
-        data["seq_noise"] = (np.random.rand(L) < noise_level).astype(np.float32)
-
-        t_inv = min(100, 1/noise_level)
-        t = noise_level
-
-        ones = np.ones(L, dtype=np.float32)
-        if self.cfg.seq_reweight == 'linear':
-            data["seq_weight"] = ones * (1-t) * self.cfg.seq_weight
-        elif self.cfg.seq_reweight == 'inverse':
-            data["seq_weight"] = ones * t_inv * self.cfg.seq_weight
-        else:
-            assert not self.cfg.seq_reweight, 'reweight type not recognized'
-            data["seq_weight"] = ones *  self.cfg.seq_weight
-        
-        
-    def add_structure_noise(self, data, eps=1e-6):
-        rand = np.random.rand()
-        if rand < self.cfg.struct_max_noise_prob:
-            noise_level = 1.0
-        elif rand < self.cfg.struct_max_noise_prob + self.cfg.struct_uniform_prob:
-            noise_level = np.random.rand()
-        else:
-            noise_level = np.random.beta(*self.cfg.struct_beta)
-
-        L = len(data["seqres"])
-
-        #####
-        if self.cfg.rescale_time:
-            p = self.cfg.sched_p
-            noise_level = (
-                self.cfg.sigma_min ** (1 / p)
-                + noise_level * (self.cfg.sigma_max ** (1 / p) - self.cfg.sigma_min ** (1 / p))
-            ) ** p
-        #####
-        
-        data["struct_noise"] = np.ones(L, dtype=np.float32) * noise_level
-        data["struct_weight"] = np.ones(L, dtype=np.float32) * self.cfg.struct_weight
-
+    def center_random_rot(self, data, eps=1e-6):
         # center the structures
         pos = data["struct"]
         mask = data["struct_mask"][..., None]
         com = (pos * mask).sum(-2) / (mask.sum(-2) + eps)
         data["struct"] -= com
 
-        if self.cfg.random_rot:
-            randrot = R.random().as_matrix()
-            data["struct"] @= randrot.T
+        randrot = R.random().as_matrix()
+        data["struct"] @= randrot.T
 
+        idx = np.unique(data['chain'])
+        for i in idx: # note that multi-residue ligands will be wrong
+            conf = data["ref_conf"][data['chain'] == i]
+            conf_mask = data['ref_conf_mask'][data['chain'] == i][...,None]
+            conf -= (conf * conf_mask).sum(-2) / (conf_mask.sum(-2) + eps)
+            randrot = R.random().as_matrix()
+            conf @= randrot.T
+            data["ref_conf"][data['chain'] == i] = conf
+            
+        
+    def add_sequence_noise(self, data, noise_level=None, sup=False):
+        
+        def sample_noise_level():
+            rand = np.random.rand()
+            probs = [
+                self.cfg.seq.get('zero_prob', 0),
+                self.cfg.seq.get('max_prob', 0),
+                self.cfg.seq.get('uniform_prob', 0),
+            ]
+            probs = np.cumsum(probs)
+            
+            if rand < probs[0]:
+                noise_level = 0.0
+            elif rand < probs[1]:
+                noise_level = 1.0
+            elif rand < probs[2]:
+                noise_level = np.random.rand()
+            else:
+                noise_level = np.random.beta(*self.cfg.seq.beta)
+            return noise_level
+            
+        # different noise level per chain
+        L = len(data["seqres"])
+        
+        if noise_level is None:
+            data["seq_noise"] = np.zeros(L, dtype=np.float32)
+            idx = np.unique(data['chain'])
+            for i in idx:
+                data["seq_noise"][data['chain'] == i] = sample_noise_level()
+        else:
+            data["seq_noise"] = np.ones(L, dtype=np.float32) * noise_level
+
+        
+        if sup:
+            data["seq_weight"] = np.ones(L, dtype=np.float32)
+
+        
+    def add_structure_noise(self, data, eps=1e-6, noise_level=None, sup=False):
+        
+
+        def sample_noise_level():
+            rand = np.random.rand()
+            
+            probs = [
+                self.cfg.struct.get('zero_prob', 0),
+                self.cfg.struct.get('max_prob', 0),
+                self.cfg.struct.get('uniform_prob', 0),
+            ]
+            probs = np.cumsum(probs)
+            if rand < probs[0]:
+                noise_level = 0.0
+            elif rand < probs[1]:
+                noise_level = 1.0
+            elif rand < probs[2]:
+                noise_level = np.random.rand()
+            else:
+                noise_level = np.random.beta(*self.cfg.struct.beta)
+
+            #####
+            p = self.cfg.edm.sched_p
+            sigma = (
+                self.cfg.edm.sigma_min ** (1 / p)
+                + noise_level * (self.cfg.edm.sigma_max ** (1 / p) - self.cfg.edm.sigma_min ** (1 / p))
+            ) ** p
+            #####
+        
+            return noise_level, sigma
+        
+        L = len(data["seqres"])
+        if noise_level is None:
+            # data["struct_noise"] = np.zeros(L, dtype=np.float32)
+            # idx = np.unique(data['chain'])
+            # for i in idx:
+            #     data["struct_noise"][data['chain'] == i] = sample_noise_level()
+            t, sigma = sample_noise_level()
+            # data["struct_noise"] = np.ones(L, dtype=np.float32) * sample_noise_level()
+        # else:
+        data["struct_noise"] = np.ones(L, dtype=np.float32) * sigma
+        
+
+        if sup:
+            data["struct_weight"] = np.where(
+                data['mol_type'] == 3, 3.0, 1.0,
+            )
+
+        data['struct_align_mask'] = data['struct_mask'] # force default
+
+        if self.cfg.struct.get('prot_only', False):
+            data["struct_noise"] = np.where(
+                data['mol_type'] == 0,
+                data['struct_noise'],
+                self.cfg.edm.sigma_min,
+            )
+            data["struct_weight"] = np.where(
+                data['mol_type'] == 0,
+                data['struct_weight'],
+                0.0,
+            )
+        
+        if self.cfg.struct.get('lig_only', False):
+            data["struct_noise"] = np.where(
+                data['mol_type'] == 3,
+                data['struct_noise'],
+                self.cfg.edm.sigma_min,
+            )
+            data["struct_weight"] = np.where(
+                data['mol_type'] == 3,
+                data['struct_weight'],
+                0.0,
+            )
+
+        
+
+        self.center_random_rot(data)
+
+        return t
+
+class Codesign(CodesignTask):
+    def register_loss_masks(self):
+        return ["/codesign", "/codesign/lig"]
+
+    def prep_data(self, data, crop=None):
+
+        if crop is not None:
+            data.crop(crop)
+
+        self.add_sequence_noise(data, sup=True)
+        self.add_structure_noise(data, sup=True)
+
+        if np.random.rand() < self.cfg.motif_prob:
+            self.sample_motifs(data)
+            
+        if data["dataset"] == "boltz_lig":
+            data["/codesign/lig"] = np.ones((), dtype=np.float32)
+        else:
+            data["/codesign"] = np.ones((), dtype=np.float32)
+        
+        return data
     

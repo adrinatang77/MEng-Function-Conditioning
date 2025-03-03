@@ -27,6 +27,8 @@ class OpenProtDatasetManager(torch.utils.data.IterableDataset):
 
         self.tasks = {}
         for name in cfg.tasks:  # autoload the train tasks
+            cfg.tasks[name].name = name
+            cfg.tasks[name].seed = cfg.data.seed
             task = autoimport(f"openprot.tasks.{name}")(cfg.tasks[name], self.datasets)
             self.tasks[name] = task
 

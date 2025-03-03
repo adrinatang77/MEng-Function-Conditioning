@@ -19,30 +19,15 @@ from collections import defaultdict
 class CodesignEval(OpenProtEval):
     def setup(self):
         def edm_sched_fn(t):
-            p = self.cfg.struct.sched_p
-            sigma_max = self.cfg.struct.sigma_max
-            sigma_min = self.cfg.struct.sigma_min 
+            p = self.cfg.struct.edm.sched_p
+            sigma_max = self.cfg.struct.edm.sigma_max
+            sigma_min = self.cfg.struct.edm.sigma_min 
             return (
                 sigma_min ** (1 / p)
                 + (1-t) * (sigma_max ** (1 / p) - sigma_min ** (1 / p))
             ) ** p
 
-        
-
-        max_t = self.cfg.struct.max_t
-        def log_sched_fn(t):
-            exp = 10 ** (-2*t)
-            return max_t * (exp - 1e-2) / (1 - 1e-2)
-
-        if self.cfg.struct.sched == 'linear':
-            sched_fn = lambda t: max_t * (1-t)
-        elif self.cfg.struct.sched == 'edm':
-            sched_fn = edm_sched_fn
-        elif self.cfg.struct.sched == 'log':
-            sched_fn = log_sched_fn
-        else:
-            raise Exception("unrecognized schedule")
-
+        sched_fn = edm_sched_fn
         def t_skew_func(t, skew):
             midpoint_y = 0.5 + skew / 2# [0, 1]
             midpoint_x = 0.5 
@@ -63,10 +48,7 @@ class CodesignEval(OpenProtEval):
     def __getitem__(self, idx):
         L = self.cfg.sample_length
         
-        if self.cfg.struct.rescale_time:
-            max_noise = self.cfg.struct.sigma_max
-        else:
-            max_noise = self.cfg.struct.max_t
+        max_noise = self.cfg.struct.edm.sigma_max
         if self.cfg.truncate:
             struct_noise = self.struct_sched_fn(self.cfg.truncate)
             seq_noise = self.seq_sched_fn(self.cfg.truncate)
@@ -324,10 +306,6 @@ class CodesignEval(OpenProtEval):
         logger=None
     ):
 
-        StructureStepper = {
-            'EDMDiffusion': EDMDiffusionStepper,
-            'GaussianFM': GaussianFMStepper,
-        }[self.cfg.struct.type]
         schedules = {
             'structure': self.struct_sched_fn,
             'sequence': self.seq_sched_fn,
@@ -343,7 +321,7 @@ class CodesignEval(OpenProtEval):
         for key in self.cfg.schedule:
             schedules[key] = ArraySchedule(self.cfg.schedule[key])
         sampler = OpenProtSampler(schedules, steppers=[
-            StructureStepper(self.cfg.struct),
+            EDMDiffusionStepper(self.cfg.struct),
             SequenceUnmaskingStepper(self.cfg.seq)
         ])
         

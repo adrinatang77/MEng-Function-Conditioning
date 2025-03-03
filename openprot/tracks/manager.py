@@ -2,7 +2,7 @@ from ..model.model import OpenProtModel
 import torch
 from ..utils.misc_utils import autoimport
 
-
+conserved_keys = ["name", "pad_mask", "residx", "chain", "mol_type"]
 class OpenProtTrackManager(dict):
     def __init__(self, cfg):
         self.cfg = cfg
@@ -21,7 +21,7 @@ class OpenProtTrackManager(dict):
         return data
 
     def embed(self, model: OpenProtModel, batch: dict):
-        inp = batch.copy("name", "pad_mask")
+        inp = batch.copy(*conserved_keys)
         inp["x"] = 0
         inp["x_cond"] = 0
         for track in self.values():
@@ -35,8 +35,8 @@ class OpenProtTrackManager(dict):
         return readout
 
     def corrupt(self, batch: dict, logger=None):
-        noisy_batch = batch.copy("name", "pad_mask")
-        target = batch.copy("name", "pad_mask")
+        noisy_batch = batch.copy(*conserved_keys)
+        target = batch.copy(*conserved_keys)
 
         for track in self.values():
             track.corrupt(batch, noisy_batch, target, logger=logger)

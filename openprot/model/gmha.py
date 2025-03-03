@@ -11,6 +11,35 @@ from ..utils.tensor_utils import (
 )
 from ..utils.rigid_utils import Rotation, Rigid
 
+# Inherit from Function
+class ScatterAttnBias(torch.autograd.Function):
+
+    # Note that forward, setup_context, and backward are @staticmethods
+    @staticmethod
+    def forward(z, bias):
+        return bias[z]
+
+    @staticmethod
+    # inputs is a Tuple of all of the inputs passed to forward.
+    # output is the output of the forward().
+    def setup_context(ctx, inputs, output):
+        z, bias = inputs
+        ctx.save_for_backward(z, bias)
+
+    # This function has only a single output, so it gets only one gradient
+    @staticmethod
+    def backward(ctx, grad_output):
+        # This is a pattern that is very convenient - at the top of backward
+        # unpack saved_tensors and initialize all gradients w.r.t. inputs to
+        # None. Thanks to the fact that additional trailing Nones are
+        # ignored, the return statement is simple even when the function has
+        # optional inputs.
+        z, bias = ctx.saved_tensors
+        grad_bias = torch.zeros_like(bias)
+        B, L, L = z.shape
+        grad_bias.index_add_(0, z.flatten(), grad_output.reshape(B*L*L, -1))
+        return None, grad_bias
+
 
 def rotate_half(x):
     x1, x2 = x.chunk(2, dim=-1)
@@ -66,8 +95,8 @@ class GeometricMultiHeadAttention(nn.Module):
         pairwise_heads=4,
         rope=False,  # rotate scalar queries and keys
         pair_bias=False,  # use pairs to bias
-        pair_bias_norm=False,
         pair_values=False,  # aggregate values from pair reps
+        pair_bias_linear=False, # whether to transform z before pair bias
         ipa_attn=False,  # use point attention
         ipa_values=False,
         ipa_frames=False,  # use frames in point attention
@@ -80,10 +109,12 @@ class GeometricMultiHeadAttention(nn.Module):
         custom_rope=False,
         embed_rots=False,  # whether to embed rots into x at the top
         embed_trans=False,
+        chain_mask=False,
         no_qk_points=4,
         no_v_points=8,
         dropout=0.0,
     ):
+        
         super().__init__()
         self.dim = dim
         self.heads = heads
@@ -91,6 +122,7 @@ class GeometricMultiHeadAttention(nn.Module):
         self.pairwise_heads = pairwise_heads
         self.rope = rope
         self.pair_bias = pair_bias
+        self.pair_bias_linear = pair_bias_linear
         self.pair_values = pair_values
         self.ipa_attn = ipa_attn
         self.ipa_values = ipa_values
@@ -106,6 +138,13 @@ class GeometricMultiHeadAttention(nn.Module):
         self.relpos_attn = relpos_attn
         self.relpos_rope = relpos_rope
         self.custom_rope = custom_rope
+
+        if chain_mask:
+            # self.chain_mask = nn.Embedding(67, heads) 
+            # nn.init.zeros_(self.chain_mask.weight)
+            self.chain_mask = nn.Parameter(torch.zeros(67, heads))
+        else:
+            self.chain_mask = None
 
         ## basic stuff we always need
         self.w_q = nn.Linear(dim, dim, bias=False)
@@ -136,12 +175,12 @@ class GeometricMultiHeadAttention(nn.Module):
         if ipa_values:
             self.w_pt = Linear(heads * no_v_points * 4, dim)
 
-        if pair_bias:
+        if self.pair_bias_linear:
             self.linear_b = Linear(pairwise_dim, heads, bias=False)
 
         if relpos_attn:
             self.linear_relpos_query = nn.Linear(dim, heads * 6 * relpos_freqs, bias=False)
-            # self.null_relpos = nn.Parameter(torch.zeros((6 * relpos_freqs)))
+            
         if relpos_values:
             self.w_r = Linear(heads * 6 * relpos_freqs, dim, init="final", bias=False)
 
@@ -150,10 +189,22 @@ class GeometricMultiHeadAttention(nn.Module):
 
         self.dropout = nn.Dropout(dropout)
 
-    def forward(self, x, z, mask, trans, rots, relpos_mask=None, idx=None):
+    def forward(
+        self,
+        x,
+        z,
+        mask,
+        trans,
+        rots,
+        relpos_mask=None,
+        idx=None,
+        chain=None
+    ):
 
         B, L, D = x.shape
         dev = x.device
+        if trans is None:
+            trans = torch.ones(B, L, 3, device=dev)
         if idx is None:
             idx = torch.arange(L, device=dev)
 
@@ -200,7 +251,9 @@ class GeometricMultiHeadAttention(nn.Module):
         square_mask = relpos_mask[:,None,:] & relpos_mask[:,:,None]
            
         if self.pair_bias:
-            attn = attn + self.linear_b(z).permute(0, 3, 1, 2)
+            if self.pair_bias_linear: bias = self.linear_b(z).permute(0, 3, 1, 2)
+            else: bias = z.permute(0, 3, 1, 2)
+            attn = attn + bias
 
         if self.ipa_attn:
             v_pts, pt_attn = self.get_pt_attn(x, trans, rots)
@@ -224,7 +277,9 @@ class GeometricMultiHeadAttention(nn.Module):
             relpos_attn = torch.einsum("bhid,bijd->bhij", relpos_query, relpos_emb)
             relpos_attn = relpos_attn / math.sqrt(6 * self.relpos_freqs)
             attn = attn + relpos_attn # this is already 0 for masked pairs
-            
+
+        if self.chain_mask is not None:
+            attn = attn + ScatterAttnBias.apply(z, self.chain_mask).permute(0, 3, 1, 2)
         mask = mask.view(B, 1, 1, -1)
         attn = torch.where(mask, attn, -float("inf"))
         attn = torch.softmax(attn, dim=-1)
