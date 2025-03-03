@@ -10,6 +10,9 @@ import numpy as np
 import pickle
 import torch
 
+# {'val/docking/rmsd': 7.711339657122583, 'val/docking/rmsd<5': 0.22, 'val/docking/rmsd<2': 0.01, 'val/docking/distortion': 0.09776145188413685, 'val/docking/clash': 3.2269561, 'val/docking/ref_clash': 3.7151442, 'val/dur': 26.212223744392396, 'val/epoch': 0, 'val/global_step': 0, 'val/iter_step': 10, 'val/count': 100}
+# {'val/docking/rmsd': 7.697705427616439, 'val/docking/rmsd<5': 0.23, 'val/docking/rmsd<2': 0.01, 'val/docking/distortion': 0.07895396786194203, 'val/docking/clash': 3.3001122, 'val/docking/ref_clash': 3.7151442, 'val/dur': 26.72339653968811, 'val/epoch': 0, 'val/global_step': 0, 'val/iter_step': 3, 'val/count': 100}
+
 def masked_center(x, mask=None, eps=1e-5):
     if mask is None:
         return x - x.mean(-2, keepdims=True)
@@ -57,10 +60,9 @@ class DockingEval(OpenProtEval):
             name=f"{pdb_id}_{prot}_",
             seqres=chain.get_seqres(),
             seq_mask=chain.get_seqres_mask(),
-            struct_mask=chain.get_central_atoms()['is_present'], 
-            struct_noise=np.ones(L) * self.cfg.struct.edm.sigma_max,
-            ref_conf=masked_center(coords, coords_mask),
-            ref_conf_mask=coords_mask,
+            struct=masked_center(coords, coords_mask), 
+            struct_mask=coords_mask,
+            struct_noise=np.ones(L) * self.cfg.struct.edm.sigma_min,
             residx=chain.residues['res_idx'],
             chain=np.ones(L) * chain.idx,
         )
@@ -157,8 +159,15 @@ class DockingEval(OpenProtEval):
             
             rmsd = data['ref'].ligand_rmsd(struct)
             distortion = struct.get_chain(1).get_residue(0).get_distortion()
-            print(rmsd, distortion)
+            clash = struct.clash_score(ca_only=True)
+            ref_clash = data['ref'].clash_score(ca_only=True)
+            print(rmsd, distortion, clash, ref_clash)
             if logger is not None:
                 logger.log(f"{self.cfg.name}/rmsd", rmsd)
+                logger.log(f"{self.cfg.name}/rmsd<5", rmsd < 5)
+                logger.log(f"{self.cfg.name}/rmsd<2", rmsd < 2)
                 logger.log(f"{self.cfg.name}/distortion", distortion)
+                logger.log(f"{self.cfg.name}/clash", clash)
+                logger.log(f"{self.cfg.name}/ref_clash", ref_clash)
+                
             

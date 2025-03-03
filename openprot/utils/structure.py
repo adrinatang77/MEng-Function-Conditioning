@@ -428,6 +428,19 @@ class Structure:
         
         return chain
 
+    def clash_score(self, ca_only=False, prot_idx=0, lig_idx=1):
+        
+        lig = self.get_chain(lig_idx)
+        lig_atoms = lig.atoms['coords'][lig.atoms['is_present']]
+        prot = self.get_chain(prot_idx)
+        if ca_only:
+            prot_atoms = prot.get_central_atoms()
+        else:
+            prot_atoms = prot.atoms
+        prot_atoms = prot_atoms['coords'][prot_atoms['is_present']]
+        dmat = np.square(lig_atoms[None] - prot_atoms[:,None]).sum(-1) ** 0.5
+        return dmat.min()
+
     def ligand_rmsd(self, other, prot_idx=0, lig_idx=1):
         my_prot = self.get_chain(prot_idx)
         my_prot = my_prot.get_central_atoms()
