@@ -1,14 +1,14 @@
-ckpt:
+ckpt: workdir/codesign+seqgen-linear-tacc-big/last.ckpt
 pretrained:  #  load weights from here first
 validate: false # if true, only validate the model, don't train
 logger:
     # set to true to log to neptune.ai
     neptune: true
-    run_id: 
+    run_id: STRUC1-728
     # please change "test" to something unique to your task
     project: openprot/struct-merge
     # will log to workdir and neptune.ai with this name
-    name: codesign-linear-tacc
+    name: codesign+seqgen-linear-tacc-big
     # if not null, will duplicate stdout and stderr to workdir/{name}/{logfile}
     logfile: std.out
     # if null, will log every epoch, otherwise every this number of steps
@@ -95,7 +95,7 @@ tasks:
         sigma_min: ${tracks.StructureTrack.t_emb_min}
         rots: false
 
-        fraction: 0.1
+        fraction: 0.05
         weight: 1.0
         struct_weight: 1.0
         struct_beta: [1, 2]
@@ -116,7 +116,7 @@ tasks:
                 seed: 424
 
     InverseFolding:
-        fraction: 0.1
+        fraction: 0.05
         weight: 1.0
         beta: [1, 2]
         uniform_prob: 1.0
@@ -135,7 +135,7 @@ tasks:
                 seed: 384
 
     Codesign:
-        fraction: 0.8
+        fraction: 0.4
         weight: 1.0
         
         seq_weight: 1.0
@@ -165,6 +165,18 @@ tasks:
                 start: 0
                 seed: 384
 
+    SequenceUnmasking: 
+        fraction: 0.5
+        weight: 1.0
+        beta: [3, 9]
+        uniform_prob: 1.0
+        seed: 137
+        reweight: linear
+        datasets:
+            uniref:
+                fraction: 1.0
+                start: 0
+                seed: 40
 
 evals: 
     codesign_skew+1:
@@ -308,11 +320,11 @@ model: # custom args
     multiflow_ckpt: null # ./weights/last.ckpt
     ema: false
     checkpoint: false
-    dim: 512
+    dim: 768
     pairwise_dim: 128
-    heads: 16
+    heads: 24
     pairwise_heads: 4
-    blocks: 30
+    blocks: 48
     dropout: 0.2
     token_dropout: 0.0
     

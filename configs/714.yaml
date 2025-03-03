@@ -1,4 +1,4 @@
-ckpt:
+ckpt: 
 pretrained:  #  load weights from here first
 validate: false # if true, only validate the model, don't train
 logger:
@@ -8,7 +8,7 @@ logger:
     # please change "test" to something unique to your task
     project: openprot/struct-merge
     # will log to workdir and neptune.ai with this name
-    name: codesign-linear-tacc
+    name: codesign-linear-tacc-init
     # if not null, will duplicate stdout and stderr to workdir/{name}/{logfile}
     logfile: std.out
     # if null, will log every epoch, otherwise every this number of steps
@@ -79,12 +79,6 @@ datasets:
         blacklist: 
         plddt_thresh: 
         index: /scratch/projects/cgai/openprot/afdbreps_l-256_plddt_80.txt
-    uniref:
-        type: UnirefDataset
-        path: /scratch/projects/cgai/openprot/data/uniref50.fasta
-        # path: /data/cb/scratch/datasets/uniref50.fasta
-        index: /scratch/projects/cgai/openprot/data/uniref50.index  
-        # index: /data/cb/scratch/datasets/uniref50.idx.npy  
     
 tasks:
         
@@ -165,11 +159,30 @@ tasks:
                 start: 0
                 seed: 384
 
-
 evals: 
+    cameo22_diff:
+        type: StructurePredictionEval
+        path: /scratch/projects/cgai/openprot/data/pdb_npz
+        split: splits/cameo2022.csv
+        diffusion: true
+        augmented: false
+        align: false
+        demean: true
+        batch: 100
+        struct:
+            rescale_time: ${tracks.StructureTrack.rescale_time}
+            sched_p: ${tracks.StructureTrack.t_emb_p}
+            sigma_max: ${tracks.StructureTrack.t_emb_max}
+            sigma_min: ${tracks.StructureTrack.t_emb_min}
+            type: ${tracks.StructureTrack.diffusion.type}
+            temp_factor: 0.5
+            sde_weight: 1.0
+            data_sigma: ${tracks.StructureTrack.diffusion.data_sigma}
+            sched: edm
+        steps: 50
     codesign_skew+1:
         type: CodesignEval
-        num_samples: 100
+        num_samples: 10
         batch: 100
         sample_length: 128
         steps: 200

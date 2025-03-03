@@ -1,5 +1,5 @@
-ckpt:
-pretrained:  #  load weights from here first
+ckpt: 
+pretrained: #  load weights from here first
 validate: false # if true, only validate the model, don't train
 logger:
     # set to true to log to neptune.ai
@@ -8,12 +8,12 @@ logger:
     # please change "test" to something unique to your task
     project: openprot/struct-merge
     # will log to workdir and neptune.ai with this name
-    name: codesign-linear-tacc
+    name: codesign-new-lddt
     # if not null, will duplicate stdout and stderr to workdir/{name}/{logfile}
     logfile: std.out
     # if null, will log every epoch, otherwise every this number of steps
     train_log_freq: 100
-    val_log_freq: null 
+    val_log_freq:  
     ckpt_freq: 50000000000
     save_freq: 1000
 trainer:
@@ -36,9 +36,9 @@ trainer:
 data: 
     num_workers: 8
     buffer: 1000
-    max_sq_toks: null # 400000
+    max_sq_toks:  # 400000
     max_toks: 8192
-    batch: null
+    batch: 
     crop: 384
     seed: 137
 
@@ -76,16 +76,9 @@ datasets:
         type: AFDBDataset
         path: /scratch/projects/cgai/openprot/data/afdb_rep_v4/afdb_rep_v4
         annotations: /scratch/projects/cgai/openprot/data/afdb_rep_v4.pkl.gz
-        blacklist: 
-        plddt_thresh: 
+        blacklist:  
+        plddt_thresh:  
         index: /scratch/projects/cgai/openprot/afdbreps_l-256_plddt_80.txt
-    uniref:
-        type: UnirefDataset
-        path: /scratch/projects/cgai/openprot/data/uniref50.fasta
-        # path: /data/cb/scratch/datasets/uniref50.fasta
-        index: /scratch/projects/cgai/openprot/data/uniref50.index  
-        # index: /data/cb/scratch/datasets/uniref50.idx.npy  
-    
 tasks:
         
     StructureGeneration:
@@ -123,7 +116,7 @@ tasks:
         seed: 137
         random_rot: true
         sigma: ${tracks.StructureTrack.t_emb_min}
-        reweight: linear
+        reweight: false
         datasets:
             pdb:
                 fraction: 0.25
@@ -140,14 +133,14 @@ tasks:
         
         seq_weight: 1.0
         seq_beta: [1, 2]
-        seq_max_noise_prob: 0.05
-        seq_uniform_prob: 0.95
-        seq_reweight: linear
+        seq_max_noise_prob: 0.0
+        seq_uniform_prob: 1.0
+        seq_reweight:
         
         struct_weight: 1.0
         struct_beta: [1, 2]
-        struct_max_noise_prob: 0.05
-        struct_uniform_prob: 0.95
+        struct_max_noise_prob: 0.0
+        struct_uniform_prob: 1.0
         
         seed: 137
         random_rot: true
@@ -164,8 +157,8 @@ tasks:
                 fraction: 0.75
                 start: 0
                 seed: 384
-
-
+            
+            
 evals: 
     codesign_skew+1:
         type: CodesignEval
@@ -173,9 +166,7 @@ evals:
         batch: 100
         sample_length: 128
         steps: 200
-        skew: 1.0
-        truncate: 
-        dir:
+        skew: 1
         struct:
             rescale_time: ${tracks.StructureTrack.rescale_time}
             sched_p: ${tracks.StructureTrack.t_emb_p}
@@ -188,75 +179,34 @@ evals:
             sched: edm
             max_t: 0.95
         seq:
-            temp_start: 0.1
-            temp_end: 0.1
+            temp: 0.1
             strategy: random
-            noise: 20
+            # noise: 20
             logits: standard
-            adjust_unmasked: false # pseudo-masked logits
-            replace_unmasked: false # logit of current toks
-            topk_temp: 0.0
-            allow_mutation: false
-        schedule: {}
+            adjust_unmasked: false
+            # replace_unmasked: false
         run_designability: true
         run_pmpnn_designability: true
         run_diversity: true
         run_secondary: true
-        run_plot: true
+        run_plot: false
 
-    codesign_skew+0:
-        type: CodesignEval
-        num_samples: 100
+    codesign_invfold: 
+        type: InverseFoldingEval
+        # inv fold model gets 34%, codesign-mixed-4 gets 22%
+        # path: workdir/codesign-mixed4/eval_step0/struct_gen_sde_0.5
+        path: tmp-codesign-invfold # pmpnn gets 87
+        split: 
+        temp: 0.1
+        sigma: ${tasks.InverseFolding.sigma}
         batch: 100
-        sample_length: 128
-        steps: 200
-        skew: 0.0
-        truncate:
-        dir:
-        struct:
-            rescale_time: ${tracks.StructureTrack.rescale_time}
-            sched_p: ${tracks.StructureTrack.t_emb_p}
-            sigma_max: ${tracks.StructureTrack.t_emb_max}
-            sigma_min: ${tracks.StructureTrack.t_emb_min}
-            type: ${tracks.StructureTrack.diffusion.type}
-            temp_factor: 0.5
-            sde_weight: 1.0
-            data_sigma: ${tracks.StructureTrack.diffusion.data_sigma}
-            sched: edm
-            max_t: 0.95
-        seq:
-            temp_start: 1.0
-            temp_end: 0.1
-            strategy: dplm
-            noise: 20
-            logits: gumbel
-            adjust_unmasked: false # pseudo-masked logits
-            replace_unmasked: true # logit of current toks
-            topk_temp: 0.0
-            allow_mutation: false
-        schedule: {}
-        run_designability: true
-        run_pmpnn_designability: true
-        run_diversity: true
-        run_secondary: true
-        run_plot: true
-
-    seq_gen_dplm: 
-        type: SequenceGenerationEval
-        num_samples: 100
-        sample_length: 300
-        batch: 100
-        steps: 300
-        temp_start: 0.5
-        temp_end: 0.5
-        strategy: dplm
-        logits: gumbel
-        remask: 0.0
-        topk_temp: 0.0
-        replace_unmasked: false
+        steps: 
+        limit: 100
+        logits: standard
+        strategy: random
         adjust_unmasked: false
-        allow_mutation: false
-        
+        run_pmpnn: false
+
 
 tracks:
     # register tracks here
@@ -270,20 +220,23 @@ tracks:
         postcondition: true
         int_loss_weight: 0.5
         embed_sigma: false
+        rots: false
+        clip_t: 0.0
         rescale_time: true
         t_emb_p: 7
         t_emb_max: 160
         t_emb_min: 0.05
         readout_adaLN: false
-        embed_mask: false
-        interp_aligned_loss: false
-        loss:
+
+        
+        losses:
+            lddt: 1.0
+            # distogram: 0.3
             mse: 1.0
-            aligned_mse: 0.0
-            lddt: 0.0
         diffusion:
             type: EDMDiffusion
             data_sigma: 15
+            aligned_loss: true
             train_align: false
             rescale_time: ${tracks.StructureTrack.rescale_time}
         
@@ -297,15 +250,15 @@ tracks:
         tied_weights: false
         embed_t: false
         readout: trunk
-        init: 0.02
+        init: 
         all_atom: false
 
 
 model: # custom args
-    dplm_ckpt: null
+    dplm_ckpt: 
     multiflow: false
     multiflow_cfg: multiflow_config.yaml
-    multiflow_ckpt: null # ./weights/last.ckpt
+    multiflow_ckpt: # ./weights/last.ckpt
     ema: false
     checkpoint: false
     dim: 512
@@ -315,6 +268,23 @@ model: # custom args
     blocks: 30
     dropout: 0.2
     token_dropout: 0.0
+
+    
+    trunk_relpos_params: [32, 0.1, 10]
+    
+    # topology of the network
+    pair_blocks:
+        start: 0
+        end: 0
+        interval: 4
+    relpos_blocks:
+        start: 0
+        end: 0
+        interval: 4
+    update_blocks:
+        start: 0
+        end: 0
+        interval: 4
     
     trunk_relpos: false
     trunk_frame_update: false
@@ -330,15 +300,23 @@ model: # custom args
     # whether non-pair blocks still have pair bias
     block_pair_bias: false 
     block_pair_values: false
+    pair_ffn: true
+    pair_values: true
+    pair_bias: true
+    pair_ff_expand: 4
     tri_mul: false
     rope: false
     custom_rope: true
+    
+
+    ### struct module args
+    struct_module: false
+    readout_trans_before_sm: false
+    trans_rescale: false
 
     ## adaLN args
     trunk_adaLN: true
     
-    
-
 optimizer:
     type: AdamW
     lr: 1e-4
