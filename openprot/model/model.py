@@ -146,6 +146,7 @@ class OpenProtTransformerBlock(nn.Module):
         rots_type="vec",
         dropout=0.0,
         token_dropout=0.0,
+        cross_attn=False,
     ):
         super().__init__()
         self.mha = GeometricMultiHeadAttention(
@@ -172,6 +173,7 @@ class OpenProtTransformerBlock(nn.Module):
             no_qk_points=no_qk_points,
             no_v_points=no_v_points,
             dropout=token_dropout,
+            cross_attn=cross_attn,
         )
         self.ff = FeedForward(dim, ff_expand * dim, layers=ff_layers)
 
@@ -252,6 +254,7 @@ class OpenProtTransformerBlock(nn.Module):
         rots=None,
         idx=None,
         chain=None,
+        mol_type=None,
     ):
 
         ### no pair2sequence
@@ -277,6 +280,7 @@ class OpenProtTransformerBlock(nn.Module):
                 relpos_mask=relpos_mask,
                 idx=idx,
                 chain=chain,
+                mol_type=mol_type,
             ),
             gate_mha,
         ))
@@ -396,9 +400,10 @@ class OpenProtModel(nn.Module):
             dim=cfg.dim,
             ff_expand=cfg.ff_expand,
             heads=cfg.heads,
-            custom_rope=not cfg.all_atom,
+            custom_rope=cfg.custom_rope,
             adaLN=cfg.adaLN,
-            chain_mask=cfg.all_atom,
+            chain_mask=cfg.chain_mask,
+            cross_attn=cfg.cross_attn,
             dropout=cfg.dropout,
             token_dropout=cfg.token_dropout,
         )
@@ -442,10 +447,20 @@ class OpenProtModel(nn.Module):
         x_cond = inp.get("x_cond", None)
         postcond_fn = inp.get("postcond_fn", None)
         struct_mask = inp.get("struct_mask", None)
+        mol_type = inp.get("mol_type", None)
         
         for i, block in enumerate(self.blocks):
 
-            x = block(x, z, trans, mask, x_cond=x_cond, idx=residx, chain=chain)[0]
+            x = block(
+                x, 
+                z,
+                trans,
+                mask,
+                x_cond=x_cond,
+                idx=residx,
+                chain=chain,
+                mol_type=mol_type
+            )[0]
 
         
         return {"x": x, "z": z, "trans": trans, "rots": rots}

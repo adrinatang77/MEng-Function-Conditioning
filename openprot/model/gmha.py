@@ -113,6 +113,7 @@ class GeometricMultiHeadAttention(nn.Module):
         no_qk_points=4,
         no_v_points=8,
         dropout=0.0,
+        cross_attn=False,
     ):
         
         super().__init__()
@@ -138,10 +139,21 @@ class GeometricMultiHeadAttention(nn.Module):
         self.relpos_attn = relpos_attn
         self.relpos_rope = relpos_rope
         self.custom_rope = custom_rope
+        self.cross_attn = cross_attn
+
+        assert not self.embed_rots
+        assert not self.embed_trans
+        assert not self.rope
+        assert not self.relpos_rope
+        assert not self.pair_bias
+        assert not self.relpos_attn
+        assert not self.relpos_values
+        assert not self.ipa_attn
+        assert not self.ipa_values
+        assert not self.pair_values
+        assert not self.pair_bias_linear
 
         if chain_mask:
-            # self.chain_mask = nn.Embedding(67, heads) 
-            # nn.init.zeros_(self.chain_mask.weight)
             self.chain_mask = nn.Parameter(torch.zeros(67, heads))
         else:
             self.chain_mask = None
@@ -150,45 +162,16 @@ class GeometricMultiHeadAttention(nn.Module):
         self.w_q = nn.Linear(dim, dim, bias=False)
         self.w_k = nn.Linear(dim, dim, bias=False)
         self.w_v = nn.Linear(dim, dim, bias=False)
-        self.w_o = nn.Linear(dim, dim, bias=False)
 
-        if embed_rots:
-            self.linear_rots = nn.Sequential(
-                nn.Linear(9, dim), nn.ReLU(), nn.Linear(dim, dim)
-            )
-        if embed_trans:
-            self.linear_trans = nn.Sequential(
-                nn.Linear(3, dim), nn.ReLU(), nn.Linear(dim, dim)
-            )
-
-        if ipa_attn:
-            hpq = heads * no_qk_points * 3
-            self.linear_q_points = Linear(dim, hpq)
-
-            hpkv = heads * (no_qk_points + no_v_points) * 3
-            self.linear_kv_points = Linear(dim, hpkv)
-
-            self.head_weights = nn.Parameter(torch.zeros((heads)))
-            ipa_point_weights_init_(self.head_weights)
-            self.softplus = nn.Softplus()
-
-        if ipa_values:
-            self.w_pt = Linear(heads * no_v_points * 4, dim)
-
-        if self.pair_bias_linear:
-            self.linear_b = Linear(pairwise_dim, heads, bias=False)
-
-        if relpos_attn:
-            self.linear_relpos_query = nn.Linear(dim, heads * 6 * relpos_freqs, bias=False)
-            
-        if relpos_values:
-            self.w_r = Linear(heads * 6 * relpos_freqs, dim, init="final", bias=False)
-
-        if pair_values:
-            self.w_z = Linear(heads * pairwise_dim, dim)
+        if self.cross_attn:
+            self.cross_w_q = nn.Linear(dim, dim, bias=False)
+            self.cross_w_k = nn.Linear(dim, dim, bias=False)
+            self.cross_w_v = nn.Linear(dim, dim, bias=False)
 
         self.dropout = nn.Dropout(dropout)
+        self.w_o = nn.Linear(dim, dim, bias=False)
 
+       
     def forward(
         self,
         x,
@@ -198,88 +181,43 @@ class GeometricMultiHeadAttention(nn.Module):
         rots,
         relpos_mask=None,
         idx=None,
-        chain=None
+        chain=None,
+        mol_type=None,
     ):
 
         B, L, D = x.shape
         dev = x.device
-        if trans is None:
-            trans = torch.ones(B, L, 3, device=dev)
         if idx is None:
             idx = torch.arange(L, device=dev)
-
-        if self.embed_rots:
-            x = x + self.linear_rots(rots.view(B, L, -1))
-
-        if self.embed_trans:
-            x = x + self.linear_trans(trans)
-
-        query = self.w_q(x).view(B, L, self.heads, -1).transpose(1, 2)  # B H L D
-        key = self.w_k(x).view(B, L, self.heads, -1).transpose(1, 2)
-
-        if self.rope:
-            raise Exception("this rope hasn't been used in a while")
-            freqs_cis = rope.compute_freqs_cis(D // self.heads, L, device=dev)
-            query, key = rope.apply_rotary_emb(query, key, freqs_cis)
-
-        elif self.custom_rope:
-            query = rotary_emb(query, idx[:,None], query.shape[-1] // 2, 10000, 1)
-            key = rotary_emb(key, idx[:,None], key.shape[-1] // 2, 10000, 1)
-
-        elif self.relpos_rope:
-            query = rope_3d(
-                query,
-                trans[:, None],
-                max_period=self.relpos_max,
-                min_period=self.relpos_min
-            )
-            key = rope_3d(
-                key,
-                trans[:, None],
-                max_period=self.relpos_max,
-                min_period=self.relpos_min
-            )
-
-        attn = query @ key.mT / math.sqrt(D / self.heads)  # B H L L
-
         if mask is None:
             mask = torch.ones(B, L, D, dtype=bool, device=dev)
 
-        if relpos_mask is None:
-            relpos_mask = mask
         
-        square_mask = relpos_mask[:,None,:] & relpos_mask[:,:,None]
-           
-        if self.pair_bias:
-            if self.pair_bias_linear: bias = self.linear_b(z).permute(0, 3, 1, 2)
-            else: bias = z.permute(0, 3, 1, 2)
-            attn = attn + bias
+        query = self.w_q(x).view(B, L, self.heads, -1).transpose(1, 2)  # B H L D
+        key = self.w_k(x).view(B, L, self.heads, -1).transpose(1, 2)
 
-        if self.ipa_attn:
-            v_pts, pt_attn = self.get_pt_attn(x, trans, rots)
-            attn = attn + torch.where(square_mask[:,None], pt_attn, 0.0)
-            # attn = attn * math.sqrt(1/3)
+        if self.custom_rope:
+            query = rotary_emb(query, idx[:,None], query.shape[-1] // 2, 10000, 1)
+            key = rotary_emb(key, idx[:,None], key.shape[-1] // 2, 10000, 1)
 
-        if self.relpos_attn or self.relpos_values:
-            relpos = trans[:, None] - trans[:, :, None]
-            relpos_emb = sinusoidal_embedding(
-                relpos, 
-                n_freqs=self.relpos_freqs,
-                max_period=self.relpos_max,
-                min_period=self.relpos_min,
-            )
-            relpos_emb = relpos_emb.view(B, L, L, -1)
-            relpos_emb = torch.where(square_mask[...,None], relpos_emb, 0.0)
+        attn = query @ key.mT / math.sqrt(D / self.heads)  # B H L L
 
-        if self.relpos_attn:
-            relpos_query = self.linear_relpos_query(x)
-            relpos_query = relpos_query.view(B, L, self.heads, -1).transpose(1, 2)
-            relpos_attn = torch.einsum("bhid,bijd->bhij", relpos_query, relpos_emb)
-            relpos_attn = relpos_attn / math.sqrt(6 * self.relpos_freqs)
-            attn = attn + relpos_attn # this is already 0 for masked pairs
-
+        if self.cross_attn:
+            cross_query = self.cross_w_q(x).view(B, L, self.heads, -1).transpose(1, 2)  
+            cross_key = self.cross_w_k(x).view(B, L, self.heads, -1).transpose(1, 2)
+            cross_attn = cross_query @ cross_key.mT / math.sqrt(D / self.heads)  # B H L L
+        
         if self.chain_mask is not None:
             attn = attn + ScatterAttnBias.apply(z, self.chain_mask).permute(0, 3, 1, 2)
+        
+        if self.cross_attn:
+            same_poly_chain_mask = (chain[:,None] == chain[:,:,None])
+            same_poly_chain_mask &= (mol_type == 0)[:,None]
+            attn = torch.where(
+                same_poly_chain_mask.unsqueeze(1),
+                attn,
+                cross_attn
+            )
         mask = mask.view(B, 1, 1, -1)
         attn = torch.where(mask, attn, -float("inf"))
         attn = torch.softmax(attn, dim=-1)
@@ -288,13 +226,15 @@ class GeometricMultiHeadAttention(nn.Module):
         # seem a bit unusual, but is taken from the original Transformer paper.
         attn = self.dropout(attn) 
 
+        if self.cross_attn:
+            self_attn = torch.where(same_poly_chain_mask.unsqueeze(1), attn, 0.0)
+            cross_attn = torch.where(same_poly_chain_mask.unsqueeze(1), 0.0, attn)
+            attn = self_attn
+        
         ## scalar values
         value = self.w_v(x).view(B, L, self.heads, -1).transpose(1, 2)
-        if self.relpos_rope:
-            out = rope_3d_gather(
-                attn, value, trans[:, None], max_period=self.relpos_max, min_period=self.relpos_min
-            )
-        elif self.custom_rope:
+        
+        if self.custom_rope:
             value = rotary_emb(value, idx[:,None], value.shape[-1] // 2, 10000, 1)
             out = attn @ value
             out = rotary_emb(out, -idx[:,None], out.shape[-1] // 2, 10000, 1)
@@ -302,111 +242,13 @@ class GeometricMultiHeadAttention(nn.Module):
             out = attn @ value
         out = out.transpose(1, 2).reshape(B, L, D)
 
+        if self.cross_attn:
+            cross_value = self.cross_w_v(x).view(B, L, self.heads, -1).transpose(1, 2)
+            cross_out = cross_attn @ cross_value
+            cross_out = cross_out.transpose(1, 2).reshape(B, L, D)
+            out = out + cross_out
+            
+
         out = self.w_o(out)
-
-        if self.pair_values:
-            z_out = torch.einsum("bhij,bijd->bihd", attn, z)
-            z_out = z_out.reshape(B, L, -1)
-            out = out + self.w_z(z_out)
-
-        if self.ipa_values:
-            ipa_out = self.get_ipa_values(attn, v_pts, trans, rots)
-            out = out + self.w_pt(ipa_out) * relpos_mask[...,None].float()
-
-        if self.relpos_values:
-            relpos_out = torch.einsum("bhij,bijd->bihd", attn, relpos_emb)
-            relpos_out = relpos_out.reshape(B, L, -1)
-            # if relpos_mask is not None:
-            #     out = out + torch.where(relpos_mask[...,None], self.w_r(relpos_out), 0.0)
-            # else:
-            out = out + self.w_r(relpos_out) * relpos_mask[...,None].float()
-            # the mask here should not matter
-
+        
         return out
-
-    def get_pt_attn(self, x, trans, rots):
-
-        if self.ipa_frames:
-            r = Rigid(trans=trans, rots=Rotation(rot_mats=rots))
-
-        q_pts = self.linear_q_points(x)
-
-        # This is kind of clunky, but it's how the original does it
-        # [*, N_res, H * P_q, 3]
-        q_pts = torch.split(q_pts, q_pts.shape[-1] // 3, dim=-1)
-        q_pts = torch.stack(q_pts, dim=-1)
-
-        if self.ipa_frames:
-            q_pts = r[..., None].apply(q_pts)
-        else:
-            q_pts = trans[:, :, None] + q_pts
-
-        # [*, N_res, H, P_q, 3]
-        q_pts = q_pts.view(q_pts.shape[:-2] + (self.heads, self.no_qk_points, 3))
-
-        # [*, N_res, H * (P_q + P_v) * 3]
-        kv_pts = self.linear_kv_points(x)
-
-        # [*, N_res, H * (P_q + P_v), 3]
-        kv_pts = torch.split(kv_pts, kv_pts.shape[-1] // 3, dim=-1)
-        kv_pts = torch.stack(kv_pts, dim=-1)
-
-        if self.ipa_frames:
-            kv_pts = r[..., None].apply(kv_pts)
-        else:
-            kv_pts = trans[:, :, None] + kv_pts
-
-        # [*, N_res, H, (P_q + P_v), 3]
-        kv_pts = kv_pts.view(kv_pts.shape[:-2] + (self.heads, -1, 3))
-
-        # [*, N_res, H, P_q/P_v, 3]
-        k_pts, v_pts = torch.split(
-            kv_pts, [self.no_qk_points, self.no_v_points], dim=-2
-        )
-
-        # [*, N_res, N_res, H, P_q, 3]
-        pt_att = q_pts.unsqueeze(-4) - k_pts.unsqueeze(-5)
-        pt_att = pt_att**2
-
-        # [*, N_res, N_res, H, P_q]
-        pt_att = sum(torch.unbind(pt_att, dim=-1))
-        head_weights = self.softplus(self.head_weights).view(
-            *((1,) * len(pt_att.shape[:-2]) + (-1, 1))
-        )
-        head_weights = head_weights * math.sqrt(2.0 / (self.no_qk_points * 9.0))
-
-        pt_att = pt_att * head_weights
-
-        # [*, N_res, N_res, H]
-        pt_att = torch.sum(pt_att, dim=-1) * (-0.5)
-
-        # [*, H, N_res, N_res]
-        pt_att = permute_final_dims(pt_att, (2, 0, 1))
-
-        return v_pts, pt_att
-
-    def get_ipa_values(self, attn, v_pts, trans, rots):
-        o_pt = torch.sum(
-            (
-                attn[..., None, :, :, None]
-                * permute_final_dims(v_pts, (1, 3, 0, 2))[..., None, :, :]
-            ),
-            dim=-2,
-        )
-
-        # [*, N_res, H, P_v, 3]
-        o_pt = permute_final_dims(o_pt, (2, 0, 3, 1))
-        if self.ipa_frames:
-            r = Rigid(trans=trans, rots=Rotation(rot_mats=rots))
-            o_pt = r[..., None, None].invert_apply(o_pt)
-
-        else:
-            o_pt = o_pt - trans[:, :, None, None]
-
-        # [*, N_res, H * P_v]
-        o_pt_norm = flatten_final_dims(torch.sqrt(torch.sum(o_pt**2, dim=-1) + 1e-6), 2)
-
-        # [*, N_res, H * P_v, 3]
-        o_pt = o_pt.reshape(*o_pt.shape[:-3], -1, 3)
-
-        return torch.cat((*torch.unbind(o_pt, dim=-1), o_pt_norm), dim=-1)
