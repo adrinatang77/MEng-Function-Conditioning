@@ -207,8 +207,6 @@ class GeometricMultiHeadAttention(nn.Module):
             cross_key = self.cross_w_k(x).view(B, L, self.heads, -1).transpose(1, 2)
             cross_attn = cross_query @ cross_key.mT / math.sqrt(D / self.heads)  # B H L L
         
-        if self.chain_mask is not None:
-            attn = attn + ScatterAttnBias.apply(z, self.chain_mask).permute(0, 3, 1, 2)
         
         if self.cross_attn:
             same_poly_chain_mask = (chain[:,None] == chain[:,:,None])
@@ -218,6 +216,10 @@ class GeometricMultiHeadAttention(nn.Module):
                 attn,
                 cross_attn
             )
+
+        if self.chain_mask is not None:
+            attn = attn + ScatterAttnBias.apply(z, self.chain_mask).permute(0, 3, 1, 2)
+        
         mask = mask.view(B, 1, 1, -1)
         attn = torch.where(mask, attn, -float("inf"))
         attn = torch.softmax(attn, dim=-1)

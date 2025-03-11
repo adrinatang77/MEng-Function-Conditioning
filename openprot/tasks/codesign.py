@@ -110,32 +110,36 @@ class CodesignTask(OpenProtTask):
                 noise_level = np.random.rand()
             else:
                 noise_level = np.random.beta(*self.cfg.struct.beta)
+            
+            return noise_level
 
-            #####
+        def t_to_sigma(t):
             p = self.cfg.edm.sched_p
             sigma = (
                 self.cfg.edm.sigma_min ** (1 / p)
-                + noise_level * (self.cfg.edm.sigma_max ** (1 / p) - self.cfg.edm.sigma_min ** (1 / p))
+                + t * (self.cfg.edm.sigma_max ** (1 / p) - self.cfg.edm.sigma_min ** (1 / p))
             ) ** p
-            #####
+            return sigma
         
-            return noise_level, sigma
+            
         
         L = len(data["seqres"])
         if noise_level is None:
-            # data["struct_noise"] = np.zeros(L, dtype=np.float32)
-            # idx = np.unique(data['chain'])
-            # for i in idx:
-            #     data["struct_noise"][data['chain'] == i] = sample_noise_level()
-            t, sigma = sample_noise_level()
-            # data["struct_noise"] = np.ones(L, dtype=np.float32) * sample_noise_level()
-        # else:
-        data["struct_noise"] = np.ones(L, dtype=np.float32) * sigma
+            if self.cfg.struct.get('async', False):
+                data["struct_noise"] = np.zeros(L, dtype=np.float32)
+                idx = np.unique(data['chain'])
+                for i in idx:
+                    data["struct_noise"][data['chain'] == i] = t_to_sigma(sample_noise_level())
+            else:
+                noise_level = sample_noise_level()
+                data["struct_noise"] = np.ones(L, dtype=np.float32) * t_to_sigma(noise_level)
+        else:
+            data["struct_noise"] = np.ones(L, dtype=np.float32) * t_to_sigma(noise_level)
         
 
         if sup:
             data["struct_weight"] = np.where(
-                data['mol_type'] == 3, 3.0, 1.0,
+                data['mol_type'] != 0, 3.0, 1.0,
             )
 
         data['struct_align_mask'] = data['struct_mask'] # force default
@@ -151,24 +155,26 @@ class CodesignTask(OpenProtTask):
                 data['struct_weight'],
                 0.0,
             )
+            data['struct_align_mask'] = (data['mol_type'] == 0).astype(float) * data['struct_mask']
         
         if self.cfg.struct.get('lig_only', False):
             data["struct_noise"] = np.where(
-                data['mol_type'] == 3,
+                data['mol_type'] != 0,
                 data['struct_noise'],
                 self.cfg.edm.sigma_min,
             )
             data["struct_weight"] = np.where(
-                data['mol_type'] == 3,
+                data['mol_type'] != 0,
                 data['struct_weight'],
                 0.0,
             )
+            data['struct_align_mask'] = (data['mol_type'] != 0).astype(float) * data['struct_mask']
 
         
 
         self.center_random_rot(data)
 
-        return t
+        return noise_level
 
 class Codesign(CodesignTask):
     def register_loss_masks(self):

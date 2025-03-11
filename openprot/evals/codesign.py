@@ -49,14 +49,14 @@ class CodesignEval(OpenProtEval):
         L = self.cfg.sample_length
         
         max_noise = self.cfg.struct.edm.sigma_max
-        if self.cfg.truncate:
+        if self.cfg.get('truncate', False):
             struct_noise = self.struct_sched_fn(self.cfg.truncate)
             seq_noise = self.seq_sched_fn(self.cfg.truncate)
         else:
             struct_noise = max_noise
             seq_noise = 1
 
-        if self.cfg.dir is not None:
+        if self.cfg.get('dir', None) is not None:
             with open(f"{self.cfg.dir}/sample{idx}.pdb") as f:
                 prot = protein.from_pdb_string(f.read())
             
@@ -325,7 +325,7 @@ class CodesignEval(OpenProtEval):
             SequenceUnmaskingStepper(self.cfg.seq)
         ])
         
-        sample, extra = sampler.sample(model, noisy_batch, self.cfg.steps, trunc=self.cfg.truncate)
+        sample, extra = sampler.sample(model, noisy_batch, self.cfg.steps, trunc=self.cfg.get('truncate', False))
 
         pred_traj = torch.stack(extra['preds'])
         samp_traj = torch.stack(extra['traj'])
