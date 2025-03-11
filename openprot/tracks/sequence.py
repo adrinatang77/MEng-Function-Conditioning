@@ -44,7 +44,7 @@ def sinusoidal_embedding(pos, n_freqs, max_period, min_period):
 
 
 import esm
-from esm import Alphabet
+from esm.data import Alphabet
 
 RNA_LETTERS = {"A": 0, "G": 1, "C": 2, "U": 3}
 DNA_LETTERS = {"A": 0, "G": 1, "C": 2, "T": 3}
@@ -95,12 +95,14 @@ class EsmLMHead(nn.Module):
 class SequenceTrack(OpenProtTrack):
 
     def setup(self):
+        print('Set up sequence track...')
         self.alphabet = EsmTokenizer.from_pretrained('facebook/esm2_t30_150M_UR50D')
 
         if self.cfg.all_atom:
             self.ntoks = 21 + 5 + 5 + 128
         else:
             self.ntoks = NUM_TOKENS # 21
+            
     def tokenize(self, data):
         
         prot_aatype = np.array(seqres_to_aatype(data["seqres"]))
@@ -147,6 +149,7 @@ class SequenceTrack(OpenProtTrack):
         return esm_s, esm_z
 
     def add_modules(self, model):
+        print('Adding embed:', self.ntoks, model.cfg.dim)
         model.seq_embed = nn.Embedding(self.ntoks, model.cfg.dim)
         if self.cfg.init:
             torch.nn.init.normal_(model.seq_embed.weight, std=self.cfg.init)
@@ -216,6 +219,8 @@ class SequenceTrack(OpenProtTrack):
             logger.masked_log("seq/toks", batch["seq_mask"], sum=True)
             
     def embed(self, model, batch, inp):
+        print('Embedding...')
+        print('Inp', inp)
         def _af2_idx_to_esm_idx(aa, mask):
             aa = (aa + 1).masked_fill(mask != 1, 0)
             return model.af2_to_esm[aa]
@@ -233,6 +238,9 @@ class SequenceTrack(OpenProtTrack):
             # === preprocessing ===
             esm_s = (model.esm_s_combine.softmax(0).unsqueeze(0) @ esm_s).squeeze(2)
             inp["x"] += model.esm_s_mlp(esm_s)
+
+        if self.cfg.func_cond:
+            print('Function conditioning...')
 
         inp["x"] += model.seq_embed(batch["aatype"])
         inp['residx'] = batch['residx'] # temporary

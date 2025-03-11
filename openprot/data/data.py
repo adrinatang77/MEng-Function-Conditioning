@@ -31,6 +31,7 @@ class OpenProtDataset(torch.utils.data.Dataset):
     def make_data(self, **kwargs):
         assert "name" in kwargs
         assert "seqres" in kwargs
+        # print('self.feats:', self.feats)
         for key in kwargs:
             assert key in self.feats or key in ['name', 'seqres']
 
@@ -48,7 +49,7 @@ class OpenProtDataset(torch.utils.data.Dataset):
                 data[feat] = kwargs[feat].astype(np.float32)
             else:
                 data[feat] = np.zeros(shape, dtype=np.float32)
-
+        print(data['func_cond'])
         return data
 
 

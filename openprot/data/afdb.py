@@ -22,6 +22,7 @@ class AFDBDataset(OpenProtDataset):
             )
             self.blacklist = set(blacklist["target"])
 
+        print(len(self.db))
         self.idx = np.arange(len(self.db))
         self.annotations = pd.read_pickle(self.cfg.annotations)
         if self.cfg.plddt_thresh is not None:
