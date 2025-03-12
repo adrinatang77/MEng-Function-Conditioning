@@ -149,7 +149,7 @@ class SequenceTrack(OpenProtTrack):
         return esm_s, esm_z
 
     def add_modules(self, model):
-        print('Adding embed:', self.ntoks, model.cfg.dim)
+        print('Add modules, embed:', self.ntoks, model.cfg.dim)
         model.seq_embed = nn.Embedding(self.ntoks, model.cfg.dim)
         if self.cfg.init:
             torch.nn.init.normal_(model.seq_embed.weight, std=self.cfg.init)

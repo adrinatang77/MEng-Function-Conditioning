@@ -12,25 +12,23 @@ import threading
 
 lock = threading.Lock()
 
-
+# TODO: make filepaths into arguments
 class UnirefDataset(OpenProtDataset):
     def setup(self):
         self.db = open(self.cfg.path)
         self.index = np.load(self.cfg.index)
         self.need_setup = True
         if self.cfg.func_cond:
-            with open('/data/cb/asapp/openprot/go_vocab_small.json', 'r') as file:
+            with open('/data/cb/asapp/openprot/go_term_vocab.json', 'r') as file:
                 self.go_vocab = json.load(file)
-            with open('/data/cb/asapp/openprot/function_labels.json', 'r') as file:
-                self.go_term_map = json.load(file)
-            # print('Function conditioning (setup 1)...')
+            self.func_db = open('/data/cb/asapp/func_data/swissprot_uniref50_seq_func_map.txt')
+            with open('/data/cb/asapp/func_data/swissprot_GO_idx.json', 'r') as file:
+                self.func_idx = json.load(file)
 
     def actual_setup(self):
         self.db = open(self.cfg.path)
         self.index = np.load(self.cfg.index)
         self.need_setup = False
-        # if self.cfg.func_cond:
-        #     print('Function conditioning (setup 2)...')
 
     def __len__(self):
         return len(self.index) - 1  # unfortunately we have to skip the last one
@@ -55,18 +53,39 @@ class UnirefDataset(OpenProtDataset):
         residx = np.arange(len(seqres), dtype=np.float32)
 
         if self.cfg.func_cond:
-            print('Function conditioning (get item)...')
 
-            print(name)
-            # look up seq <-> func labels
-            if name in self.go_term_map:
-                go_term = self.go_term_map[name]
-                func_cond = np.ones(len(seqres), dtype=np.float32) * self.go_vocab[go_term]
+            go_term_array = np.zeros((len(seqres), self.cfg.max_depth), dtype=np.float32) 
+
+            # get the func labels for this seq name
+            if name in self.func_idx:
                 print('name found')
-            else:
-                func_cond = np.zeros(len(seqres), dtype=np.float32)
-            
-            return self.make_data(name=name,seqres=seqres,seq_mask=seq_mask,residx=residx,func_cond=func_cond)
+                start = self.func_idx[name]['start']
+                end = self.func_idx[name]['end']
+                with lock:
+                    self.func_db.seek(start)
+                    go_item = self.func_db.read(end - start)
+                go_lines = go_item.split("\n")
+                go_header, go_lines = go_lines[0], go_lines[1:]
+                go_terms = "".join(go_lines)
+
+                # split string to get GO terms
+                go_terms = go_terms.split(',')
+                go_term_indices = list(set(np.array([self.go_vocab.get(go_term, None) for go_term in go_terms], dtype=np.float32)))
+                num_go_terms = len(go_term_indices)
+
+                go_term_array[:, :num_go_terms] = go_term_indices # protein-level GO terms
+     
+            # else:
+            #     empty_set_array[:] = set([0])  # add 0 to all sets in empty_set_array; 0 = no GO term
+
+            func_cond = go_term_array
+
+            return self.make_data(
+                name=name,
+                seqres=seqres,
+                seq_mask=seq_mask,
+                residx=residx,
+                func_cond=func_cond)
         
         return self.make_data(
             name=name,

@@ -13,18 +13,30 @@ import json
 # starts = []
 idx = {}
 pbar = tqdm.tqdm()
+
+prev_name = None
+
 with open(args.fasta) as f:
     while True:
         line = f.readline()
         if not line:
             break
         if line[0] == ">":
-            name = line.split(">")[1]
-            idx[name] = f.tell() - len(line)
-            # starts.append(f.tell() - len(line))
+            if prev_name is None: # first 
+                name = line.split('\n')[0]
+                start = f.tell() - len(line)
+                idx[name] = {'start': start, 'end': None}
+                prev_name = name
+            else:
+                name = line.split('\n')[0]
+                start = f.tell() - len(line)
+                idx[name] = {'start': start, 'end': None}
+
+                # set the end of last entry
+                idx[prev_name]['end'] = start
+                prev_name = name
             pbar.update()
 
 with open(args.out, 'w') as f:
     json.dump(idx, f)
 
-# np.save(args.out, np.array(starts))

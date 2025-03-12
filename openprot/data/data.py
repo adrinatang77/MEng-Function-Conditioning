@@ -45,7 +45,10 @@ class OpenProtDataset(torch.utils.data.Dataset):
             if feat in kwargs:
                 assert type(kwargs[feat]) is np.ndarray, feat
                 # assert kwargs[feat].dtype == np.float32, feat
-                data[feat] = kwargs[feat].astype(np.float32)
+                if feat != "func_cond": # func_cond sets already set to float32 
+                    data[feat] = kwargs[feat].astype(np.float32)
+                else:
+                    data[feat] = kwargs[feat] # func_cond
             else:
                 data[feat] = np.zeros(shape, dtype=np.float32)
         return data
