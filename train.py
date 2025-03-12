@@ -1,6 +1,8 @@
 import argparse
 import os
 
+os.environ["CUDA_VISIBLE_DEVICES"] = "1"
+
 print('Starting...')
 
 parser = argparse.ArgumentParser()

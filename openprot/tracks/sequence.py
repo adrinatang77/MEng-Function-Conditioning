@@ -183,7 +183,7 @@ class SequenceTrack(OpenProtTrack):
 
     def corrupt(self, batch, noisy_batch, target, logger=None):
         eps = 1e-6
-
+        
         tokens = batch["aatype"]
         rand_mask = torch.rand_like(batch['seq_noise']) < batch['seq_noise']
 
@@ -209,6 +209,7 @@ class SequenceTrack(OpenProtTrack):
             target["seq_supervise"] *= 1/(batch['seq_noise'] + self.cfg.reweight_eps)
         target["aatype"] = tokens
         noisy_batch['residx'] = batch['residx']
+        noisy_batch['func_cond'] = batch['func_cond'] 
         
         # oh = torch.nn.functional.one_hot(tokens, num_classes=self.ntoks)
         # dist = oh.float().mean(1)
@@ -220,7 +221,7 @@ class SequenceTrack(OpenProtTrack):
             
     def embed(self, model, batch, inp):
         print('Embedding...')
-        print('Inp', inp)
+        print('batch func_cond', batch['func_cond'])
         def _af2_idx_to_esm_idx(aa, mask):
             aa = (aa + 1).masked_fill(mask != 1, 0)
             return model.af2_to_esm[aa]

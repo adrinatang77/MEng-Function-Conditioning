@@ -92,7 +92,7 @@ datasets:
         # index: /scratch/projects/cgai/openprot/data/uniref50.idx.npy  
         index: /data/cb/scratch/share/openprot/uniref50.index # uniref50.idx.npy  
         func_cond: True
-        max_depth: 86
+        max_depth: 86 # max GO depth
 
 tasks:
         

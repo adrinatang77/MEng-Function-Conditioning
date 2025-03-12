@@ -76,7 +76,7 @@ class UnirefDataset(OpenProtDataset):
                 go_term_array[:, :num_go_terms] = go_term_indices # protein-level GO terms
      
             # else:
-            #     empty_set_array[:] = set([0])  # add 0 to all sets in empty_set_array; 0 = no GO term
+            #     empty_set_array[:] = set([0])  # add 0 to all sets in empty_set_array
 
             func_cond = go_term_array
 
