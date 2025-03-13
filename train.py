@@ -1,7 +1,7 @@
 import argparse
 import os
 
-os.environ["CUDA_VISIBLE_DEVICES"] = "6"
+os.environ["CUDA_VISIBLE_DEVICES"] = "7"
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--config", type=str, default="config.yaml")
