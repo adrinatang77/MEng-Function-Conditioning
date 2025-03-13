@@ -16,6 +16,11 @@ class StructureGeneration(CodesignTask):
 
         self.add_sequence_noise(data, noise_level=1.01)
         self.add_structure_noise(data, sup=True)
+
+        if np.random.rand() < self.cfg.motif_prob:
+            self.sample_motifs(data)
+        
+        self.center_random_rot(data)
         
         data["/struct_gen"] = np.ones((), dtype=np.float32)
 
