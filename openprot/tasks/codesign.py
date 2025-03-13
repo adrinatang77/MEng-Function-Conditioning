@@ -1,5 +1,6 @@
 from .task import OpenProtTask
 import numpy as np
+import math
 from ..utils import residue_constants as rc
 from scipy.spatial.transform import Rotation as R
 import torch
@@ -17,8 +18,52 @@ class CodesignTask(OpenProtTask):
 # 8: end for
 # 9: TS ← {T1, . . . , TN } \ TM ▷ Assign rest of residues as the scaffold
 # 10: return TM, TS
+
+#     Require: Sampled structure x, a sequence of Cα coordinates of length N
+# Ns ∼ U(1, 4) ▷ Number of segments in the motif
+# Nr ∼ U(⌊0.05N⌋, ⌈0.5N⌉) ▷ Number of residues in the motif
+# B ← [0, b1, b2, · · · , bNs−1, Nr] where b1, b2, · · · , bNs−1
+# are randomly sampled from {1, 2, · · · , Nr − 1}
+# without replacement and sorted in ascending order.
+# L ← [l1, l2, · · · , lNs
+# ] where Li = Bi − Bi−1 ▷ Split motif residues into segments
+# M = Flatten(Permute([S1, S2, · · · , SN−Nr
+# , M1, M2, · · · , MNs
+# ])) where
+# Si = [0] for i ∈ [1, N − Nr] ▷ Represents a scaffold residue
+# Mj = [1, 1, · · · , 1] where |Mj | = lj for j ∈ [1, Ns] ▷ Represents a motif segment
+# return M where for i ∈ [1, N] ▷ Represents a motif sequence mask
+# M[i] = 1 indicates that residue i is a motif residue
+# M[i] = 0 indicates that residue i is a scaffold residue
     def sample_motifs(self, data):
-        L = len(data['seqres'])
+        N = len(data['seqres'])
+        Ns = np.random.randint(1, self.cfg.motif.nmax)
+        Nr = np.random.randint(
+            int(math.floor(N * self.cfg.motif.ymin)),
+            int(math.ceil(N * self.cfg.motif.ymax)) + 1,
+        )
+        if Ns > Nr: return # segments cannot exceed residues
+        
+        B = [
+            0,
+            *sorted(np.random.choice(np.arange(1, Nr), size=Ns-1, replace=False)),
+            Nr
+        ]
+        L = np.diff(B)
+        M = [[False] for _ in range(N-Nr)] + [[True]*l for l in L]
+        np.random.shuffle(M)
+        is_motif = np.array([i for a in M for i in a])
+        data['seq_noise'][is_motif] = 0
+        data['seq_weight'][is_motif] = 0
+        data['ref_conf'][is_motif] = data['struct'][is_motif]
+        data['ref_conf_mask'][is_motif] = data['struct_mask'][is_motif]
+        data['struct_weight'][is_motif] *= self.cfg.motif.weight
+        data['motif_id'][is_motif] = 1 # doesn't do anything now but later for multi-motif
+        
+        
+    """
+    def sample_motifs(self, data):
+        
         s = np.random.rand() * (self.cfg.motif.ymax - self.cfg.motif.ymin) + self.cfg.motif.ymin
         s = int(s * L)
         m = np.random.randint(1, max(s, 1) + 1)
@@ -31,8 +76,10 @@ class CodesignTask(OpenProtTask):
                 l = np.random.randint(1, end+1)
                 is_motif[j:j+l] = True
         data['seq_noise'][is_motif] = 0
-        data['struct_noise'][is_motif] = 0
-
+        data['seq_weight'][is_motif] = 0
+        data['struct_noise'][is_motif] = self.cfg.edm.sigma_min
+        data['struct_weight'][is_motif] = 0
+    """
     def center_random_rot(self, data, eps=1e-6):
         # center the structures
         pos = data["struct"]
@@ -45,6 +92,7 @@ class CodesignTask(OpenProtTask):
 
         idx = np.unique(data['chain'])
         for i in idx: # note that multi-residue ligands will be wrong
+            # this also handles motifs, so far correct but brittle
             conf = data["ref_conf"][data['chain'] == i]
             conf_mask = data['ref_conf_mask'][data['chain'] == i][...,None]
             conf -= (conf * conf_mask).sum(-2) / (conf_mask.sum(-2) + eps)
@@ -110,32 +158,36 @@ class CodesignTask(OpenProtTask):
                 noise_level = np.random.rand()
             else:
                 noise_level = np.random.beta(*self.cfg.struct.beta)
+            
+            return noise_level
 
-            #####
+        def t_to_sigma(t):
             p = self.cfg.edm.sched_p
             sigma = (
                 self.cfg.edm.sigma_min ** (1 / p)
-                + noise_level * (self.cfg.edm.sigma_max ** (1 / p) - self.cfg.edm.sigma_min ** (1 / p))
+                + t * (self.cfg.edm.sigma_max ** (1 / p) - self.cfg.edm.sigma_min ** (1 / p))
             ) ** p
-            #####
+            return sigma
         
-            return noise_level, sigma
+            
         
         L = len(data["seqres"])
         if noise_level is None:
-            # data["struct_noise"] = np.zeros(L, dtype=np.float32)
-            # idx = np.unique(data['chain'])
-            # for i in idx:
-            #     data["struct_noise"][data['chain'] == i] = sample_noise_level()
-            t, sigma = sample_noise_level()
-            # data["struct_noise"] = np.ones(L, dtype=np.float32) * sample_noise_level()
-        # else:
-        data["struct_noise"] = np.ones(L, dtype=np.float32) * sigma
+            if self.cfg.struct.get('async', False):
+                data["struct_noise"] = np.zeros(L, dtype=np.float32)
+                idx = np.unique(data['chain'])
+                for i in idx:
+                    data["struct_noise"][data['chain'] == i] = t_to_sigma(sample_noise_level())
+            else:
+                noise_level = sample_noise_level()
+                data["struct_noise"] = np.ones(L, dtype=np.float32) * t_to_sigma(noise_level)
+        else:
+            data["struct_noise"] = np.ones(L, dtype=np.float32) * t_to_sigma(noise_level)
         
 
         if sup:
             data["struct_weight"] = np.where(
-                data['mol_type'] == 3, 3.0, 1.0,
+                data['mol_type'] != 0, 3.0, 1.0,
             )
 
         data['struct_align_mask'] = data['struct_mask'] # force default
@@ -151,24 +203,25 @@ class CodesignTask(OpenProtTask):
                 data['struct_weight'],
                 0.0,
             )
+            data['struct_align_mask'] = (data['mol_type'] == 0).astype(float) * data['struct_mask']
         
         if self.cfg.struct.get('lig_only', False):
             data["struct_noise"] = np.where(
-                data['mol_type'] == 3,
+                data['mol_type'] != 0,
                 data['struct_noise'],
                 self.cfg.edm.sigma_min,
             )
             data["struct_weight"] = np.where(
-                data['mol_type'] == 3,
+                data['mol_type'] != 0,
                 data['struct_weight'],
                 0.0,
             )
+            data['struct_align_mask'] = (data['mol_type'] != 0).astype(float) * data['struct_mask']
 
         
 
-        self.center_random_rot(data)
 
-        return t
+        return noise_level
 
 class Codesign(CodesignTask):
     def register_loss_masks(self):
@@ -180,10 +233,14 @@ class Codesign(CodesignTask):
             data.crop(crop)
 
         self.add_sequence_noise(data, sup=True)
+        
         self.add_structure_noise(data, sup=True)
 
         if np.random.rand() < self.cfg.motif_prob:
             self.sample_motifs(data)
+        
+        self.center_random_rot(data)
+
             
         if data["dataset"] == "boltz_lig":
             data["/codesign/lig"] = np.ones((), dtype=np.float32)

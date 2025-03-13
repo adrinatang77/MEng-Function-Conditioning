@@ -8,7 +8,7 @@ def masked_center(x, mask=None, eps=1e-5):
         return x - x.mean(-2, keepdims=True)
     mask = mask[..., None]
     com = (x * mask).sum(-2, keepdims=True) / (eps + mask.sum(-2, keepdims=True))
-    return torch.where(mask, x - com, x)
+    return x - com
 
 class EDMDiffusionStepper:
     def __init__(self, cfg=None, mask=None):

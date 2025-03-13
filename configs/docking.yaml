@@ -1,4 +1,4 @@
-ckpt: #workdir/docking-test/last.ckpt
+ckpt: # workdir/docking-test10/last.ckpt
 pretrained:  #  load weights from here first
 validate: false # if true, only validate the model, don't train
 logger:
@@ -8,7 +8,7 @@ logger:
     # please change "test" to something unique to your task
     project: openprot/struct-merge
     # will log to workdir and neptune.ai with this name
-    name: docking-test9
+    name: docking-test11-fix
     # if not null, will duplicate stdout and stderr to workdir/{name}/{logfile}
     logfile: std.out
     # if null, will log every epoch, otherwise every this number of steps
@@ -331,7 +331,9 @@ model: # custom args
     blocks: 30
     dropout: 0.2
     token_dropout: 0.0
-    all_atom: ${data.all_atom}
+    chain_mask: false
+    custom_rope: true
+    cross_attn: true
     ff_expand: 4
     adaLN: true
     

@@ -1,14 +1,14 @@
-ckpt: workdir/struct-gen-boltz-lig-prot-only/last.ckpt
+ckpt: 
 pretrained:  #  load weights from here first
 validate: false # if true, only validate the model, don't train
 logger:
     # set to true to log to neptune.ai
     neptune: true
-    run_id: STRUC1-756
+    run_id: 
     # please change "test" to something unique to your task
     project: openprot/struct-merge
     # will log to workdir and neptune.ai with this name
-    name: struct-gen-boltz-lig-prot-only
+    name: binder-test2-mask
     # if not null, will duplicate stdout and stderr to workdir/{name}/{logfile}
     logfile: std.out
     # if null, will log every epoch, otherwise every this number of steps
@@ -21,13 +21,13 @@ trainer:
     devices: 8
     max_epochs: 1
     max_steps: 1000000
-    enable_progress_bar: false
+    enable_progress_bar: true
     limit_train_batches: 1.0
     limit_val_batches: 1.0
     num_sanity_val_steps: 0
     gradient_clip_val: 1.0
     accumulate_grad_batches: 1
-    val_check_interval: 10000
+    val_check_interval: 5000
     check_val_every_n_epoch: 1
     logger: false
     precision: 16-mixed
@@ -60,7 +60,9 @@ features:
     struct_mask: [-1]
     struct_noise: [-1]
     struct_weight: [-1]
+    struct_align_mask: [-1]
     ref_conf: [-1, 3]
+    ref_conf_mask: [-1]
     residx: [-1]
     chain: [-1]
 
@@ -101,70 +103,30 @@ datasets:
     #     index: /data/cb/scratch/datasets/uniref50.idx.npy  
 
 tasks:
-        
+           
     StructureGeneration:
         fraction: 1.0
         edm: ${edm}
         struct:
+            uniform_prob: 1.0
             prot_only: true
-            beta: [1, 2]
-            uniform_prob: 0.5
-        
         datasets:
-            afdb_genie: 0.75
-            boltz_lig: 0.25
-                
-    # InverseFolding:
-    #     fraction: 0.1
-    #     edm: ${edm}
-    #     seq:
-    #         uniform_prob: 1.0
-        
-    #     datasets:
-    #         pdb: 0.25
-    #         afdb_genie: 0.75
+            boltz_lig: 1.0
 
-    # Codesign:
-    #     fraction: 0.8
-    #     edm: ${edm}
-    #     motif: ${motif}
-    #     motif_prob: 0.0
-    #     seq:
-    #         zero_prob: 0.0
-    #         max_prob: 0.05
-    #         uniform_prob: 0.95
-    #     struct:
-    #         zero_prob: 0.0
-    #         max_prob: 0.05
-    #         uniform_prob: 0.95
-        
-    #     datasets:
-    #         pdb: 0.25
-    #         afdb_genie: 0.5
-    #         boltz_lig: 0.25
-                
-    # StructurePrediction:
-    #     fraction: 0.1
-    #     edm: ${edm}
-    #     struct:
-    #         beta: [1, 2]
-    #         uniform_prob: 0.0
-    #         max_noise_prob: 1.0
-    #     datasets:
-    #         afdb_genie: 0.75
-    #         pdb: 0.25
-
-    # SequenceUnmasking: 
-    #     fraction: 0.1
-    #     edm: ${edm}
-    #     seq:
-    #         beta: [3, 9]
-    #         uniform_prob: 1.0
-    #         max_noise_prob: 0.0
-    #     datasets:
-    #         uniref: 1.0
             
 evals: 
+    # docking:
+    #     type: DockingEval
+    #     batch: 10
+    #     split: splits/plinder.csv
+    #     path: /data/cb/scratch/datasets/boltz/processed_data/
+    #     ccd: /data/cb/scratch/datasets/boltz/ccd.pkl
+    #     steps: 100
+    #     struct:
+    #         edm: ${edm}
+    #         temp_factor: 0.5
+    #         sde_weight: 1.0
+    #         align: false # fix how the alignment is done
     # cameo22_diff:
     #     type: StructurePredictionEval
     #     path: /data/cb/scratch/datasets/pdb_npz
@@ -183,52 +145,52 @@ evals:
     #     diffusion: false
     #     batch: 1
 
-    struct_gen_sde_0.5:
-        type: StructureGenerationEval
+    # struct_gen_sde_0.5:
+    #     type: StructureGenerationEval
+    #     num_samples: 100
+    #     batch: 100
+    #     sample_length: 128
+    #     steps: 200
+    #     struct:
+    #         edm: ${edm}
+    #         temp_factor: 0.5
+    #         sde_weight: 1.0
+    #         align: false
+    #     run_designability: true
+    #     run_diversity: false
+
+    binder:
+        type: BinderEval
+        split: splits/plinder.csv
+        path: /data/cb/scratch/datasets/boltz/processed_data/
+        ccd: /data/cb/scratch/datasets/boltz/ccd.pkl
+        offset: 10
         num_samples: 100
         batch: 100
         sample_length: 128
         steps: 200
+        skew: 0.0
         struct:
             edm: ${edm}
-            temp_factor: 0.5
+            temp_factor: 1.0
             sde_weight: 1.0
             align: false
+        seq:
+            temp_start: 1.0
+            temp_end: 0.1
+            strategy: dplm
+            noise: 20
+            logits: gumbel
+            adjust_unmasked: false # pseudo-masked logits
+            replace_unmasked: true # logit of current toks
+            topk_temp: 0.0
+            allow_mutation: false
+        schedule: {}
         run_designability: true
-        run_diversity: false
-
-    # binder:
-    #     type: BinderEval
-    #     path: /data/cb/scratch/datasets/boltz/ccd.pkl
-        
-    #     num_samples: 10
-    #     batch: 100
-    #     sample_length: 128
-    #     steps: 200
-    #     skew: 0.0
-    #     truncate: 
-    #     dir:
-    #     struct:
-    #         edm: ${edm}
-    #         temp_factor: 1.0
-    #         sde_weight: 1.0
-    #         align: false
-    #     seq:
-    #         temp_start: 1.0
-    #         temp_end: 0.1
-    #         strategy: dplm
-    #         noise: 20
-    #         logits: gumbel
-    #         adjust_unmasked: false # pseudo-masked logits
-    #         replace_unmasked: true # logit of current toks
-    #         topk_temp: 0.0
-    #         allow_mutation: false
-    #     schedule: {}
-    #     run_designability: true
-    #     run_pmpnn_designability: true
-    #     run_diversity: true
-    #     run_secondary: true
-    #     run_plot: true
+        run_pmpnn_designability: true
+        run_diversity: true
+        run_secondary: true
+        run_plot: true
         
     # codesign_skew+1:
     #     type: CodesignEval
@@ -346,10 +308,10 @@ model: # custom args
     blocks: 30
     dropout: 0.2
     token_dropout: 0.0
-    all_atom: ${data.all_atom}
+    chain_mask: true
+    custom_rope: false
+    cross_attn: false
     ff_expand: 4
-    rope: false
-    custom_rope: true
     adaLN: true
     
     

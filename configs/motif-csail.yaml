@@ -1,0 +1,278 @@
+ckpt: 
+pretrained:  #  load weights from here first
+validate: false # if true, only validate the model, don't train
+logger:
+    # set to true to log to neptune.ai
+    neptune: true
+    run_id: 
+    # please change "test" to something unique to your task
+    project: openprot/struct-merge
+    # will log to workdir and neptune.ai with this name
+    name: motif-test2
+    # if not null, will duplicate stdout and stderr to workdir/{name}/{logfile}
+    logfile: std.out
+    # if null, will log every epoch, otherwise every this number of steps
+    train_log_freq: 100
+    val_log_freq: null 
+    ckpt_freq: 50000000000
+    save_freq: 1000
+trainer:
+    accelerator: auto
+    devices: 8
+    max_epochs: 1
+    max_steps: 1000000
+    enable_progress_bar: false
+    limit_train_batches: 1.0
+    limit_val_batches: 1.0
+    num_sanity_val_steps: 0
+    gradient_clip_val: 1.0
+    accumulate_grad_batches: 1
+    val_check_interval: 10000
+    check_val_every_n_epoch: 1
+    logger: false
+    precision: 16-mixed
+
+# custom args to OpenProtDataset and elsewhere
+data: 
+    num_workers: 8
+    buffer: 1000
+    max_sq_toks: # 400000
+    max_toks: 8192
+    batch: null
+    crop: 384
+    seed: 137
+    all_atom: false
+
+# These are the raw features which are expected to be supplied by the Datasets
+# before they are TOKENIZED by the Tracks.
+# We specify them and their shapes so that datasets can supply default values if missing
+# for example, a structure dataset will not supply any dynamics information.
+# We also need to set defaults for the "mask" and "noise" because not all Tasks will set them.
+# -1 means this is the LEGNTH dim. 
+features:
+    # sequence feats
+    atom_num: [-1] # ligands only
+    mol_type: [-1] # default 0 = protein
+    seq_mask: [-1]
+    seq_noise: [-1]
+    seq_weight: [-1]
+    struct: [-1, 3]
+    struct_mask: [-1]
+    struct_noise: [-1]
+    struct_weight: [-1]
+    struct_align_mask: [-1]
+    ref_conf: [-1, 3]
+    ref_conf_mask: [-1]
+    motif_id: [-1]
+    residx: [-1]
+    chain: [-1]
+
+edm:
+    sched_p: 7
+    sigma_max: 160
+    sigma_min: 0.05
+    sigma_data: 15
+
+motif:
+    nmax: 4
+    ymin: 0.05
+    ymax: 0.5
+    weight: 5.0
+    
+datasets:
+    pdb:
+        type: PDBDataset
+        path: /data/cb/scratch/datasets/pdb_npz
+        cutoff: 2018-05-01
+        clusters: /data/cb/scratch/datasets/pdb_npz/pdb_clusters
+        blacklist: 
+    afdb_genie:
+        type: AFDBDataset
+        path: /data/cb/scratch/datasets/afdb_rep_v4/afdb_rep_v4
+        annotations: /data/cb/scratch/datasets/afdb_rep_v4.pkl.gz
+        blacklist: 
+        plddt_thresh: 
+        index: /data/cb/scratch/datasets/afdbreps_l-256_plddt_80.txt
+
+tasks:
+
+    StructureGeneration:
+        fraction: 0.1
+        edm: ${edm}
+        motif: ${motif}
+        motif_prob: 0.5
+        struct:
+            beta: [1, 2]
+            uniform_prob: 0.5
+        
+        datasets:
+            afdb_genie: 0.75
+            pdb: 0.25
+
+    InverseFolding:
+        fraction: 0.1
+        edm: ${edm}
+        seq:
+            uniform_prob: 1.0
+        struct: {}
+        
+        datasets:
+            pdb: 0.25
+            afdb_genie: 0.75
+                
+    Codesign:
+        fraction: 0.8
+        weight: 1.0
+        motif_prob: 0.5    
+        motif: ${motif}
+        seq:
+            max_prob: 0.05
+            uniform_prob: 0.95
+        edm: ${edm}
+        struct:
+            max_prob: 0.05
+            uniform_prob: 0.95
+        
+        datasets:
+            pdb: 0.25
+            afdb_genie: 0.75
+                
+
+evals: 
+    codesign_skew+1:
+        type: CodesignEval
+        num_samples: 100
+        batch: 100
+        sample_length: 128
+        steps: 200
+        skew: 1.0
+        truncate: 
+        dir:
+        struct:
+            edm: ${edm}
+            temp_factor: 0.5
+            sde_weight: 1.0
+            align: false
+        seq:
+            temp_start: 0.1
+            temp_end: 0.1
+            strategy: random
+            noise: 20
+            logits: standard
+            adjust_unmasked: false # pseudo-masked logits
+            replace_unmasked: false # logit of current toks
+            topk_temp: 0.0
+            allow_mutation: false
+        schedule: {}
+        run_designability: true
+        run_pmpnn_designability: true
+        run_diversity: true
+        run_secondary: true
+        run_plot: true
+
+    codesign_skew+0:
+        type: CodesignEval
+        num_samples: 100
+        batch: 100
+        sample_length: 128
+        steps: 200
+        skew: 0.0
+        truncate:
+        dir:
+        struct:
+            edm: ${edm}
+            temp_factor: 0.5
+            sde_weight: 1.0
+            align: false
+        seq:
+            temp_start: 1.0
+            temp_end: 0.1
+            strategy: dplm
+            noise: 20
+            logits: gumbel
+            adjust_unmasked: false # pseudo-masked logits
+            replace_unmasked: true # logit of current toks
+            topk_temp: 0.0
+            allow_mutation: false
+        schedule: {}
+        run_designability: true
+        run_pmpnn_designability: true
+        run_diversity: true
+        run_secondary: true
+        run_plot: true
+
+    seq_gen_dplm: 
+        type: SequenceGenerationEval
+        num_samples: 100
+        sample_length: 300
+        batch: 100
+        steps: 300
+        temp_start: 0.5
+        temp_end: 0.5
+        strategy: dplm
+        logits: gumbel
+        remask: 0.0
+        topk_temp: 0.0
+        replace_unmasked: false
+        adjust_unmasked: false
+        allow_mutation: false
+        
+
+tracks:
+    # register tracks here
+    StructureTrack: 
+        loss_weight: 1.0
+        embed_sigma: false
+        embed_mask: false
+        edm: ${edm}
+        all_atom: ${data.all_atom}
+        readout_adaLN: false
+        interp_aligned_loss: false
+        hotspots: false
+        hotspot_prob: 0.5
+        loss:
+            mse: 1.0
+            aligned_mse: 0.0
+            lddt: 0.0
+        diffusion:
+            type: EDMDiffusion
+            data_sigma: ${edm.sigma_data}
+            train_align: false
+        
+    SequenceTrack:
+        esm: # esm2_3B # esm2_650M # esm2_8M_270K
+        loss_weight: 3.0 
+        esm_lm_head: true
+        tied_weights: false
+        reweight: linear
+        reweight_eps: 0.01
+        init: 0.02
+        all_atom: ${data.all_atom}
+
+model: # custom args
+    ema: false
+    dim: 512
+    heads: 16
+    blocks: 30
+    dropout: 0.2
+    token_dropout: 0.0
+    all_atom: ${data.all_atom}
+    ff_expand: 4
+    custom_rope: true
+    chain_mask: false
+    cross_attn: false
+    adaLN: true
+    
+
+optimizer:
+    type: AdamW
+    lr: 1e-4
+    # betas: [0.9, 0.98]
+    # eps: 1e-8
+    # weight_decay: 0.01
+    # fused: true
+    scheduler: 
+        total_steps: 1000000
+        warmup_steps: 1000
+        start_decay: 10000
+        end_factor: 1.00

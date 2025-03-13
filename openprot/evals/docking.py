@@ -10,15 +10,13 @@ import numpy as np
 import pickle
 import torch
 
-# {'val/docking/rmsd': 7.711339657122583, 'val/docking/rmsd<5': 0.22, 'val/docking/rmsd<2': 0.01, 'val/docking/distortion': 0.09776145188413685, 'val/docking/clash': 3.2269561, 'val/docking/ref_clash': 3.7151442, 'val/dur': 26.212223744392396, 'val/epoch': 0, 'val/global_step': 0, 'val/iter_step': 10, 'val/count': 100}
-# {'val/docking/rmsd': 7.697705427616439, 'val/docking/rmsd<5': 0.23, 'val/docking/rmsd<2': 0.01, 'val/docking/distortion': 0.07895396786194203, 'val/docking/clash': 3.3001122, 'val/docking/ref_clash': 3.7151442, 'val/dur': 26.72339653968811, 'val/epoch': 0, 'val/global_step': 0, 'val/iter_step': 3, 'val/count': 100}
 
 def masked_center(x, mask=None, eps=1e-5):
     if mask is None:
         return x - x.mean(-2, keepdims=True)
     mask = mask[..., None]
     com = (x * mask).sum(-2, keepdims=True) / (eps + mask.sum(-2, keepdims=True))
-    return np.where(mask, x - com, x)
+    return x - com
     
 class DockingEval(OpenProtEval):
     def setup(self):
@@ -161,7 +159,7 @@ class DockingEval(OpenProtEval):
             distortion = struct.get_chain(1).get_residue(0).get_distortion()
             clash = struct.clash_score(ca_only=True)
             ref_clash = data['ref'].clash_score(ca_only=True)
-            print(rmsd, distortion, clash, ref_clash)
+            
             if logger is not None:
                 logger.log(f"{self.cfg.name}/rmsd", rmsd)
                 logger.log(f"{self.cfg.name}/rmsd<5", rmsd < 5)
