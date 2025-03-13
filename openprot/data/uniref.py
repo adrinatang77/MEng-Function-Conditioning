@@ -54,11 +54,10 @@ class UnirefDataset(OpenProtDataset):
 
         if self.cfg.func_cond:
 
-            go_term_array = np.zeros((len(seqres), self.cfg.max_depth), dtype=np.float32) 
+            go_term_array = np.zeros((len(seqres), self.cfg.max_depth), dtype=int) 
 
             # get the func labels for this seq name
             if name in self.func_idx:
-                print('name found')
                 start = self.func_idx[name]['start']
                 end = self.func_idx[name]['end']
                 with lock:
@@ -70,7 +69,7 @@ class UnirefDataset(OpenProtDataset):
 
                 # split string to get GO terms
                 go_terms = go_terms.split(',')
-                go_term_indices = list(set(np.array([self.go_vocab.get(go_term, None) for go_term in go_terms], dtype=np.float32)))
+                go_term_indices = list(set(np.array([self.go_vocab.get(go_term, None) for go_term in go_terms], dtype=int)))
                 num_go_terms = len(go_term_indices)
 
                 go_term_array[:, :num_go_terms] = go_term_indices # protein-level GO terms

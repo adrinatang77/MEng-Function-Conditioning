@@ -91,11 +91,20 @@ class EsmLMHead(nn.Module):
         # project back to size of vocabulary with bias
         x = self.decoder(x) + self.bias
         return x
+    
+class GOEmbeddingModule(nn.Module): # nn.Module for GO embeddings
+    def __init__(self, num_go_terms, embedding_dim, padding_idx=0):
+        super().__init__()
+        self.go_embedding = nn.Embedding(num_go_terms, embedding_dim, padding_idx=padding_idx)
+
+    def forward(self, go_terms):
+        go_term_embeddings_lookup = self.go_embedding(go_terms)
+        residue_go_embeddings = torch.sum(go_term_embeddings_lookup, dim=2) 
+        return residue_go_embeddings
         
 class SequenceTrack(OpenProtTrack):
 
     def setup(self):
-        print('Set up sequence track...')
         self.alphabet = EsmTokenizer.from_pretrained('facebook/esm2_t30_150M_UR50D')
 
         if self.cfg.all_atom:
@@ -149,7 +158,7 @@ class SequenceTrack(OpenProtTrack):
         return esm_s, esm_z
 
     def add_modules(self, model):
-        print('Add modules, embed:', self.ntoks, model.cfg.dim)
+        
         model.seq_embed = nn.Embedding(self.ntoks, model.cfg.dim)
         if self.cfg.init:
             torch.nn.init.normal_(model.seq_embed.weight, std=self.cfg.init)
@@ -177,6 +186,11 @@ class SequenceTrack(OpenProtTrack):
             )
 
             model.register_buffer("af2_to_esm", self._af2_to_esm(self.esm_dict))
+
+        if self.cfg.func_cond:
+            num_go_terms = 8225 + 1 # TODO: read in num GO terms as argument
+            model.func_embed = GOEmbeddingModule(num_go_terms, model.cfg.dim, padding_idx=0)
+            # model.func_embed = nn.Embedding(num_go_terms, model.cfg.dim, padding_idx=0) 
 
         # model.seq_mask = nn.Parameter(torch.zeros(model.cfg.dim))
         # keep this separate to avoid confusion
@@ -220,8 +234,7 @@ class SequenceTrack(OpenProtTrack):
             logger.masked_log("seq/toks", batch["seq_mask"], sum=True)
             
     def embed(self, model, batch, inp):
-        print('Embedding...')
-        print('batch func_cond', batch['func_cond'])
+
         def _af2_idx_to_esm_idx(aa, mask):
             aa = (aa + 1).masked_fill(mask != 1, 0)
             return model.af2_to_esm[aa]
@@ -240,10 +253,20 @@ class SequenceTrack(OpenProtTrack):
             esm_s = (model.esm_s_combine.softmax(0).unsqueeze(0) @ esm_s).squeeze(2)
             inp["x"] += model.esm_s_mlp(esm_s)
 
-        if self.cfg.func_cond:
-            print('Function conditioning...')
-
         inp["x"] += model.seq_embed(batch["aatype"])
+
+        if self.cfg.func_cond:
+            residue_go_embeddings = model.func_embed(batch['func_cond'])
+            inp["x"] += residue_go_embeddings # add go embeddings
+
+            # # look up embeddings for all GO terms in the input
+            # # shape: (batch_size, seq_len, max_depth, embedding_dim)
+            # go_term_embeddings_lookup = model.func_embed(batch['func_cond'])
+
+            # # sum embeddings along the 'max_depth' dimension (dimension 2)
+            # # shape: (batch_size, seq_len, embedding_dim)
+            # residue_go_embeddings = torch.sum(go_term_embeddings_lookup, dim=2)
+
         inp['residx'] = batch['residx'] # temporary
 
     def predict(self, model, inp, out, readout):

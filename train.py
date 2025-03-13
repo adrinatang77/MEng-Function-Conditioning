@@ -1,9 +1,7 @@
 import argparse
 import os
 
-os.environ["CUDA_VISIBLE_DEVICES"] = "1"
-
-print('Starting...')
+os.environ["CUDA_VISIBLE_DEVICES"] = "6"
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--config", type=str, default="config.yaml")
@@ -34,8 +32,6 @@ from openprot.tracks.manager import OpenProtTrackManager
 
 cfg.trainer.devices = int(os.environ.get("SLURM_NTASKS_PER_NODE", cfg.trainer.devices))
 
-print('Setting up trainer...')
-
 trainer = pl.Trainer(
     **cfg.trainer,
     default_root_dir=model_dir,
@@ -58,19 +54,9 @@ trainer = pl.Trainer(
 )
 ########## EVERYTHING BELOW NOW IN PARALLEL ######
 
-print('Setting up tracks...')
-
 tracks = OpenProtTrackManager(cfg.tracks)
 
-print(tracks)
-
-print('Setting up dataset...')
-
 dataset = OpenProtDatasetManager(cfg, tracks, trainer.global_rank, trainer.world_size)
-
-print(dataset)
-
-print('Setting up train loader...')
 
 train_loader = torch.utils.data.DataLoader(
     dataset,
@@ -79,21 +65,14 @@ train_loader = torch.utils.data.DataLoader(
     collate_fn=OpenProtData.batch,
 )
 
-print('Setting up evals...')
-
 evals = OpenProtEvalManager(cfg, tracks)
-
-print('Model...')
 
 model = OpenProtWrapper(cfg, tracks, evals.evals)
 if cfg.pretrained is not None:
     ckpt = torch.load(cfg.pretrained)
     model.load_state_dict(ckpt["state_dict"], strict=False)
 
-print('Training...')
-
 if cfg.validate:
     trainer.validate(model, evals.loaders, ckpt_path=cfg.ckpt)
 else:
-    print('Fitting...')
     trainer.fit(model, train_loader, evals.loaders, ckpt_path=cfg.ckpt)
