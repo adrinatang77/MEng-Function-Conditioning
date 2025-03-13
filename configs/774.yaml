@@ -1,14 +1,14 @@
-ckpt: # 
+ckpt: workdir/replica-727-AA/last.ckpt
 pretrained:  #  load weights from here first
 validate: false # if true, only validate the model, don't train
 logger:
     # set to true to log to neptune.ai
     neptune: true
-    run_id: 
+    run_id: STRUC1-774
     # please change "test" to something unique to your task
     project: openprot/struct-merge
     # will log to workdir and neptune.ai with this name
-    name: replica-727-refactor2
+    name: replica-727-AA
     # if not null, will duplicate stdout and stderr to workdir/{name}/{logfile}
     logfile: std.out
     # if null, will log every epoch, otherwise every this number of steps
@@ -41,7 +41,7 @@ data:
     batch: null
     crop: 384
     seed: 137
-    all_atom: false
+    all_atom: true
 
 edm:
     sched_p: 7

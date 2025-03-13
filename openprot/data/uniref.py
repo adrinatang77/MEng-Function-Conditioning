@@ -14,27 +14,27 @@ lock = threading.Lock()
 
 class UnirefDataset(OpenProtDataset):
     def setup(self):
-        self.db = open(self.cfg.path)
+        # self.db = open(self.cfg.path)
         self.index = np.load(self.cfg.index)
-        self.need_setup = True
+        # self.need_setup = True
 
-    def actual_setup(self):
-        self.db = open(self.cfg.path)
-        self.index = np.load(self.cfg.index)
-        self.need_setup = False
+    # def actual_setup(self):
+    #     self.db = open(self.cfg.path)
+    #     self.index = np.load(self.cfg.index)
+    #     self.need_setup = False
 
     def __len__(self):
         return len(self.index) - 1  # unfortunately we have to skip the last one
 
     def __getitem__(self, idx: int):
-        if self.need_setup:
-            self.actual_setup()
-
-        start = self.index[idx]
-        end = self.index[idx + 1]
-        with lock:
-            self.db.seek(start)
-            item = self.db.read(end - start)
+        # if self.need_setup:
+        #     self.actual_setup()
+        
+        with open(self.cfg.path) as db:
+            start = self.index[idx]
+            end = self.index[idx + 1]
+            db.seek(start)
+            item = db.read(end - start)
         lines = item.split("\n")
         header, lines = lines[0], lines[1:]
         seqres = "".join(lines)

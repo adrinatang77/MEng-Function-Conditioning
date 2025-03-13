@@ -6,14 +6,21 @@ import modelcif
 from modelcif import Assembly, AsymUnit, Entity, System, dumper
 from modelcif.model import AbInitioModel, Atom, ModelGroup
 from rdkit import Chem
-from .mmcif import parse_mmcif
+try:
+    from .mmcif import parse_mmcif
+except:
+    print('Cannot import utils.mmcif')
 import networkx as nx
 
 periodic_table = Chem.GetPeriodicTable()
 
 import pickle
-with open('/data/cb/scratch/datasets/boltz/ccd.pkl', 'rb') as f:
-    CCD = pickle.load(f)
+try:
+    with open('/data/cb/scratch/datasets/boltz/ccd.pkl', 'rb') as f:
+        CCD = pickle.load(f)
+except:
+    print('Could not load CCD')
+
 
 ATOM = [
     ("name", np.dtype("4i1")),
