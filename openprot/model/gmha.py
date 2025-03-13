@@ -106,7 +106,8 @@ class GeometricMultiHeadAttention(nn.Module):
         relpos_freqs=32,
         relpos_max=100,
         relpos_min=1,
-        custom_rope=False,
+        rope_attn=False,
+        rope_values=False,
         embed_rots=False,  # whether to embed rots into x at the top
         embed_trans=False,
         chain_mask=False,
@@ -138,7 +139,8 @@ class GeometricMultiHeadAttention(nn.Module):
         self.relpos_freqs = relpos_freqs
         self.relpos_attn = relpos_attn
         self.relpos_rope = relpos_rope
-        self.custom_rope = custom_rope
+        self.rope_attn = rope_attn
+        self.rope_values = rope_values
         self.cross_attn = cross_attn
 
         assert not self.embed_rots
@@ -196,7 +198,7 @@ class GeometricMultiHeadAttention(nn.Module):
         query = self.w_q(x).view(B, L, self.heads, -1).transpose(1, 2)  # B H L D
         key = self.w_k(x).view(B, L, self.heads, -1).transpose(1, 2)
 
-        if self.custom_rope:
+        if self.rope_attn:
             query = rotary_emb(query, idx[:,None], query.shape[-1] // 2, 10000, 1)
             key = rotary_emb(key, idx[:,None], key.shape[-1] // 2, 10000, 1)
 
@@ -236,7 +238,7 @@ class GeometricMultiHeadAttention(nn.Module):
         ## scalar values
         value = self.w_v(x).view(B, L, self.heads, -1).transpose(1, 2)
         
-        if self.custom_rope:
+        if self.rope_values:
             value = rotary_emb(value, idx[:,None], value.shape[-1] // 2, 10000, 1)
             out = attn @ value
             out = rotary_emb(out, -idx[:,None], out.shape[-1] // 2, 10000, 1)

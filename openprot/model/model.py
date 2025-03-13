@@ -122,20 +122,8 @@ class OpenProtTransformerBlock(nn.Module):
         pair_ff_expand=1,
         tri_mul=False,
         pair_values=False,  # aggregate values from pair reps
-        ipa_attn=False,  # use point attention
-        ipa_values=False,
-        ipa_frames=False,  # use frames in point attention
-        relpos_attn=False,  # instead use trans relpos
-        relpos_rope=False,
-        relpos_values=False,
-        relpos_freqs=32,
-        relpos_max=100,
-        relpos_min=1,
-        custom_rope=False,
-        embed_rots=False,
-        embed_trans=False,
-        no_qk_points=4,
-        no_v_points=8,
+        rope_attn=False,
+        rope_values=False,
         frame_update=False,
         update_rots=False,
         readout_rots=False,
@@ -147,6 +135,19 @@ class OpenProtTransformerBlock(nn.Module):
         dropout=0.0,
         token_dropout=0.0,
         cross_attn=False,
+        # ipa_attn=False,  # use point attention
+        # ipa_values=False,
+        # ipa_frames=False,  # use frames in point attention
+        # relpos_attn=False,  # instead use trans relpos
+        # relpos_rope=False,
+        # relpos_values=False,
+        # relpos_freqs=32,
+        # relpos_max=100,
+        # relpos_min=1,
+        # embed_rots=False,
+        # embed_trans=False,
+        # no_qk_points=4,
+        # no_v_points=8,
     ):
         super().__init__()
         self.mha = GeometricMultiHeadAttention(
@@ -158,22 +159,24 @@ class OpenProtTransformerBlock(nn.Module):
             pair_values=pair_values,
             pair_bias_linear=pair_bias_linear,
             chain_mask=chain_mask,
-            ipa_attn=ipa_attn,
-            ipa_values=ipa_values,
-            ipa_frames=ipa_frames,
-            relpos_attn=relpos_attn,
-            relpos_rope=relpos_rope,
-            relpos_values=relpos_values,
-            relpos_freqs=relpos_freqs,
-            relpos_min=relpos_min,
-            relpos_max=relpos_max,
-            custom_rope=custom_rope,
-            embed_rots=embed_rots,
-            embed_trans=embed_trans,
-            no_qk_points=no_qk_points,
-            no_v_points=no_v_points,
+            rope_attn=rope_attn,
+            rope_values=rope_values,
             dropout=token_dropout,
             cross_attn=cross_attn,
+            # ipa_attn=ipa_attn,
+            # ipa_values=ipa_values,
+            # ipa_frames=ipa_frames,
+            # relpos_attn=relpos_attn,
+            # relpos_rope=relpos_rope,
+            # relpos_values=relpos_values,
+            # relpos_freqs=relpos_freqs,
+            # relpos_min=relpos_min,
+            # relpos_max=relpos_max,
+            # embed_rots=embed_rots,
+            # embed_trans=embed_trans,
+            # no_qk_points=no_qk_points,
+            # no_v_points=no_v_points,
+
         )
         self.ff = FeedForward(dim, ff_expand * dim, layers=ff_layers)
 
@@ -400,7 +403,8 @@ class OpenProtModel(nn.Module):
             dim=cfg.dim,
             ff_expand=cfg.ff_expand,
             heads=cfg.heads,
-            custom_rope=cfg.custom_rope,
+            rope_attn=cfg.rope_attn,
+            rope_values=cfg.rope_values,
             adaLN=cfg.adaLN,
             chain_mask=cfg.chain_mask,
             cross_attn=cfg.cross_attn,
