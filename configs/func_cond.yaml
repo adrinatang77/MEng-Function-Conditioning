@@ -92,6 +92,9 @@ datasets:
         # index: /scratch/projects/cgai/openprot/data/uniref50.idx.npy  
         index: /data/cb/scratch/share/openprot/uniref50.index # uniref50.idx.npy  
         func_cond: True
+        go_vocab: /data/cb/scratch/datasets/func_data/extracted_data/swissprot_uniref50/go_term_vocab.json
+        seq_func_map: /data/cb/scratch/datasets/func_data/extracted_data/swissprot_uniref50/swissprot_uniref50_seq_func_map.txt
+        func_idx: /data/cb/scratch/datasets/func_data/extracted_data/swissprot_uniref50/swissprot_GO_idx.json
         max_depth: 86 # max GO depth
 
 tasks:

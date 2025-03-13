@@ -12,17 +12,16 @@ import threading
 
 lock = threading.Lock()
 
-# TODO: make filepaths into arguments
 class UnirefDataset(OpenProtDataset):
     def setup(self):
         self.db = open(self.cfg.path)
         self.index = np.load(self.cfg.index)
         self.need_setup = True
         if self.cfg.func_cond:
-            with open('/data/cb/asapp/openprot/go_term_vocab.json', 'r') as file:
+            with open(self.cfg.go_vocab, 'r') as file:
                 self.go_vocab = json.load(file)
-            self.func_db = open('/data/cb/asapp/func_data/swissprot_uniref50_seq_func_map.txt')
-            with open('/data/cb/asapp/func_data/swissprot_GO_idx.json', 'r') as file:
+            self.func_db = open(self.cfg.seq_func_map)
+            with open(self.cfg.func_idx, 'r') as file:
                 self.func_idx = json.load(file)
 
     def actual_setup(self):
