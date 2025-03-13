@@ -8,7 +8,7 @@ logger:
     # please change "test" to something unique to your task
     project: openprot/struct-merge
     # will log to workdir and neptune.ai with this name
-    name: replica-727-refactor2
+    name: tune-gelu
     # if not null, will duplicate stdout and stderr to workdir/{name}/{logfile}
     logfile: std.out
     # if null, will log every epoch, otherwise every this number of steps
@@ -97,6 +97,7 @@ tasks:
     StructureGeneration:
         fraction: 0.1
         edm: ${edm}
+        motif_prob: 0
         struct:
             beta: [1, 2]
             uniform_prob: 0.5
@@ -110,7 +111,7 @@ tasks:
         edm: ${edm}
         seq:
             uniform_prob: 1.0
-        
+        struct: {}
         datasets:
             pdb: 0.25
             afdb_genie: 0.75
@@ -118,7 +119,7 @@ tasks:
     Codesign:
         fraction: 0.8
         weight: 1.0
-        motif_prob: 0.0        
+        motif_prob: 0        
         seq:
             max_prob: 0.05
             uniform_prob: 0.95
@@ -250,12 +251,16 @@ model: # custom args
     blocks: 30
     dropout: 0.2
     token_dropout: 0.0
-    all_atom: ${data.all_atom}
     ff_expand: 4
-    rope: false
-    custom_rope: true
+    rope_attn: true
+    rope_values: true
+    chain_mask: false
+    cross_attn: false
     adaLN: true
-    
+    qk_norm: false
+    adaLN_sigmoid: false
+    adaLN_SiLU: true
+    act: gelu
 
 optimizer:
     type: AdamW

@@ -16,16 +16,22 @@ from .tri_mul import (
 from ..utils.checkpointing import checkpoint_blocks
 
 
-def modulate(x, shift, scale):
+def modulate(x, shift, scale, sigmoid=False):
     if shift is not None:
-        return x * (1 + scale) + shift
+        if sigmoid:
+            return x * scale.sigmoid() + shift
+        else:
+            return x * (1 + scale) + shift
     else:
         return x
 
 
-def gate(x, gate_):
+def gate(x, gate_, sigmoid=False):
     if gate_ is not None:
-        return x * gate_
+        if sigmoid:
+            return x * gate_.sigmoid()
+        else:
+            return x * gate_
     else:
         return x
 
@@ -85,18 +91,35 @@ class RelativePosition(nn.Module):
 
         output = self.embedding(diff)
         return output
+        
+class SwiGLU(nn.Module):
+    """
+    SwiGLU activation function as an nn.Module, allowing it to be used within nn.Sequential.
+    This module splits the input tensor along the last dimension and applies the SiLU (Swish)
+    activation function to the first half, then multiplies it by the second half.
+    """
 
+    def __init__(self):
+        super(SwiGLU, self).__init__()
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        x1, x2 = x.chunk(2, dim=-1)
+        return torch.nn.functional.silu(x1) * x2
 
 class FeedForward(nn.Module):
-    def __init__(self, dim, ff_dim, layers=2):
+    def __init__(self, dim, ff_dim, layers=2, act=nn.ReLU):
         super().__init__()
         self.layers = nn.ModuleList()
         self.layers.append(nn.LayerNorm(dim))
-        self.layers.append(nn.Linear(dim, ff_dim))
+        if act == SwiGLU:
+            out_mul = 2
+        else:
+            out_mul = 1
+        self.layers.append(nn.Linear(dim, ff_dim * out_mul))
         for i in range(layers - 2):
-            self.layers.append(nn.ReLU())
-            self.layers.append(nn.Linear(ff_dim, ff_dim))
-        self.layers.append(nn.ReLU())
+            self.layers.append(act())
+            self.layers.append(nn.Linear(ff_dim, ff_dim * out_mul))
+        self.layers.append(act())
         self.layers.append(nn.Linear(ff_dim, dim))
 
     def forward(self, x):
@@ -135,6 +158,10 @@ class OpenProtTransformerBlock(nn.Module):
         dropout=0.0,
         token_dropout=0.0,
         cross_attn=False,
+        qk_norm=False,
+        adaLN_sigmoid=False,
+        adaLN_SiLU=True,
+        act='relu',
         # ipa_attn=False,  # use point attention
         # ipa_values=False,
         # ipa_frames=False,  # use frames in point attention
@@ -163,6 +190,7 @@ class OpenProtTransformerBlock(nn.Module):
             rope_values=rope_values,
             dropout=token_dropout,
             cross_attn=cross_attn,
+            qk_norm=qk_norm,
             # ipa_attn=ipa_attn,
             # ipa_values=ipa_values,
             # ipa_frames=ipa_frames,
@@ -178,7 +206,17 @@ class OpenProtTransformerBlock(nn.Module):
             # no_v_points=no_v_points,
 
         )
-        self.ff = FeedForward(dim, ff_expand * dim, layers=ff_layers)
+        self.ff = FeedForward(
+            dim,
+            ff_expand * dim,
+            layers=ff_layers,
+            act={
+                'relu': nn.ReLU,
+                'swiglu': SwiGLU,
+                'gelu': nn.GELU,
+                'silu': nn.SiLU,
+            }[act]
+        )
 
         self.pair_updates = pair_updates
         self.pair_ffn = pair_ffn
@@ -190,13 +228,20 @@ class OpenProtTransformerBlock(nn.Module):
         self.update_x = update_x
         self.adaLN = adaLN
         self.readout_adaLN = readout_adaLN
+        self.adaLN_sigmoid = adaLN_sigmoid
+    
+    
+    
         self.mha_norm = nn.LayerNorm(dim, elementwise_affine=not adaLN)
         self.ff_norm = nn.LayerNorm(dim, elementwise_affine=not adaLN)
         self.mha_dropout = nn.Dropout(p=dropout)
         self.ff_dropout = nn.Dropout(p=dropout)
 
         if adaLN:
-            self.adaLN_modulation = nn.Sequential(nn.SiLU(), nn.Linear(dim, 6 * dim))
+            self.adaLN_modulation = nn.Sequential(
+                nn.SiLU() if adaLN_SiLU else nn.Identity(),
+                nn.Linear(dim, 6 * dim)
+            )
             nn.init.constant_(self.adaLN_modulation[-1].weight, 0)
             nn.init.constant_(self.adaLN_modulation[-1].bias, 0)
 
@@ -275,7 +320,7 @@ class OpenProtTransformerBlock(nn.Module):
 
         x = x + self.mha_dropout(gate(
             self.mha(
-                x=modulate(self.mha_norm(x), shift_mha, scale_mha),
+                x=modulate(self.mha_norm(x), shift_mha, scale_mha, self.adaLN_sigmoid),
                 z=self.pair_norm(z) if hasattr(self, "pair_norm") else z,
                 mask=mask.bool(),
                 trans=postcond_fn(trans),
@@ -286,11 +331,12 @@ class OpenProtTransformerBlock(nn.Module):
                 mol_type=mol_type,
             ),
             gate_mha,
+            self.adaLN_sigmoid,
         ))
 
         x = x + self.ff_dropout(gate(self.ff(modulate(
-            self.ff_norm(x), shift_mlp, scale_mlp
-        )), gate_mlp))
+            self.ff_norm(x), shift_mlp, scale_mlp, self.adaLN_sigmoid
+        )), gate_mlp, self.adaLN_sigmoid))
 
         if self.pair_updates:
             z = z + self.sequence_to_pair(x)
@@ -410,6 +456,10 @@ class OpenProtModel(nn.Module):
             cross_attn=cfg.cross_attn,
             dropout=cfg.dropout,
             token_dropout=cfg.token_dropout,
+            qk_norm=cfg.qk_norm,
+            adaLN_sigmoid=cfg.adaLN_sigmoid,
+            adaLN_SiLU=cfg.adaLN_SiLU,
+            act=cfg.act,
         )
 
 

@@ -139,7 +139,7 @@ class OpenProtWrapper(Wrapper):
         self.tracks = tracks
         self.evals = evals
         if self.cfg.model.ema:
-            self.ema = ExponentialMovingAverage(self.model, self.cfg.model.ema_decay)
+            self.ema = ExponentialMovingAverage(self.model, self.cfg.model.ema)
 
         
     def on_save_checkpoint(self, checkpoint):

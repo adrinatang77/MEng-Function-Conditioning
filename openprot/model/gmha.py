@@ -4,7 +4,6 @@ import torch.nn as nn
 import numpy as np
 import torch
 import torch.nn.functional as F
-from .primitives import ipa_point_weights_init_, Linear
 from ..utils.tensor_utils import (
     permute_final_dims,
     flatten_final_dims,
@@ -97,15 +96,6 @@ class GeometricMultiHeadAttention(nn.Module):
         pair_bias=False,  # use pairs to bias
         pair_values=False,  # aggregate values from pair reps
         pair_bias_linear=False, # whether to transform z before pair bias
-        ipa_attn=False,  # use point attention
-        ipa_values=False,
-        ipa_frames=False,  # use frames in point attention
-        relpos_attn=False,  # instead use trans relpos
-        relpos_rope=False,
-        relpos_values=False,
-        relpos_freqs=32,
-        relpos_max=100,
-        relpos_min=1,
         rope_attn=False,
         rope_values=False,
         embed_rots=False,  # whether to embed rots into x at the top
@@ -115,6 +105,16 @@ class GeometricMultiHeadAttention(nn.Module):
         no_v_points=8,
         dropout=0.0,
         cross_attn=False,
+        qk_norm=False,
+        # ipa_attn=False,  # use point attention
+        # ipa_values=False,
+        # ipa_frames=False,  # use frames in point attention
+        # relpos_attn=False,  # instead use trans relpos
+        # relpos_rope=False,
+        # relpos_values=False,
+        # relpos_freqs=32,
+        # relpos_max=100,
+        # relpos_min=1,
     ):
         
         super().__init__()
@@ -126,19 +126,8 @@ class GeometricMultiHeadAttention(nn.Module):
         self.pair_bias = pair_bias
         self.pair_bias_linear = pair_bias_linear
         self.pair_values = pair_values
-        self.ipa_attn = ipa_attn
-        self.ipa_values = ipa_values
-        self.ipa_frames = ipa_frames
         self.embed_rots = embed_rots
         self.embed_trans = embed_trans
-        self.no_qk_points = no_qk_points
-        self.no_v_points = no_v_points
-        self.relpos_values = relpos_values
-        self.relpos_max = relpos_max
-        self.relpos_min = relpos_min
-        self.relpos_freqs = relpos_freqs
-        self.relpos_attn = relpos_attn
-        self.relpos_rope = relpos_rope
         self.rope_attn = rope_attn
         self.rope_values = rope_values
         self.cross_attn = cross_attn
@@ -146,12 +135,7 @@ class GeometricMultiHeadAttention(nn.Module):
         assert not self.embed_rots
         assert not self.embed_trans
         assert not self.rope
-        assert not self.relpos_rope
         assert not self.pair_bias
-        assert not self.relpos_attn
-        assert not self.relpos_values
-        assert not self.ipa_attn
-        assert not self.ipa_values
         assert not self.pair_values
         assert not self.pair_bias_linear
 
@@ -164,7 +148,10 @@ class GeometricMultiHeadAttention(nn.Module):
         self.w_q = nn.Linear(dim, dim, bias=False)
         self.w_k = nn.Linear(dim, dim, bias=False)
         self.w_v = nn.Linear(dim, dim, bias=False)
-
+        
+        self.q_norm = nn.LayerNorm(dim) if qk_norm else nn.Identity()
+        self.k_norm = nn.LayerNorm(dim) if qk_norm else nn.Identity()
+        
         if self.cross_attn:
             self.cross_w_q = nn.Linear(dim, dim, bias=False)
             self.cross_w_k = nn.Linear(dim, dim, bias=False)
@@ -195,8 +182,8 @@ class GeometricMultiHeadAttention(nn.Module):
             mask = torch.ones(B, L, D, dtype=bool, device=dev)
 
         
-        query = self.w_q(x).view(B, L, self.heads, -1).transpose(1, 2)  # B H L D
-        key = self.w_k(x).view(B, L, self.heads, -1).transpose(1, 2)
+        query = self.q_norm(self.w_q(x)).view(B, L, self.heads, -1).transpose(1, 2)  # B H L D
+        key = self.k_norm(self.w_k(x)).view(B, L, self.heads, -1).transpose(1, 2)
 
         if self.rope_attn:
             query = rotary_emb(query, idx[:,None], query.shape[-1] // 2, 10000, 1)
