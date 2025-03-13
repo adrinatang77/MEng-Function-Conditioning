@@ -3,7 +3,7 @@ pretrained:  #  load weights from here first
 validate: false # if true, only validate the model, don't train
 logger:
     # set to true to log to neptune.ai
-    neptune: False
+    neptune: True
     run_id: 
     # please change "test" to something unique to your task
     project: openprot/function
@@ -14,13 +14,13 @@ logger:
     # if null, will log every epoch, otherwise every this number of steps
     train_log_freq: 100
     val_log_freq: null 
-    ckpt_freq: 50000000000
+    ckpt_freq: 500
     save_freq: 1000
 trainer:
     accelerator: auto
     devices: 1
-    max_epochs: 1
-    max_steps: 100
+    max_epochs: 10
+    max_steps: 1000
     enable_progress_bar: false
     limit_train_batches: 1.0
     limit_val_batches: 1.0

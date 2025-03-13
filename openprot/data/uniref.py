@@ -69,7 +69,8 @@ class UnirefDataset(OpenProtDataset):
 
                 # split string to get GO terms
                 go_terms = go_terms.split(',')
-                go_term_indices = list(set(np.array([self.go_vocab.get(go_term, None) for go_term in go_terms], dtype=int)))
+                go_term_indices = list(set(np.array([go_index for go_term in go_terms if (go_index := self.go_vocab.get(go_term)) is not None], dtype=int)))
+                # go_term_indices = list(set(np.array([self.go_vocab.get(go_term, None) for go_term in go_terms], dtype=int)))
                 num_go_terms = len(go_term_indices)
 
                 go_term_array[:, :num_go_terms] = go_term_indices # protein-level GO terms
