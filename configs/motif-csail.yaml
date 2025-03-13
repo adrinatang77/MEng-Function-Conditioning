@@ -3,14 +3,14 @@ pretrained:  #  load weights from here first
 validate: false # if true, only validate the model, don't train
 logger:
     # set to true to log to neptune.ai
-    neptune: false
+    neptune: true
     run_id: 
     # please change "test" to something unique to your task
     project: openprot/struct-merge
     # will log to workdir and neptune.ai with this name
     name: motif-test2
     # if not null, will duplicate stdout and stderr to workdir/{name}/{logfile}
-    logfile: # std.out
+    logfile: std.out
     # if null, will log every epoch, otherwise every this number of steps
     train_log_freq: 100
     val_log_freq: null 
@@ -99,6 +99,7 @@ tasks:
     StructureGeneration:
         fraction: 0.1
         edm: ${edm}
+        motif: ${motif}
         motif_prob: 0.5
         struct:
             beta: [1, 2]
@@ -113,6 +114,7 @@ tasks:
         edm: ${edm}
         seq:
             uniform_prob: 1.0
+        struct: {}
         
         datasets:
             pdb: 0.25
