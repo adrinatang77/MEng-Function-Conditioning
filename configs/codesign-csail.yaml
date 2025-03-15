@@ -252,11 +252,11 @@ model: # custom args
     dim: 512
     heads: 16
     blocks: 30
-    dropout: 0.2
+    dropout: 0.1
     token_dropout: 0.0
     ff_expand: 4
     rope_attn: true
-    rope_values: false
+    rope_values: true
     chain_mask: false
     cross_attn: false
     adaLN: true
