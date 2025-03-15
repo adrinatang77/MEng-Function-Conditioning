@@ -159,9 +159,8 @@ class OpenProtTransformerBlock(nn.Module):
         token_dropout=0.0,
         cross_attn=False,
         qk_norm=False,
-        adaLN_sigmoid=False,
-        adaLN_SiLU=True,
         act='relu',
+        # adaLN_extra_linear=False,
         # ipa_attn=False,  # use point attention
         # ipa_values=False,
         # ipa_frames=False,  # use frames in point attention
@@ -228,10 +227,7 @@ class OpenProtTransformerBlock(nn.Module):
         self.update_x = update_x
         self.adaLN = adaLN
         self.readout_adaLN = readout_adaLN
-        self.adaLN_sigmoid = adaLN_sigmoid
-    
-    
-    
+        
         self.mha_norm = nn.LayerNorm(dim, elementwise_affine=not adaLN)
         self.ff_norm = nn.LayerNorm(dim, elementwise_affine=not adaLN)
         self.mha_dropout = nn.Dropout(p=dropout)
@@ -239,7 +235,7 @@ class OpenProtTransformerBlock(nn.Module):
 
         if adaLN:
             self.adaLN_modulation = nn.Sequential(
-                nn.SiLU() if adaLN_SiLU else nn.Identity(),
+                nn.SiLU(),
                 nn.Linear(dim, 6 * dim)
             )
             nn.init.constant_(self.adaLN_modulation[-1].weight, 0)
@@ -320,7 +316,7 @@ class OpenProtTransformerBlock(nn.Module):
 
         x = x + self.mha_dropout(gate(
             self.mha(
-                x=modulate(self.mha_norm(x), shift_mha, scale_mha, self.adaLN_sigmoid),
+                x=modulate(self.mha_norm(x), shift_mha, scale_mha),
                 z=self.pair_norm(z) if hasattr(self, "pair_norm") else z,
                 mask=mask.bool(),
                 trans=postcond_fn(trans),
@@ -331,12 +327,11 @@ class OpenProtTransformerBlock(nn.Module):
                 mol_type=mol_type,
             ),
             gate_mha,
-            self.adaLN_sigmoid,
         ))
 
         x = x + self.ff_dropout(gate(self.ff(modulate(
-            self.ff_norm(x), shift_mlp, scale_mlp, self.adaLN_sigmoid
-        )), gate_mlp, self.adaLN_sigmoid))
+            self.ff_norm(x), shift_mlp, scale_mlp
+        )), gate_mlp))
 
         if self.pair_updates:
             z = z + self.sequence_to_pair(x)
@@ -457,8 +452,6 @@ class OpenProtModel(nn.Module):
             dropout=cfg.dropout,
             token_dropout=cfg.token_dropout,
             qk_norm=cfg.qk_norm,
-            adaLN_sigmoid=cfg.adaLN_sigmoid,
-            adaLN_SiLU=cfg.adaLN_SiLU,
             act=cfg.act,
         )
 

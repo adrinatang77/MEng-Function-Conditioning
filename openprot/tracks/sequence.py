@@ -191,18 +191,35 @@ class SequenceTrack(OpenProtTrack):
 
         mask = rand_mask | ~batch["seq_mask"].bool() # these will be input as MASK
         sup = rand_mask & batch["seq_mask"].bool() # these will be actually supervised
-        
+
+        #                                   !!!!!!!
         noisy_batch["aatype"] = torch.where(rand_mask, MASK_IDX, tokens)
 
+        
         # present = ~batch["seq_noise"].bool() & batch["seq_mask"].bool()
         # target["seq_occupancy"] = present.sum(-1) / (1+batch['seq_mask'].sum(-1))        
         
         target["seq_supervise"] = torch.where(sup, batch["seq_weight"], 0.0)
+
+
         if self.cfg.reweight == 'linear':
             target["seq_supervise"] *= (1-batch['seq_noise'])
         elif self.cfg.reweight == 'inverse':
             target["seq_supervise"] *= 1/(batch['seq_noise'] + self.cfg.reweight_eps)
         target["aatype"] = tokens
+
+        
+        mlm_mask = (torch.rand_like(batch['seq_noise']) < self.cfg.mlm_prob) & (batch['mol_type'] == 0) & ~mask
+
+        noisy_batch['aatype'] = torch.where(
+            mlm_mask & (torch.rand_like(batch['seq_noise']) < self.cfg.mlm_ratio),
+            torch.randint(0, 20, mlm_mask.shape, device=mlm_mask.device),
+            noisy_batch['aatype']
+        )
+        target["seq_supervise"].masked_fill_(mlm_mask, self.cfg.mlm_weight)
+
+        
+        
         
         if logger:
             logger.masked_log("seq/toks", batch["seq_mask"], sum=True)
