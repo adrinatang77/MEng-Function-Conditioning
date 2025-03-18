@@ -438,7 +438,6 @@ class FunctionConditioningEval(SequenceGenerationEval):
             func_cond=func_cond,  # Add function conditioning
         )
         
-        print(data["func_cond"])
         return data
     
     def compute_metrics(self, rank=0, world_size=1, device=None, savedir=".", logger=None):
