@@ -1,330 +1,502 @@
-from .eval import OpenProtEval
-# import foldcomp
-from ..utils import protein
-from ..utils.prot_utils import make_ca_prot, write_ca_traj, compute_tmscore, aatype_to_seqres
-from ..utils.geometry import compute_lddt, rmsdalign, compute_rmsd
-from ..utils import residue_constants as rc
-from ..generate.sampler import OpenProtSampler
-from ..generate.structure import EDMDiffusionStepper, GaussianFMStepper
-from ..generate.sequence import SequenceUnmaskingStepper
+# from .eval import OpenProtEval
+# # import foldcomp
+# from ..utils import protein
+# from ..utils.prot_utils import make_ca_prot, write_ca_traj, compute_tmscore, aatype_to_seqres
+# from ..utils.geometry import compute_lddt, rmsdalign, compute_rmsd
+# from ..utils import residue_constants as rc
+# from ..generate.sampler import OpenProtSampler
+# from ..generate.structure import EDMDiffusionStepper, GaussianFMStepper
+# from ..generate.sequence import SequenceUnmaskingStepper
+# import numpy as np
+# import torch
+# import os, tqdm, math, subprocess
+# import pandas as pd
+# from biopandas.pdb import PandasPdb
+# from ..utils.secondary import assign_secondary_structures
+# from collections import defaultdict
+
+# class FunctionConditioningEval(OpenProtEval):
+#     def setup(self):
+#         def t_skew_func(t, skew):
+#             midpoint_y = 0.5 + skew / 2# [0, 1]
+#             midpoint_x = 0.5 
+#             if t < midpoint_x:
+#                 return midpoint_y / midpoint_x * t
+#             else:
+#                 return midpoint_y + (1 - midpoint_y) / (1 - midpoint_x) * (t - midpoint_x)
+
+#         self.seq_sched_fn = lambda t: 1-t_skew_func(t, -self.cfg.skew)
+        
+#     def run(self, model):
+#         NotImplemented
+
+#     def __len__(self):
+#         return self.cfg.num_samples
+
+#     def __getitem__(self, idx):
+#         L = self.cfg.sample_length
+        
+#         if self.cfg.truncate:
+#             seq_noise = self.seq_sched_fn(self.cfg.truncate)
+#         else:
+#             seq_noise = 1
+
+#         if self.cfg.dir is not None:
+#             with open(f"{self.cfg.dir}/sample{idx}.fasta") as f:
+# #                 prot = protein.from_pdb_string(f.read())
+            
+# #             seqres = aatype_to_seqres(prot.aatype)
+#             data = self.make_data(
+#                 name=f"sample{idx}",
+#                 seqres=seqres,
+#                 seq_mask=np.ones(L),
+#                 seq_noise=np.ones(L, dtype=np.float32) * seq_noise,
+#                 residx=np.arange(L, dtype=np.float32),
+#                 func_cond=None
+#                 # prep func cond
+#             )
+#             return data
+        
+#         data = self.make_data(
+#             name=f"sample{idx}",
+#             seqres="A"*L,
+#             seq_mask=np.ones(L, dtype=np.float32),
+#             seq_noise=np.ones(L, dtype=np.float32) * seq_noise,
+#             residx=np.arange(L, dtype=np.float32),
+#             func_cond=None
+#             # prep func cond
+#         )
+#         return data
+
+#     def run_designability(self, idx, rank, world_size, savedir, logger, df):
+#         for i in idx:
+#             cmd = ['cp', f"{savedir}/sample{i}.fasta", f"{savedir}/rank{rank}"]
+#             subprocess.run(cmd)
+                
+#         cmd = [
+#             "bash",
+#             "scripts/switch_conda_env.sh",
+#             "eval",
+#             "python",
+#             "-m",
+#             "scripts.esmfold",
+#             "--outdir",
+#             f"{savedir}/rank{rank}",
+#             "--dir",
+#             f"{savedir}/rank{rank}",
+#             # "--print",
+#             "--device",
+#             str(torch.cuda.current_device())
+#         ]
+#         out = subprocess.run(cmd) 
+        
+#         for i in idx:
+            
+#             with open(f"{savedir}/sample{i}.pdb") as f:
+#                 prot = protein.from_pdb_string(f.read())
+#             with open(f"{savedir}/rank{rank}/sample{i}.pdb") as f:
+#                 pred = protein.from_pdb_string(f.read())
+#             lddt = compute_lddt(
+#                 torch.from_numpy(pred.atom_positions[:,1]), 
+#                 torch.from_numpy(prot.atom_positions[:,1]), 
+#                 torch.from_numpy(prot.atom_mask[:,1])
+#             )
+#             rmsd = compute_rmsd(
+#                 torch.from_numpy(pred.atom_positions[:,1]),  
+#                 torch.from_numpy(prot.atom_positions[:,1])
+#             )
+#             tmscore = compute_tmscore(  # second is reference
+#                 coords1=pred.atom_positions[:,1],
+#                 coords2=prot.atom_positions[:,1],
+#             )['tm']
+
+#             plddt = PandasPdb().read_pdb(f"{savedir}/rank{rank}/sample{i}.pdb").df['ATOM']['b_factor'].mean()
+            
+#             if logger is not None:
+#                 logger.log(f"{self.cfg.name}/sclddt", lddt)
+#                 logger.log(f"{self.cfg.name}/scrmsd", rmsd)
+#                 logger.log(f"{self.cfg.name}/scrmsd<2", (rmsd < 2).float())
+#                 logger.log(f"{self.cfg.name}/scTM", tmscore)
+#                 logger.log(f"{self.cfg.name}/sclddt>80", (lddt > 0.8).float())
+#                 logger.log(f"{self.cfg.name}/scTM>80", tmscore > 0.8)
+#                 logger.log(f"{self.cfg.name}/plddt", plddt)
+
+#             df[f"sample{i}"]["plddt"] = plddt
+#             df[f"sample{i}"]["scrmsd"] = float(rmsd)
+#             df[f"sample{i}"]["sctm"] = tmscore
+#             df[f"sample{i}"]["sclddt"] = float(lddt)
+
+#     def make_plot(self, idx, rank, world_size, savedir, logger, df):
+#         cmd = [
+#             "bash",
+#             "scripts/switch_conda_env.sh",
+#             "pymol",
+#             "python",
+#             "-m",
+#             "scripts.visualize",
+#             "--dir",
+#             savedir,
+#             "--out",
+#             f"{savedir}/out.png",
+#             "--annotate",
+#         ]
+#         out = subprocess.run(cmd) 
+    
+#     def run_deepfri_recall(self, idx, rank, world_size, save_dir, logger, df):
+#         # Create directories
+#         deepfri_dir = f"{savedir}/rank{rank}/deepfri"
+#         os.makedirs(deepfri_dir, exist_ok=True)
+
+#         # Create a directory for PDB files and a directory for FASTA files
+#         fasta_dir = f"{deepfri_dir}/fastas"
+#         os.makedirs(pdb_dir, exist_ok=True)
+#         os.makedirs(fasta_dir, exist_ok=True)
+
+#         # Copy files to their respective directories
+#         for i in idx:
+#             sample_name = f"sample{i}"
+
+#             # Copy PDB and FASTA files
+#             pdb_file = f"{savedir}/{sample_name}.pdb"
+#             fasta_file = f"{savedir}/{sample_name}.fasta"
+
+#             if os.path.exists(pdb_file):
+#                 cmd = ['cp', pdb_file, pdb_dir]
+#                 subprocess.run(cmd)
+
+#             if os.path.exists(fasta_file):
+#                 cmd = ['cp', fasta_file, fasta_dir]
+#                 subprocess.run(cmd)
+
+#         # Run DeepFRI with fold model (structure-based)
+#         fold_output_dir = f"{deepfri_dir}/fold_results"
+#         os.makedirs(fold_output_dir, exist_ok=True)
+
+#         cmd = [
+#             "bash",
+#             "scripts/switch_conda_env_with_CUDA.sh",
+#             "deepfri",
+#             str(torch.cuda.current_device()),
+#             "python",
+#             "-m",
+#             "scripts.deepfri",
+#             "--pdb_dir", pdb_dir,
+#             "--outdir", fold_output_dir,
+#             "--model", "fold",
+#             "--ontology", "mf",
+#             "--threshold", "0.5",
+#         ]
+#         subprocess.run(cmd)
+
+#         # Run DeepFRI with sequence model
+#         seq_output_dir = f"{deepfri_dir}/seq_results"
+#         os.makedirs(seq_output_dir, exist_ok=True)
+
+#         cmd = [
+#             "bash",
+#             "scripts/switch_conda_env_with_CUDA.sh",
+#             "deepfri",
+#             str(torch.cuda.current_device()),
+#             "python",
+#             "-m",
+#             "scripts.deepfri",
+#             "--fasta_dir", fasta_dir,
+#             "--outdir", seq_output_dir,
+#             "--model", "sequence",
+#             "--ontology", "mf",
+#             "--threshold", "0.5",
+#             "--device", str(torch.cuda.current_device())
+#         ]
+#         subprocess.run(cmd)
+
+#         # Process results and calculate metrics directly
+#         fold_correct = 0
+#         fold_total = 0
+#         fold_confidences = []
+
+#         seq_correct = 0
+#         seq_total = 0
+#         seq_confidences = []
+
+#         for i in idx:
+#             sample_name = f"sample{i}"
+
+#             # TODO: Get target terms for this sample
+#             # Implement based on how target terms are stored in your model
+#             target_terms = self.get_target_go_terms(sample_name, savedir)
+
+#             if not target_terms:
+#                 continue
+
+#             # Process fold results
+#             fold_result_file = f"{fold_output_dir}/{sample_name}_results.json"
+#             if os.path.exists(fold_result_file):
+#                 with open(fold_result_file, 'r') as f:
+#                     fold_result = json.load(f)
+
+#                     # Get predictions above threshold
+#                     fold_predictions = fold_result.get('predictions', {})
+
+#                     # Check if any target term was predicted
+#                     fold_total += 1
+#                     predicted_any = any(term in fold_predictions for term in target_terms)
+#                     if predicted_any:
+#                         fold_correct += 1
+
+#                     # Track confidence for target terms
+#                     for term in target_terms:
+#                         confidence = fold_predictions.get(term, 0)
+#                         fold_confidences.append(confidence)
+
+#             # Process sequence results
+#             seq_result_file = f"{seq_output_dir}/{sample_name}_results.json"
+#             if os.path.exists(seq_result_file):
+#                 with open(seq_result_file, 'r') as f:
+#                     seq_result = json.load(f)
+
+#                     # Get predictions above threshold
+#                     seq_predictions = seq_result.get('predictions', {})
+
+#                     # Check if any target term was predicted
+#                     seq_total += 1
+#                     predicted_any = any(term in seq_predictions for term in target_terms)
+#                     if predicted_any:
+#                         seq_correct += 1
+
+#                     # Track confidence for target terms
+#                     for term in target_terms:
+#                         confidence = seq_predictions.get(term, 0)
+#                         seq_confidences.append(confidence)
+
+#         # Calculate aggregate metrics
+#         fold_recall = fold_correct / fold_total if fold_total > 0 else 0
+#         fold_avg_conf = np.mean(fold_confidences) if fold_confidences else 0
+
+#         seq_recall = seq_correct / seq_total if seq_total > 0 else 0
+#         seq_avg_conf = np.mean(seq_confidences) if seq_confidences else 0
+
+#         # Save metrics to a summary file
+#         metrics = {
+#             "fold_recall": fold_recall,
+#             "fold_avg_confidence": fold_avg_conf,
+#             "fold_correct": fold_correct,
+#             "fold_total": fold_total,
+#             "seq_recall": seq_recall,
+#             "seq_avg_confidence": seq_avg_conf,
+#             "seq_correct": seq_correct,
+#             "seq_total": seq_total
+#         }
+
+# #         with open(f"{deepfri_dir}/metrics.json", 'w') as f:
+# #             json.dump(metrics, f, indent=2)
+
+#         # Add metrics to dataframe
+#         df["deepfri_summary"] = {
+#             "fold_recall": fold_recall,
+#             "fold_avg_conf": fold_avg_conf,
+#             "seq_recall": seq_recall,
+#             "seq_avg_conf": seq_avg_conf
+#         }
+
+#         # Log metrics
+#         if logger is not None:
+#             logger.log(f"{self.cfg.name}/deepfri_fold_recall", fold_recall)
+#             logger.log(f"{self.cfg.name}/deepfri_fold_avg_conf", fold_avg_conf)
+#             logger.log(f"{self.cfg.name}/deepfri_seq_recall", seq_recall)
+#             logger.log(f"{self.cfg.name}/deepfri_seq_avg_conf", seq_avg_conf)
+
+        
+#     def save_df(self, idx, rank, world_size, savedir, logger, df):
+#         df = pd.DataFrame(df).T.astype(float)
+#         df.to_csv(f"{savedir}/rank{rank}.csv")
+    
+#         if world_size > 1:
+#             torch.distributed.barrier()
+#         if rank == 0:
+#             dfs = []
+#             for r in range(world_size):
+#                 dfs.append(pd.read_csv(f"{savedir}/rank{r}.csv", index_col=0))
+#                 subprocess.run(["rm", f"{savedir}/rank{r}.csv"])
+#             df = pd.concat(dfs).sort_index()
+#             df.to_csv(f"{savedir}/info.csv")
+        
+#     def compute_metrics(
+#         self, rank=0, world_size=1, device=None, savedir=".", logger=None
+#     ):
+
+#         idx = list(range(rank, len(self), world_size))
+#         os.makedirs(f"{savedir}/rank{rank}", exist_ok=True)
+
+#         df = defaultdict(dict) 
+        
+#         if self.cfg.run_designability:
+#             torch.cuda.empty_cache()
+#             self.run_designability(idx, rank, world_size, savedir, logger, df)
+
+#         if self.cfg.run_deepfri_recall:
+#             self.run_deepfri_crecall(idx, rank, world_size, savedir, logger, df)
+        
+#         # this has to be last
+#         self.save_df(idx, rank, world_size, savedir, logger, df)
+#         if self.cfg.run_plot and rank == 0:
+#             self.make_plot(idx, rank, world_size, savedir, logger, df)
+            
+#     def run_batch(
+#         self,
+#         model,
+#         batch: dict,
+#         noisy_batch: dict,
+#         savedir=".", 
+#         device=None,
+#         logger=None
+#     ):
+                    
+#         sampler = OpenProtSampler(schedules={
+#             'sequence': lambda t: 1-t, # self.seq_sched_fn,
+#         }, steppers=[
+#             SequenceUnmaskingStepper(self.cfg)
+#         ])
+        
+#         sample, extra = sampler.sample(model, noisy_batch, self.cfg.steps)
+#         B = len(sample['aatype'])
+#         for i in range(B):
+#             name = batch["name"][i]
+
+#             seq = "".join([rc.restypes_with_x[aa] for aa in sample["aatype"][i]])
+#             with open(f"{savedir}/{name}.fasta", "w") as f:
+#                 f.write(f">{name}\n")  # FASTA format header
+#                 f.write(seq + "\n")
+
+#             if logger is not None:
+#                 logger.log(f"{self.cfg.name}/seqent", self.compute_sequence_entropy(seq))
+
+#             with open(f"{savedir}/{name}_traj.fasta", "w") as f:
+#                 for seqs in extra['seq_traj']:
+#                     seq = "".join([rc.restypes_with_x[aa] for aa in seqs[i]])
+#                     seq = seq.replace('X', '-')
+#                     f.write(seq+'\n')
+                    
+import json
 import numpy as np
-from ..tasks import StructurePrediction
 import torch
-import os, tqdm, math, subprocess
-import pandas as pd
-from biopandas.pdb import PandasPdb
-from ..utils.secondary import assign_secondary_structures
+import os
+import subprocess
 from collections import defaultdict
+import pandas as pd
 
-class FunctionConditioningEval(OpenProtEval):
+from .seq_gen import SequenceGenerationEval
+
+class FunctionConditioningEval(SequenceGenerationEval):
     def setup(self):
-        def edm_sched_fn(t):
-            p = self.cfg.struct.edm.sched_p
-            sigma_max = self.cfg.struct.edm.sigma_max
-            sigma_min = self.cfg.struct.edm.sigma_min 
-            return (
-                sigma_min ** (1 / p)
-                + (1-t) * (sigma_max ** (1 / p) - sigma_min ** (1 / p))
-            ) ** p
-
+        super().setup()
         
-
-        # max_t = self.cfg.struct.max_t
-        # def log_sched_fn(t):
-        #     exp = 10 ** (-2*t)
-        #     return max_t * (exp - 1e-2) / (1 - 1e-2)
-
-        # if self.cfg.struct.sched == 'linear':
-        #     sched_fn = lambda t: max_t * (1-t)
-        # elif self.cfg.struct.sched == 'edm':
-        # elif self.cfg.struct.sched == 'log':
-        #     sched_fn = log_sched_fn
-        # else:
-        #     raise Exception("unrecognized schedule")
-
-        sched_fn = edm_sched_fn
-        def t_skew_func(t, skew):
-            midpoint_y = 0.5 + skew / 2# [0, 1]
-            midpoint_x = 0.5 
-            if t < midpoint_x:
-                return midpoint_y / midpoint_x * t
-            else:
-                return midpoint_y + (1 - midpoint_y) / (1 - midpoint_x) * (t - midpoint_x)
-
-        self.struct_sched_fn = lambda t: sched_fn(t_skew_func(t, self.cfg.skew))
-        self.seq_sched_fn = lambda t: 1-t_skew_func(t, -self.cfg.skew)
+        # Load GO vocabulary
+        with open(self.cfg.go_vocab, 'r') as f:
+            self.go_vocab = json.load(f)
         
-    def run(self, model):
-        NotImplemented
-
-    def __len__(self):
-        return self.cfg.num_samples
+        # Load target GO terms for each sample
+        self.sample_to_go_terms = {}
+        
+        if os.path.exists(self.cfg.target_go_terms):
+            with open(self.cfg.target_go_terms, 'r') as f:
+                lines = f.readlines()
+            
+            # Process each line and map to sample index
+            for i, line in enumerate(lines):
+                go_terms = line.strip().split()  # Support multiple GO terms per line
+                sample_name = f"sample{i}"
+                self.sample_to_go_terms[sample_name] = go_terms
+            
+            print(f"Loaded GO terms for {len(self.sample_to_go_terms)} samples from {self.cfg.target_go_terms}")
+        else:
+            print("Warning: target_go_terms_file not specified or file not found")
 
     def __getitem__(self, idx):
         L = self.cfg.sample_length
+        sample_name = f"sample{idx}"
         
-        max_noise = self.cfg.struct.edm.sigma_max
-        if self.cfg.truncate:
-            struct_noise = self.struct_sched_fn(self.cfg.truncate)
-            seq_noise = self.seq_sched_fn(self.cfg.truncate)
-        else:
-            struct_noise = max_noise
-            seq_noise = 1
-
-        if self.cfg.dir is not None:
-            with open(f"{self.cfg.dir}/sample{idx}.pdb") as f:
-                prot = protein.from_pdb_string(f.read())
+        # Get GO terms for this sample
+        go_terms = self.sample_to_go_terms.get(sample_name, [])
+        
+        # Create function conditioning array
+        if go_terms:
+            max_depth = self.cfg.max_depth
+            func_cond = np.zeros((L, max_depth), dtype=int)
             
-            seqres = aatype_to_seqres(prot.aatype)
-            data = self.make_data(
-                name=f"sample{idx}",
-                seqres=seqres,
-                seq_mask=np.ones(L),
-                seq_noise=np.ones(L, dtype=np.float32) * seq_noise,
-                struct=prot.atom_positions[:,1].astype(np.float32),
-                struct_noise=np.ones(L, dtype=np.float32) * struct_noise,
-                struct_mask=prot.atom_mask[:,1].astype(np.float32),
-                residx=np.arange(L, dtype=np.float32),
-            )
-            return data
+            go_term_indices = list(set(np.array([go_index for go_term in go_terms if (go_index := self.go_vocab.get(go_term)) is not None], dtype=int)))
+            num_go_terms = len(go_term_indices)
+
+            func_cond[:, :num_go_terms] = go_term_indices
         
+        # Create data with function conditioning
         data = self.make_data(
-            name=f"sample{idx}",
+            name=sample_name,
             seqres="A"*L,
             seq_mask=np.ones(L, dtype=np.float32),
-            seq_noise=np.ones(L, dtype=np.float32) * seq_noise,
-            struct_noise=np.ones(L, dtype=np.float32) * struct_noise,
-            struct=np.zeros((L, 3), dtype=np.float32),
-            struct_mask=np.ones(L, dtype=np.float32),
+            seq_noise=np.ones(L, dtype=np.float32),
             residx=np.arange(L, dtype=np.float32),
+            func_cond=func_cond,  # Add function conditioning
         )
-        return data
-
-    def run_designability(self, idx, rank, world_size, savedir, logger, df):
-        for i in idx:
-            cmd = ['cp', f"{savedir}/sample{i}.fasta", f"{savedir}/rank{rank}"]
-            subprocess.run(cmd)
-                
-        cmd = [
-            "bash",
-            "scripts/switch_conda_env.sh",
-            "eval",
-            "python",
-            "-m",
-            "scripts.esmfold",
-            "--outdir",
-            f"{savedir}/rank{rank}",
-            "--dir",
-            f"{savedir}/rank{rank}",
-            # "--print",
-            "--device",
-            str(torch.cuda.current_device())
-        ]
-        out = subprocess.run(cmd) 
         
-        for i in idx:
-            
-            with open(f"{savedir}/sample{i}.pdb") as f:
-                prot = protein.from_pdb_string(f.read())
-            with open(f"{savedir}/rank{rank}/sample{i}.pdb") as f:
-                pred = protein.from_pdb_string(f.read())
-            lddt = compute_lddt(
-                torch.from_numpy(pred.atom_positions[:,1]), 
-                torch.from_numpy(prot.atom_positions[:,1]), 
-                torch.from_numpy(prot.atom_mask[:,1])
-            )
-            rmsd = compute_rmsd(
-                torch.from_numpy(pred.atom_positions[:,1]),  
-                torch.from_numpy(prot.atom_positions[:,1])
-            )
-            tmscore = compute_tmscore(  # second is reference
-                coords1=pred.atom_positions[:,1],
-                coords2=prot.atom_positions[:,1],
-            )['tm']
-
-            plddt = PandasPdb().read_pdb(f"{savedir}/rank{rank}/sample{i}.pdb").df['ATOM']['b_factor'].mean()
-            
-            if logger is not None:
-                logger.log(f"{self.cfg.name}/sclddt", lddt)
-                logger.log(f"{self.cfg.name}/scrmsd", rmsd)
-                logger.log(f"{self.cfg.name}/scrmsd<2", (rmsd < 2).float())
-                logger.log(f"{self.cfg.name}/scTM", tmscore)
-                logger.log(f"{self.cfg.name}/sclddt>80", (lddt > 0.8).float())
-                logger.log(f"{self.cfg.name}/scTM>80", tmscore > 0.8)
-                logger.log(f"{self.cfg.name}/plddt", plddt)
-
-            df[f"sample{i}"]["plddt"] = plddt
-            df[f"sample{i}"]["scrmsd"] = float(rmsd)
-            df[f"sample{i}"]["sctm"] = tmscore
-            df[f"sample{i}"]["sclddt"] = float(lddt)
+        print(data["func_cond"])
+        return data
     
+    def compute_metrics(self, rank=0, world_size=1, device=None, savedir=".", logger=None):
+        # Call parent method to compute basic metrics
+        super().compute_metrics(rank, world_size, device, savedir, logger)
+        
+        idx = list(range(rank, len(self), world_size))
+        df = defaultdict(dict)
+        self.run_deepfri_recall(idx, rank, world_size, savedir, logger, df)
 
-    def run_diversity(self, idx, rank, world_size, savedir, logger, df):
-        tm_arr = np.zeros((len(self), len(self)))
-        for i in idx:
-            with open(f"{savedir}/sample{i}.pdb") as f:
-                prot1 = protein.from_pdb_string(f.read())
-            for j in range(len(self)):
-                with open(f"{savedir}/sample{j}.pdb") as f:
-                    prot2 = protein.from_pdb_string(f.read())
-                tm_arr[i,j] = compute_tmscore(  # second is reference
-                    coords1=prot1.atom_positions[:,1],
-                    coords2=prot2.atom_positions[:,1],
-                )['tm']
-        np.save(f"{savedir}/rank{rank}/tmscores.npy", tm_arr)
+        # Save DataFrame with DeepFRI metrics
+        df_pd = pd.DataFrame(df).T
+        df_pd.to_csv(f"{savedir}/deepfri_metrics_rank{rank}.csv")
+
         if world_size > 1:
             torch.distributed.barrier()
-            
-        # every rank has to compute it, otherwise error
-        tm_arr = np.zeros((len(self), len(self)))
-        for r in range(world_size):
-            tm_arr += np.load(f"{savedir}/rank{r}/tmscores.npy")
-        eigvals = np.linalg.eigvals(tm_arr / len(self))
-        vendi = np.e**np.nansum(-eigvals * np.log(eigvals))
-        if logger is not None:
-            logger.log(f"{self.cfg.name}/vendi", vendi)
 
-    def run_secondary(self, idx, rank, world_size, savedir, logger, df):
-        for i in idx:
-            with open(f"{savedir}/sample{i}.pdb") as f:
-                prot = protein.from_pdb_string(f.read())
-            ss = assign_secondary_structures(
-                torch.from_numpy(prot.atom_positions[None,:,1]), 
-                full=False,
-                return_encodings=False
-            )[0]
-            
-            pos = prot.atom_positions[:,1]
-            L = len(pos)
-            pos = pos - pos.mean(0, keepdims=True)
-            ii, jj = np.meshgrid(np.arange(L), np.arange(L))
-            dmat = np.square(pos[None] - pos[:,None]).sum(-1) ** 0.5
-            lrc = (np.abs(ii-jj) > 12) & (dmat < 8)
-            lrc = lrc.sum() / L
-            
-            if logger is not None:
-                logger.log(f"{self.cfg.name}/helix", ss.count('h') / len(ss))
-                logger.log(f"{self.cfg.name}/sheet", ss.count('s') / len(ss))
-                logger.log(f"{self.cfg.name}/loop", ss.count('-') / len(ss))
-                logger.log(f"{self.cfg.name}/lrc", lrc)
-            df[f"sample{i}"]["helix"] = ss.count('h') / len(ss)
-            df[f"sample{i}"]["sheet"] = ss.count('s') / len(ss)
-            df[f"sample{i}"]["loop"] = ss.count('-') / len(ss)
-            df[f"sample{i}"]["lrc"] = lrc
+        if rank == 0:
+            dfs = []
+            for r in range(world_size):
+                csv_path = f"{savedir}/deepfri_metrics_rank{r}.csv"
+                if os.path.exists(csv_path):
+                    dfs.append(pd.read_csv(csv_path, index_col=0))
+                    os.remove(csv_path)
 
-
-    def make_plot(self, idx, rank, world_size, savedir, logger, df):
-        cmd = [
-            "bash",
-            "scripts/switch_conda_env.sh",
-            "pymol",
-            "python",
-            "-m",
-            "scripts.visualize",
-            "--dir",
-            savedir,
-            "--out",
-            f"{savedir}/out.png",
-            "--annotate",
-        ]
-        out = subprocess.run(cmd) 
-
-    def run_pmpnn_designability(self, idx, rank, world_size, savedir, logger, df):
-        # count = math.ceil(self.cfg.num_samples / world_size)
-        # start = rank * count
-        # end = min((rank + 1) * count, self.cfg.num_samples)
-
-        os.makedirs(f"{savedir}/rank{rank}/pmpnn/pdbs", exist_ok=True)
-        for i in idx:
-            cmd = [
-                'cp',
-                f"{savedir}/sample{i}.pdb",
-                f"{savedir}/rank{rank}/pmpnn/pdbs"
-            ]
-            subprocess.run(cmd)
-        cmd = [
-            "bash",
-            "scripts/run_genie_pipeline.sh",
-            f"{savedir}/rank{rank}/pmpnn",
-        ]
-        cvd = os.environ.get('CUDA_VISIBLE_DEVICES', None)
-        if cvd:
-            dev = cvd.split(',')[torch.cuda.current_device()]
-        else:
-            dev = torch.cuda.current_device()
-        subprocess.run(cmd, env=os.environ | {
-            'CUDA_VISIBLE_DEVICES': str(dev)
-        })  
-
-        pmpnn_df = pd.read_csv(
-            f"{savedir}/rank{rank}/pmpnn/info.csv", index_col="domain"
-        )
-        pmpnn_df["designable"] = pmpnn_df["scRMSD"] < 2
-        if logger is not None:
-            for col in pmpnn_df.columns:
-                for val in pmpnn_df[col].tolist():
-                    logger.log(f"{self.cfg.name}/pmpnn_{col}", val)
-        for i in idx:
-            df[f"sample{i}"]["pmpnn_scrmsd"] = pmpnn_df.loc[f"sample{i}"].scRMSD
-            df[f"sample{i}"]["pmpnn_scTM"] = pmpnn_df.loc[f"sample{i}"].scTM
-            df[f"sample{i}"]["pmpnn_pLDDT"] = pmpnn_df.loc[f"sample{i}"].pLDDT
+            if dfs:
+                combined_df = pd.concat(dfs)
+                combined_df.to_csv(f"{savedir}/deepfri_metrics.csv")
     
-    def run_deepfri_recall(self, idx, rank, world_size, save_dir, logger, df):
+    def run_deepfri_recall(self, idx, rank, world_size, savedir, logger, df):
+        """
+        Run DeepFRI evaluation on generated proteins and calculate metrics.
+        """
         # Create directories
         deepfri_dir = f"{savedir}/rank{rank}/deepfri"
         os.makedirs(deepfri_dir, exist_ok=True)
-
-        # Create a directory for PDB files and a directory for FASTA files
-        pdb_dir = f"{deepfri_dir}/pdbs"
+        
+        # Create directory for FASTA files
         fasta_dir = f"{deepfri_dir}/fastas"
-        os.makedirs(pdb_dir, exist_ok=True)
         os.makedirs(fasta_dir, exist_ok=True)
-
-        # Copy files to their respective directories
+        
+        # Copy files to the directory
         for i in idx:
             sample_name = f"sample{i}"
-
-            # Copy PDB and FASTA files
-            pdb_file = f"{savedir}/{sample_name}.pdb"
             fasta_file = f"{savedir}/{sample_name}.fasta"
-
-            if os.path.exists(pdb_file):
-                cmd = ['cp', pdb_file, pdb_dir]
-                subprocess.run(cmd)
-
+            
             if os.path.exists(fasta_file):
                 cmd = ['cp', fasta_file, fasta_dir]
                 subprocess.run(cmd)
-
-        # Run DeepFRI with fold model (structure-based)
-        fold_output_dir = f"{deepfri_dir}/fold_results"
-        os.makedirs(fold_output_dir, exist_ok=True)
-
-        cmd = [
-            "bash",
-            "scripts/switch_conda_env_with_CUDA.sh",
-            "deepfri",
-            str(rank),
-            "python",
-            "-m",
-            "scripts.deepfri",
-            "--pdb_dir", pdb_dir,
-            "--outdir", fold_output_dir,
-            "--model", "fold",
-            "--ontology", "mf",
-            "--threshold", "0.5",
-        ]
-        subprocess.run(cmd)
-
+        
         # Run DeepFRI with sequence model
         seq_output_dir = f"{deepfri_dir}/seq_results"
         os.makedirs(seq_output_dir, exist_ok=True)
-
+        
         cmd = [
             "bash",
-            "scripts/switch_conda_env_with_CUDA.sh",
+            "scripts/switch_conda_env.sh",
             "deepfri",
-            str(rank),
             "python",
             "-m",
             "scripts.deepfri",
@@ -332,216 +504,82 @@ class FunctionConditioningEval(OpenProtEval):
             "--outdir", seq_output_dir,
             "--model", "sequence",
             "--ontology", "mf",
-            "--threshold", "0.5",
-            "--device", str(torch.cuda.current_device())
+            "--threshold", "0.05"
         ]
         subprocess.run(cmd)
-
-        # Process results and calculate metrics directly
-        fold_correct = 0
-        fold_total = 0
-        fold_confidences = []
-
+        
+        # Process results and calculate metrics
         seq_correct = 0
         seq_total = 0
         seq_confidences = []
-
+        
+        # Track per-sample metrics
+        results = {}
+        
         for i in idx:
             sample_name = f"sample{i}"
-
-            # TODO: Get target terms for this sample
-            # Implement based on how target terms are stored in your model
-            target_terms = self.get_target_go_terms(sample_name, savedir)
-
-            if not target_terms:
+            
+            # Get target GO terms for this sample
+            target_go_terms = self.sample_to_go_terms.get(sample_name, [])
+            if not target_go_terms:
                 continue
-
-            # Process fold results
-            fold_result_file = f"{fold_output_dir}/{sample_name}_results.json"
-            if os.path.exists(fold_result_file):
-                with open(fold_result_file, 'r') as f:
-                    fold_result = json.load(f)
-
-                    # Get predictions above threshold
-                    fold_predictions = fold_result.get('predictions', {})
-
-                    # Check if any target term was predicted
-                    fold_total += 1
-                    predicted_any = any(term in fold_predictions for term in target_terms)
-                    if predicted_any:
-                        fold_correct += 1
-
-                    # Track confidence for target terms
-                    for term in target_terms:
-                        confidence = fold_predictions.get(term, 0)
-                        fold_confidences.append(confidence)
-
+                
             # Process sequence results
             seq_result_file = f"{seq_output_dir}/{sample_name}_results.json"
             if os.path.exists(seq_result_file):
                 with open(seq_result_file, 'r') as f:
+                    import json
                     seq_result = json.load(f)
-
+                    
                     # Get predictions above threshold
-                    seq_predictions = seq_result.get('predictions', {})
-
+                    seq_predictions = seq_result.get(sample_name, {})
+                    
                     # Check if any target term was predicted
                     seq_total += 1
-                    predicted_any = any(term in seq_predictions for term in target_terms)
+                    predicted_any = any(term in seq_predictions for term in target_go_terms)
                     if predicted_any:
                         seq_correct += 1
-
-                    # Track confidence for target terms
-                    for term in target_terms:
-                        confidence = seq_predictions.get(term, 0)
-                        seq_confidences.append(confidence)
-
+                    
+#                     # Track confidence for target terms
+#                     sample_confidences = []
+#                     for term in target_go_terms:
+#                         confidence = seq_predictions.get(term, 0)
+#                         seq_confidences.append(confidence)
+#                         sample_confidences.append(confidence)
+                    sample_confidences = list(seq_predictions.values())
+                    seq_confidences.extend(sample_confidences)
+                    
+                    
+                    # Store per-sample metrics
+                    results[sample_name] = {
+                        'target_terms': ','.join(target_go_terms),
+                        'predicted': 1 if predicted_any else 0,
+                        'avg_confidence': np.mean(sample_confidences) if sample_confidences else 0
+                    }
+                    
+                    # Store top predictions for reference
+                    top_predictions = sorted(seq_predictions.items(), key=lambda x: x[1], reverse=True)[:5]
+                    for j, (term, conf) in enumerate(top_predictions):
+                        results[sample_name][f'top{j+1}_term'] = term
+                        results[sample_name][f'top{j+1}_conf'] = conf
+        
         # Calculate aggregate metrics
-        fold_recall = fold_correct / fold_total if fold_total > 0 else 0
-        fold_avg_conf = np.mean(fold_confidences) if fold_confidences else 0
-
         seq_recall = seq_correct / seq_total if seq_total > 0 else 0
         seq_avg_conf = np.mean(seq_confidences) if seq_confidences else 0
-
-        # Save metrics to a summary file
-        metrics = {
-            "fold_recall": fold_recall,
-            "fold_avg_confidence": fold_avg_conf,
-            "fold_correct": fold_correct,
-            "fold_total": fold_total,
+        
+        # Add metrics to dataframe
+        df["deepfri_summary"] = {
             "seq_recall": seq_recall,
-            "seq_avg_confidence": seq_avg_conf,
+            "seq_avg_conf": seq_avg_conf,
             "seq_correct": seq_correct,
             "seq_total": seq_total
         }
-
-#         with open(f"{deepfri_dir}/metrics.json", 'w') as f:
-#             json.dump(metrics, f, indent=2)
-
-        # Add metrics to dataframe
-        df["deepfri_summary"] = {
-            "fold_recall": fold_recall,
-            "fold_avg_conf": fold_avg_conf,
-            "seq_recall": seq_recall,
-            "seq_avg_conf": seq_avg_conf
-        }
-
+        
+        # Add per-sample results
+        for sample_name, result in results.items():
+            df[sample_name] = result
+        
         # Log metrics
         if logger is not None:
-            logger.log(f"{self.cfg.name}/deepfri_fold_recall", fold_recall)
-            logger.log(f"{self.cfg.name}/deepfri_fold_avg_conf", fold_avg_conf)
             logger.log(f"{self.cfg.name}/deepfri_seq_recall", seq_recall)
             logger.log(f"{self.cfg.name}/deepfri_seq_avg_conf", seq_avg_conf)
-
-        
-    def save_df(self, idx, rank, world_size, savedir, logger, df):
-        df = pd.DataFrame(df).T.astype(float)
-        df.to_csv(f"{savedir}/rank{rank}.csv")
-    
-        if world_size > 1:
-            torch.distributed.barrier()
-        if rank == 0:
-            dfs = []
-            for r in range(world_size):
-                dfs.append(pd.read_csv(f"{savedir}/rank{r}.csv", index_col=0))
-                subprocess.run(["rm", f"{savedir}/rank{r}.csv"])
-            df = pd.concat(dfs).sort_index()
-            df.to_csv(f"{savedir}/info.csv")
-        
-    def compute_metrics(
-        self, rank=0, world_size=1, device=None, savedir=".", logger=None
-    ):
-
-        idx = list(range(rank, len(self), world_size))
-        os.makedirs(f"{savedir}/rank{rank}", exist_ok=True)
-
-        df = defaultdict(dict) 
-        
-        if self.cfg.run_designability:
-            torch.cuda.empty_cache()
-            self.run_designability(idx, rank, world_size, savedir, logger, df)
-                   
-        if self.cfg.run_secondary:
-            self.run_secondary(idx, rank, world_size, savedir, logger, df)
-
-        if self.cfg.run_diversity:
-            self.run_diversity(idx, rank, world_size, savedir, logger, df)
-
-        if self.cfg.run_pmpnn_designability:
-            torch.cuda.empty_cache()
-            self.run_pmpnn_designability(idx, rank, world_size, savedir, logger, df)
-        
-        if self.cfg.run_deepfri_recall:
-            self.run_deepfri_crecall(idx, rank, world_size, savedir, logger, df)
-        
-        # this has to be last
-        self.save_df(idx, rank, world_size, savedir, logger, df)
-        if self.cfg.run_plot and rank == 0:
-            self.make_plot(idx, rank, world_size, savedir, logger, df)
-            
-    def run_batch(
-        self,
-        model,
-        batch: dict,
-        noisy_batch: dict,
-        savedir=".", 
-        device=None,
-        logger=None
-    ):
-
-        schedules = {
-            'structure': self.struct_sched_fn,
-            'sequence': self.seq_sched_fn,
-        }
-
-        class ArraySchedule:
-            def __init__(self, path):
-                self.arr = np.load(path)
-                self.linspace = np.linspace(0, 1, len(self.arr))
-            def __call__(self, t):
-                return np.interp(t, self.linspace, self.arr)
-                
-        for key in self.cfg.schedule:
-            schedules[key] = ArraySchedule(self.cfg.schedule[key])
-            
-            # TO DO: Add support for sampling with GO terms
-            sampler = OpenProtSampler(schedules, steppers=[
-            EDMDiffusionStepper(self.cfg.struct),
-            SequenceUnmaskingStepper(self.cfg.seq)
-            ])
-        
-        sample, extra = sampler.sample(model, noisy_batch, self.cfg.steps, trunc=self.cfg.truncate)
-
-        pred_traj = torch.stack(extra['preds'])
-        samp_traj = torch.stack(extra['traj'])
-
-        B = len(sample['struct'])
-        
-        for i in range(B):
-            prot = make_ca_prot(
-                sample['struct'][i].cpu().numpy(),
-                sample["aatype"][i].cpu().numpy(),
-                batch["struct_mask"][i].cpu().numpy(),
-            )
-    
-            ref_str = protein.to_pdb(prot)
-            name = batch["name"][i]
-            with open(f"{savedir}/{name}.pdb", "w") as f:
-                f.write(ref_str)
-    
-            with open(f"{savedir}/{name}_traj.pdb", "w") as f:
-                f.write(write_ca_traj(prot, samp_traj[:, i].cpu().numpy()))
-    
-            with open(f"{savedir}/{name}_pred_traj.pdb", "w") as f:
-                f.write(write_ca_traj(prot, pred_traj[:, i].cpu().numpy()))
-
-            seq = "".join([rc.restypes_with_x[aa] for aa in sample["aatype"][i]])
-            with open(f"{savedir}/{name}.fasta", "w") as f:
-                f.write(f">{name}\n")  # FASTA format header
-                f.write(seq + "\n")
-
-            with open(f"{savedir}/{name}_traj.fasta", "w") as f:
-                for seqs in extra['seq_traj']:
-                    seq = "".join([rc.restypes_with_x[aa] for aa in seqs[i]])
-                    seq = seq.replace('X', '-')
-                    f.write(seq+'\n')

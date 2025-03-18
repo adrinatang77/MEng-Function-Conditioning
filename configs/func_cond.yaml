@@ -271,8 +271,24 @@ evals:
     #     run_secondary: true
     #     run_plot: true
 
-    seq_gen_dplm: 
-        type: SequenceGenerationEval
+#     seq_gen_dplm: 
+#         type: SequenceGenerationEval
+#         num_samples: 100
+#         sample_length: 300
+#         batch: 100
+#         steps: 300
+#         temp_start: 0.5
+#         temp_end: 0.5
+#         strategy: dplm
+#         logits: gumbel
+#         remask: 0.0
+#         topk_temp: 0.0
+#         replace_unmasked: false
+#         adjust_unmasked: false
+#         allow_mutation: false
+    
+    seq_gen_func_cond:
+        type: FunctionConditioningEval
         num_samples: 100
         sample_length: 300
         batch: 100
@@ -286,8 +302,10 @@ evals:
         replace_unmasked: false
         adjust_unmasked: false
         allow_mutation: false
+        go_vocab: /data/cb/scratch/datasets/func_data/extracted_data/swissprot_uniref50/go_term_vocab.json
+        target_go_terms: /data/cb/scratch/adrina/Code/openprot/deepfri_molecular_function_terms.txt
+        max_depth: 86
         
-
 tracks:
     # register tracks here
     # StructureTrack: 
