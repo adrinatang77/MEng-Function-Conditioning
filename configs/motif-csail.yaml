@@ -1,6 +1,6 @@
-ckpt: workdir/motif-test2-fix/last.ckpt
+ckpt: 
 pretrained:  #  load weights from here first
-validate: true # if true, only validate the model, don't train
+validate:  # if true, only validate the model, don't train
 logger:
     # set to true to log to neptune.ai
     neptune: true
@@ -8,7 +8,7 @@ logger:
     # please change "test" to something unique to your task
     project: openprot/struct-merge
     # will log to workdir and neptune.ai with this name
-    name: motif-test2-fix
+    name: motif-test3
     # if not null, will duplicate stdout and stderr to workdir/{name}/{logfile}
     logfile: std.out
     # if null, will log every epoch, otherwise every this number of steps
@@ -63,7 +63,7 @@ features:
     struct_align_mask: [-1]
     ref_conf: [-1, 3]
     ref_conf_mask: [-1]
-    motif_id: [-1]
+    ref_conf_idx: [-1]
     residx: [-1]
     chain: [-1]
 
@@ -77,7 +77,8 @@ motif:
     nmax: 4
     ymin: 0.05
     ymax: 0.5
-    weight: 5.0
+    weight: 1.0
+    multi_prob: 0.5
     
 datasets:
     pdb:
@@ -145,7 +146,10 @@ evals:
             - splits/motifs/6e6r_long.pdb
             - splits/motifs/6exz_long.pdb
             - splits/motifs/6e6r_med.pdb
-        num_samples: 3
+            - splits/motifs/1ycr.pdb
+            - splits/motifs/5trv_long.pdb
+            - splits/motifs/6exz_med.pdb
+        num_samples: 10
         batch: 100
         steps: 200
         skew: 1.0
@@ -167,87 +171,116 @@ evals:
         schedule: {}
         run_designability: true
         run_pmpnn_designability: true
-        run_diversity: false
-        run_secondary: false
-        run_plot: false
+
+    motif+0:
+        type: MotifEval
+        path: 
+            - splits/motifs/6e6r_long.pdb
+            - splits/motifs/6exz_long.pdb
+            - splits/motifs/6e6r_med.pdb
+            - splits/motifs/1ycr.pdb
+            - splits/motifs/5trv_long.pdb
+            - splits/motifs/6exz_med.pdb
+        num_samples: 10
+        batch: 100
+        steps: 200
+        skew: 1.0
+        struct:
+            edm: ${edm}
+            temp_factor: 0.5
+            sde_weight: 1.0
+            align: false
+        seq:
+            temp_start: 1.0
+            temp_end: 0.1
+            strategy: dplm
+            noise: 20
+            logits: gumbel
+            adjust_unmasked: false # pseudo-masked logits
+            replace_unmasked: true # logit of current toks
+            topk_temp: 0.0
+            allow_mutation: false
+        schedule: {}
+        run_designability: true
+        run_pmpnn_designability: true
         
-    # codesign_skew+1:
-    #     type: CodesignEval
-    #     num_samples: 100
-    #     batch: 100
-    #     sample_length: 128
-    #     steps: 200
-    #     skew: 1.0
-    #     truncate: 
-    #     dir:
-    #     struct:
-    #         edm: ${edm}
-    #         temp_factor: 0.5
-    #         sde_weight: 1.0
-    #         align: false
-    #     seq:
-    #         temp_start: 0.1
-    #         temp_end: 0.1
-    #         strategy: random
-    #         noise: 20
-    #         logits: standard
-    #         adjust_unmasked: false # pseudo-masked logits
-    #         replace_unmasked: false # logit of current toks
-    #         topk_temp: 0.0
-    #         allow_mutation: false
-    #     schedule: {}
-    #     run_designability: true
-    #     run_pmpnn_designability: true
-    #     run_diversity: true
-    #     run_secondary: true
-    #     run_plot: true
+    codesign_skew+1:
+        type: CodesignEval
+        num_samples: 100
+        batch: 100
+        sample_length: 128
+        steps: 200
+        skew: 1.0
+        truncate: 
+        dir:
+        struct:
+            edm: ${edm}
+            temp_factor: 0.5
+            sde_weight: 1.0
+            align: false
+        seq:
+            temp_start: 0.1
+            temp_end: 0.1
+            strategy: random
+            noise: 20
+            logits: standard
+            adjust_unmasked: false # pseudo-masked logits
+            replace_unmasked: false # logit of current toks
+            topk_temp: 0.0
+            allow_mutation: false
+        schedule: {}
+        run_designability: true
+        run_pmpnn_designability: true
+        run_diversity: true
+        run_secondary: true
+        run_plot: true
 
-    # codesign_skew+0:
-    #     type: CodesignEval
-    #     num_samples: 100
-    #     batch: 100
-    #     sample_length: 128
-    #     steps: 200
-    #     skew: 0.0
-    #     truncate:
-    #     dir:
-    #     struct:
-    #         edm: ${edm}
-    #         temp_factor: 0.5
-    #         sde_weight: 1.0
-    #         align: false
-    #     seq:
-    #         temp_start: 1.0
-    #         temp_end: 0.1
-    #         strategy: dplm
-    #         noise: 20
-    #         logits: gumbel
-    #         adjust_unmasked: false # pseudo-masked logits
-    #         replace_unmasked: true # logit of current toks
-    #         topk_temp: 0.0
-    #         allow_mutation: false
-    #     schedule: {}
-    #     run_designability: true
-    #     run_pmpnn_designability: true
-    #     run_diversity: true
-    #     run_secondary: true
-    #     run_plot: true
+    codesign_skew+0:
+        type: CodesignEval
+        num_samples: 100
+        batch: 100
+        sample_length: 128
+        steps: 200
+        skew: 0.0
+        truncate:
+        dir:
+        struct:
+            edm: ${edm}
+            temp_factor: 0.5
+            sde_weight: 1.0
+            align: false
+        seq:
+            temp_start: 1.0
+            temp_end: 0.1
+            strategy: dplm
+            noise: 20
+            logits: gumbel
+            adjust_unmasked: false # pseudo-masked logits
+            replace_unmasked: true # logit of current toks
+            topk_temp: 0.0
+            allow_mutation: false
+        schedule: {}
+        run_designability: true
+        run_pmpnn_designability: true
+        run_diversity: true
+        run_secondary: true
+        run_plot: true
 
-    # seq_gen_dplm: 
-    #     type: SequenceGenerationEval
-    #     num_samples: 100
-    #     sample_length: 300
-    #     batch: 100
-    #     steps: 300
-    #     temp_start: 0.5
-    #     temp_end: 0.5
-    #     strategy: dplm
-    #     logits: gumbel
-    #     remask: 0.0
-    #     topk_temp: 0.0
-    #     replace_unmasked: false
-    #     adjust_unmasked: false
-    #     allow_mutation: false
+    seq_gen_dplm: 
+        type: SequenceGenerationEval
+        num_samples: 100
+        sample_length: 300
+        batch: 100
+        steps: 300
+        temp_start: 0.5
+        temp_end: 0.5
+        strategy: dplm
+        logits: gumbel
+        remask: 0.0
+        topk_temp: 0.0
+        replace_unmasked: false
+        adjust_unmasked: false
+        allow_mutation: false
         
 
 tracks:
@@ -281,9 +314,12 @@ tracks:
         reweight_eps: 0.01
         init: 0.02
         all_atom: ${data.all_atom}
+        mlm_prob: 0.0
+        mlm_ratio: 1.0
+        mlm_weight: 1.0
 
 model: # custom args
-    ema: false
+    ema: 0.999
     dim: 512
     heads: 16
     blocks: 30
@@ -292,13 +328,11 @@ model: # custom args
     ff_expand: 4
     rope_attn: true
     rope_values: true
-    chain_mask: false
+    attn_mask: 2
     cross_attn: false
     adaLN: true
-    qk_norm: false
-    adaLN_sigmoid: false
-    adaLN_SiLU: true
-    act: relu
+    qk_norm: true
+    act: gelu
 
 optimizer:
     type: AdamW

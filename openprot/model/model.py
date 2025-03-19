@@ -148,32 +148,15 @@ class OpenProtTransformerBlock(nn.Module):
         rope_attn=False,
         rope_values=False,
         frame_update=False,
-        update_rots=False,
-        readout_rots=False,
         update_x=True,
         adaLN=False,
         readout_adaLN=False,
-        chain_mask=False,
-        rots_type="vec",
+        attn_mask=False,
         dropout=0.0,
         token_dropout=0.0,
         cross_attn=False,
         qk_norm=False,
         act='relu',
-        # adaLN_extra_linear=False,
-        # ipa_attn=False,  # use point attention
-        # ipa_values=False,
-        # ipa_frames=False,  # use frames in point attention
-        # relpos_attn=False,  # instead use trans relpos
-        # relpos_rope=False,
-        # relpos_values=False,
-        # relpos_freqs=32,
-        # relpos_max=100,
-        # relpos_min=1,
-        # embed_rots=False,
-        # embed_trans=False,
-        # no_qk_points=4,
-        # no_v_points=8,
     ):
         super().__init__()
         self.mha = GeometricMultiHeadAttention(
@@ -184,26 +167,12 @@ class OpenProtTransformerBlock(nn.Module):
             pair_bias=pair_bias,
             pair_values=pair_values,
             pair_bias_linear=pair_bias_linear,
-            chain_mask=chain_mask,
+            attn_mask=attn_mask,
             rope_attn=rope_attn,
             rope_values=rope_values,
             dropout=token_dropout,
             cross_attn=cross_attn,
             qk_norm=qk_norm,
-            # ipa_attn=ipa_attn,
-            # ipa_values=ipa_values,
-            # ipa_frames=ipa_frames,
-            # relpos_attn=relpos_attn,
-            # relpos_rope=relpos_rope,
-            # relpos_values=relpos_values,
-            # relpos_freqs=relpos_freqs,
-            # relpos_min=relpos_min,
-            # relpos_max=relpos_max,
-            # embed_rots=embed_rots,
-            # embed_trans=embed_trans,
-            # no_qk_points=no_qk_points,
-            # no_v_points=no_v_points,
-
         )
         self.ff = FeedForward(
             dim,
@@ -220,9 +189,6 @@ class OpenProtTransformerBlock(nn.Module):
         self.pair_updates = pair_updates
         self.pair_ffn = pair_ffn
         self.frame_update = frame_update
-        self.update_rots = update_rots
-        self.rots_type = rots_type
-        # self.readout_rots = readout_rots
         self.tri_mul = tri_mul
         self.update_x = update_x
         self.adaLN = adaLN
@@ -244,7 +210,6 @@ class OpenProtTransformerBlock(nn.Module):
         if (pair_bias and pair_bias_linear) or pair_values:
             self.pair_norm = nn.LayerNorm(pairwise_dim)
 
-        rot_dim = {"quat": 4, "vec": 3}[rots_type]
         if frame_update:
 
             if readout_adaLN:
@@ -367,74 +332,6 @@ class OpenProtTransformerBlock(nn.Module):
         return x, z, trans, rots
 
 
-class StructureModule(nn.Module):
-
-    def __init__(self, cfg):
-        super().__init__()
-        self.cfg = cfg
-
-        block_fn = lambda: OpenProtTransformerBlock(
-            dim=cfg.dim,
-            heads=cfg.heads,
-            ff_expand=cfg.ff_expand,
-            pairwise_dim=cfg.pairwise_dim,
-            pair_bias=cfg.ipa_pair_bias,
-            pair_values=cfg.ipa_pair_values,
-            adaLN=cfg.sm_adaLN,
-            readout_adaLN=cfg.readout_adaLN,
-            frame_update=cfg.ipa_frame_update,
-            ipa_attn=cfg.ipa_nipa,
-            ipa_values=cfg.ipa_nipa,
-            relpos_attn=cfg.ipa_relpos,
-            relpos_values=cfg.ipa_relpos,
-            relpos_rope=cfg.ipa_rope,
-            relpos_freqs=cfg.sm_relpos[0],
-            relpos_min=cfg.sm_relpos[1],
-            relpos_max=cfg.sm_relpos[2],
-        )
-        if cfg.separate_ipa_blocks:
-            self.ipa_blocks = nn.ModuleList()
-            for i in range(cfg.ipa_blocks):
-                self.ipa_blocks.append(block_fn())
-        elif self.cfg.ipa_blocks > 0:
-            self.ipa_block = block_fn()
-        if self.cfg.move_x_to_xcond:
-            self.x_cond_linear = nn.Sequential(
-                nn.LayerNorm(cfg.dim), nn.Linear(cfg.dim, cfg.dim)
-            )
-
-    def forward(self, x, z, trans, mask, x_cond, postcond_fn, relpos_mask=None, idx=None):
-            
-        if self.cfg.move_x_to_xcond:
-            x_cond = x_cond + self.x_cond_linear(x)
-
-        if self.cfg.zero_x_before_ipa:
-            x = torch.zeros_like(x)
-
-        
-        trans = torch.zeros_like(trans) 
-        all_trans = []
-        all_x = []
-        for i in range(self.cfg.ipa_blocks):
-
-            if self.cfg.detach_trans:
-                trans = trans.detach()
-            
-            if self.cfg.separate_ipa_blocks:
-                block = self.ipa_blocks[i]
-            else:
-                block = self.ipa_block
-
-            x, z, trans, rots = block(x, z, trans, mask, x_cond, postcond_fn, relpos_mask=relpos_mask, idx=idx)
-            all_trans.append(trans)
-            all_x.append(x)
-
-        return {
-            "x": torch.stack(all_x),
-            "trans": torch.stack(all_trans),
-        }
-
-
 class OpenProtModel(nn.Module):
     def __init__(self, cfg):
         super().__init__()
@@ -447,7 +344,7 @@ class OpenProtModel(nn.Module):
             rope_attn=cfg.rope_attn,
             rope_values=cfg.rope_values,
             adaLN=cfg.adaLN,
-            chain_mask=cfg.chain_mask,
+            attn_mask=cfg.attn_mask,
             cross_attn=cfg.cross_attn,
             dropout=cfg.dropout,
             token_dropout=cfg.token_dropout,
@@ -463,6 +360,15 @@ class OpenProtModel(nn.Module):
             self.blocks.append(OpenProtTransformerBlock(**block_args))
 
     def get_z(self, inp):
+        # breakpoint()
+
+        idx = torch.where(
+            inp['ref_conf_mask'][:,None].bool() & inp['ref_conf_mask'][:,:,None].bool(),
+            inp['ref_conf_idx'][:,None] != inp['ref_conf_idx'][:,:,None],
+            0
+        )
+        return idx
+        
         
         SAME_NONPOLY_CHAIN = 65
         DIFF_CHAIN = 66

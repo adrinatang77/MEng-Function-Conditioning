@@ -6,35 +6,7 @@ from scipy.spatial.transform import Rotation as R
 import torch
 
 class CodesignTask(OpenProtTask):
-### Algorithm 1 Motif-scaffolding data augmentation
-# Require: Protein backbone T; Min and max motif percent γmin = 0.05, γmax = 0.5.
-# 1: s ∼ Uniform{⌊N · γmin⌋, . . . , ⌊N · γmax⌋} ▷ Sample maximum motif size.
-# 2: m ∼ Uniform{1, . . . , s} ▷ Sample maximum number of motifs.
-# 3: TM ← ∅
-# 4: for i ∈ {1, . . . , m} do
-# 5: j ∼ Uniform{1, . . . , N} \ TM ▷ Sample location for each motif
-# 6: ℓ ∼ Uniform{1, . . . , s − m + i − |TM|} ▷ Sample length of each motif.
-# 7: TM ← TM ∪ {Tj , . . . , Tmin(j+ℓ,N)} ▷ Append to existing motif.
-# 8: end for
-# 9: TS ← {T1, . . . , TN } \ TM ▷ Assign rest of residues as the scaffold
-# 10: return TM, TS
 
-#     Require: Sampled structure x, a sequence of Cα coordinates of length N
-# Ns ∼ U(1, 4) ▷ Number of segments in the motif
-# Nr ∼ U(⌊0.05N⌋, ⌈0.5N⌉) ▷ Number of residues in the motif
-# B ← [0, b1, b2, · · · , bNs−1, Nr] where b1, b2, · · · , bNs−1
-# are randomly sampled from {1, 2, · · · , Nr − 1}
-# without replacement and sorted in ascending order.
-# L ← [l1, l2, · · · , lNs
-# ] where Li = Bi − Bi−1 ▷ Split motif residues into segments
-# M = Flatten(Permute([S1, S2, · · · , SN−Nr
-# , M1, M2, · · · , MNs
-# ])) where
-# Si = [0] for i ∈ [1, N − Nr] ▷ Represents a scaffold residue
-# Mj = [1, 1, · · · , 1] where |Mj | = lj for j ∈ [1, Ns] ▷ Represents a motif segment
-# return M where for i ∈ [1, N] ▷ Represents a motif sequence mask
-# M[i] = 1 indicates that residue i is a motif residue
-# M[i] = 0 indicates that residue i is a scaffold residue
     def sample_motifs(self, data):
         N = len(data['seqres'])
         Ns = np.random.randint(1, self.cfg.motif.nmax)
@@ -50,36 +22,26 @@ class CodesignTask(OpenProtTask):
             Nr
         ]
         L = np.diff(B)
-        M = [[False] for _ in range(N-Nr)] + [[True]*l for l in L]
+        class Motif(list):
+            def __init__(self, l):
+                super().__init__(l)
+                self.rand = np.random.rand()
+            
+        M = [[False] for _ in range(N-Nr)] + [Motif([True]*l) for l in L]
         np.random.shuffle(M)
+        
         is_motif = np.array([i for a in M for i in a])
+        rand = np.array([getattr(a, 'rand', 0) for a in M for i in a])
+        
         data['seq_noise'][is_motif] = 0
         data['seq_weight'][is_motif] = 0
         data['ref_conf'][is_motif] = data['struct'][is_motif]
         data['ref_conf_mask'][is_motif] = data['struct_mask'][is_motif]
         data['struct_weight'][is_motif] *= self.cfg.motif.weight
-        data['motif_id'][is_motif] = 1 # doesn't do anything now but later for multi-motif
+        if np.random.rand() < self.cfg.motif.multi_prob:
+            data['ref_conf_idx'][is_motif] = (rand < 0.5).astype(np.float32)[is_motif]
         
-        
-    """
-    def sample_motifs(self, data):
-        
-        s = np.random.rand() * (self.cfg.motif.ymax - self.cfg.motif.ymin) + self.cfg.motif.ymin
-        s = int(s * L)
-        m = np.random.randint(1, max(s, 1) + 1)
 
-        is_motif = np.zeros(len(data['seqres']), dtype=bool)
-        for i in range(m):
-            j = np.random.randint(0, L)
-            end = s - m + i - is_motif.sum()
-            if end > 0:
-                l = np.random.randint(1, end+1)
-                is_motif[j:j+l] = True
-        data['seq_noise'][is_motif] = 0
-        data['seq_weight'][is_motif] = 0
-        data['struct_noise'][is_motif] = self.cfg.edm.sigma_min
-        data['struct_weight'][is_motif] = 0
-    """
     def center_random_rot(self, data, eps=1e-6):
         # center the structures
         pos = data["struct"]
@@ -90,15 +52,16 @@ class CodesignTask(OpenProtTask):
         randrot = R.random().as_matrix()
         data["struct"] @= randrot.T
 
-        idx = np.unique(data['chain'])
-        for i in idx: # note that multi-residue ligands will be wrong
+        idx = np.unique(data['ref_conf_idx'])
+        for i in idx: 
+            # note that multi-residue ligands will be wrong
             # this also handles motifs, so far correct but brittle
-            conf = data["ref_conf"][data['chain'] == i]
-            conf_mask = data['ref_conf_mask'][data['chain'] == i][...,None]
+            conf = data["ref_conf"][data['ref_conf_idx'] == i]
+            conf_mask = data['ref_conf_mask'][data['ref_conf_idx'] == i][...,None]
             conf -= (conf * conf_mask).sum(-2) / (conf_mask.sum(-2) + eps)
             randrot = R.random().as_matrix()
             conf @= randrot.T
-            data["ref_conf"][data['chain'] == i] = conf
+            data["ref_conf"][data['ref_conf_idx'] == i] = conf
             
         
     def add_sequence_noise(self, data, noise_level=None, sup=False):

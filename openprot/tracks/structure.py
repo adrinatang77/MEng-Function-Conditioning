@@ -109,7 +109,7 @@ class StructureTrack(OpenProtTrack):
             model.trans_out = nn.Sequential(
                 nn.LayerNorm(model.cfg.dim), nn.Linear(model.cfg.dim, 3)
             )
-        if self.cfg.all_atom:
+        if self.cfg.embed_ref:
             model.ref_in = nn.Linear(3, model.cfg.dim)
         if self.cfg.hotspots:
             model.hotspot_in = nn.Parameter(torch.zeros(model.cfg.dim))
@@ -185,18 +185,18 @@ class StructureTrack(OpenProtTrack):
         precond = self.diffusion.precondition(coords, noise)
         inp["x"] += model.trans_in(precond)
 
-        if self.cfg.all_atom:
+        if self.cfg.embed_ref:
             inp["x"] += torch.where(
                 batch['ref_conf_mask'][...,None].bool(),
                 model.ref_in(batch['ref_conf']),
                 0.0
             )
-            if self.cfg.hotspots:
-                inp["x"] += torch.where(
-                    batch['hotspot'][...,None],
-                    model.hotspot_in[None,None],
-                    0.0
-                )
+        if self.cfg.hotspots:
+            inp["x"] += torch.where(
+                batch['hotspot'][...,None],
+                model.hotspot_in[None,None],
+                0.0
+            )
 
         # embed sigma
         def sigma_transform(noise_level):

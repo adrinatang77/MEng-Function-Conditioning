@@ -2,7 +2,15 @@ from ..model.model import OpenProtModel
 import torch
 from ..utils.misc_utils import autoimport
 
-conserved_keys = ["name", "pad_mask", "residx", "chain", "mol_type"]
+conserved_keys = [
+    "name",
+    "pad_mask",
+    "residx",
+    "chain",
+    "mol_type",
+    "ref_conf_idx",
+    "ref_conf_mask",
+]
 class OpenProtTrackManager(dict):
     def __init__(self, cfg):
         self.cfg = cfg

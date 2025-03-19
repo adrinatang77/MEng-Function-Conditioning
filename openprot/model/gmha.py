@@ -1,4 +1,3 @@
-from . import rope
 import math
 import torch.nn as nn
 import numpy as np
@@ -98,23 +97,12 @@ class GeometricMultiHeadAttention(nn.Module):
         pair_bias_linear=False, # whether to transform z before pair bias
         rope_attn=False,
         rope_values=False,
-        embed_rots=False,  # whether to embed rots into x at the top
-        embed_trans=False,
-        chain_mask=False,
+        attn_mask=False,
         no_qk_points=4,
         no_v_points=8,
         dropout=0.0,
         cross_attn=False,
         qk_norm=False,
-        # ipa_attn=False,  # use point attention
-        # ipa_values=False,
-        # ipa_frames=False,  # use frames in point attention
-        # relpos_attn=False,  # instead use trans relpos
-        # relpos_rope=False,
-        # relpos_values=False,
-        # relpos_freqs=32,
-        # relpos_max=100,
-        # relpos_min=1,
     ):
         
         super().__init__()
@@ -126,23 +114,14 @@ class GeometricMultiHeadAttention(nn.Module):
         self.pair_bias = pair_bias
         self.pair_bias_linear = pair_bias_linear
         self.pair_values = pair_values
-        self.embed_rots = embed_rots
-        self.embed_trans = embed_trans
         self.rope_attn = rope_attn
         self.rope_values = rope_values
         self.cross_attn = cross_attn
-
-        assert not self.embed_rots
-        assert not self.embed_trans
-        assert not self.rope
-        assert not self.pair_bias
-        assert not self.pair_values
-        assert not self.pair_bias_linear
-
-        if chain_mask:
-            self.chain_mask = nn.Parameter(torch.zeros(67, heads))
+    
+        if attn_mask:
+            self.attn_mask = nn.Parameter(torch.zeros(attn_mask, heads))
         else:
-            self.chain_mask = None
+            self.attn_mask = None
 
         ## basic stuff we always need
         self.w_q = nn.Linear(dim, dim, bias=False)
@@ -206,8 +185,8 @@ class GeometricMultiHeadAttention(nn.Module):
                 cross_attn
             )
 
-        if self.chain_mask is not None:
-            attn = attn + ScatterAttnBias.apply(z, self.chain_mask).permute(0, 3, 1, 2)
+        if self.attn_mask is not None:
+            attn = attn + ScatterAttnBias.apply(z, self.attn_mask).permute(0, 3, 1, 2)
         
         mask = mask.view(B, 1, 1, -1)
         attn = torch.where(mask, attn, -float("inf"))
