@@ -15,7 +15,6 @@ from ..utils.geometry import (
 from ..utils.rotation_conversions import axis_angle_to_matrix, random_rotations
 from ..utils.rigid_utils import Rigid, Rotation
 from ..utils import residue_constants as rc
-from ..model.positions import PositionEmbedder, PositionDecoder, PairwiseProjectionHead
 from ..generate import diffusion
 from functools import partial
 from multiflow.data import so3_utils
