@@ -390,9 +390,11 @@ class FunctionConditioningEval(SequenceGenerationEval):
     def setup(self):
         super().setup()
         
-        # Load GO vocabulary
+        # Load GO vocabulary and ancestors
         with open(self.cfg.go_vocab, 'r') as f:
             self.go_vocab = json.load(f)
+        with open(self.cfg.go_ancestors, 'r') as f:
+            self.go_ancestors = json.load(f)
         
         # Load target GO terms for each sample
         self.sample_to_go_terms = {}
@@ -403,8 +405,11 @@ class FunctionConditioningEval(SequenceGenerationEval):
             
             # Process each line and map to sample index
             for i, line in enumerate(lines):
-                go_terms = line.strip().split()  # Support multiple GO terms per line
                 sample_name = f"sample{i}"
+                direct_go_terms = line.strip().split()  # Support multiple GO terms per line
+                go_terms = set()
+                for term in direct_go_terms:
+                    go_terms = go_terms | set(self.go_ancestors.get(term, [term]))
                 self.sample_to_go_terms[sample_name] = go_terms
             
             print(f"Loaded GO terms for {len(self.sample_to_go_terms)} samples from {self.cfg.target_go_terms}")

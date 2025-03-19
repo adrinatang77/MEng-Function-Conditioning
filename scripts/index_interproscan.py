@@ -19,7 +19,7 @@ class GOTermsExtractor:
     """
     
     def __init__(self, bucket_name, base_prefix, start_folder=0, end_folder=704,
-                 output_dir="interproscan_data", index_dir="interproscan_idx"):
+                 output_dir="interproscan_data"):
         """
         Initialize the GO terms extractor.
         
@@ -36,11 +36,9 @@ class GOTermsExtractor:
         self.start_folder = start_folder
         self.end_folder = end_folder
         self.output_dir = output_dir
-        self.index_dir = index_dir
         
         # Create output directories
         os.makedirs(output_dir, exist_ok=True)
-        os.makedirs(index_dir, exist_ok=True)
         
         # Set up GCS client
         self.client = storage.Client(project='esm-multimer')
@@ -191,8 +189,8 @@ class GOTermsExtractor:
             Number of sequences processed
         """
         go_terms_path = os.path.join(self.output_dir, go_terms_file)
-        positions_path = os.path.join(self.index_dir, positions_file)
-        id_to_index_path = os.path.join(self.index_dir, id_to_index_file)
+        positions_path = os.path.join(self.output_dir, positions_file)
+        id_to_index_path = os.path.join(self.output_dir, id_to_index_file)
         
         # For tracking positions
         positions = []
@@ -291,7 +289,7 @@ class GOTermsExtractor:
             GO terms data for the specified sequence
         """
         go_terms_path = os.path.join(self.output_dir, go_terms_file)
-        positions_path = os.path.join(self.index_dir, positions_file)
+        positions_path = os.path.join(self.output_dir, positions_file)
         
         # Load the position index
         positions = np.load(positions_path)
@@ -326,7 +324,7 @@ class GOTermsExtractor:
         Returns:
             GO terms data for the specified sequence or None if not found
         """
-        id_to_index_path = os.path.join(self.index_dir, id_to_index_file)
+        id_to_index_path = os.path.join(self.output_dir, id_to_index_file)
         
         # Try the JSON version first (for development/debugging)
         try:
@@ -511,25 +509,28 @@ def main():
         bucket_name=BUCKET_NAME,
         base_prefix=BASE_PREFIX,
         start_folder=START_FOLDER,
-        end_folder=END_FOLDER
+        end_folder=END_FOLDER,
+        output_dir="interproscan_data_old",
     )
     
     # Process all folders
-    extractor.process_all_folders()
+#     extractor.process_all_folders()
     
     # Example: Read GO terms for a sequence by index
-    go_terms_data = extractor.read_go_terms_by_index(10000000)
+    go_terms_data = extractor.read_go_terms_by_index(244473744)
     print("\nSample GO terms data (by index):")
     print(go_terms_data[:500] + "..." if len(go_terms_data) > 500 else go_terms_data)
     
     # Example: Create and use the dataset
     dataset = GOTermsDataset(
         go_terms_path=os.path.join(extractor.output_dir, "go_terms.txt"),
-        positions_path=os.path.join(extractor.index_dir, "go_positions.idx.npy")
+        positions_path=os.path.join(extractor.output_dir, "go_positions.idx.npy")
     )
     
+    print(len(dataset))
+    
     # Get a sample entry
-    entry = dataset[0]
+    entry = dataset[244473744]
     print("\nSample entry from dataset:")
     print(f"Sequence ID: {entry['sequence_id']}")
     print(f"Sequence: {entry['sequence'][:50]}..." if len(entry['sequence']) > 50 else entry['sequence'])
@@ -537,7 +538,7 @@ def main():
     
     # Example: Look up a UniRef ID
     id_to_index_path = os.path.join(extractor.index_dir, "uniref_to_index.txt")
-    sample_id = list(entry.values())[0]  # Get first UniRef ID for demo
+    sample_id = entry['sequence_id']
     idx = find_uniref_id_index(sample_id, id_to_index_path)
     if idx is not None:
         print(f"\nFound UniRef ID {sample_id} at index {idx}")
