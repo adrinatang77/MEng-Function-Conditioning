@@ -1,14 +1,14 @@
-ckpt: 
+ckpt: workdir/multi-motif-test/last.ckpt
 pretrained:  #  load weights from here first
-validate:  # if true, only validate the model, don't train
+validate: # if true, only validate the model, don't train
 logger:
     # set to true to log to neptune.ai
     neptune: true
-    run_id: 
+    run_id: STRUC1-841
     # please change "test" to something unique to your task
     project: openprot/struct-merge
     # will log to workdir and neptune.ai with this name
-    name: motif-test3
+    name: multi-motif-test
     # if not null, will duplicate stdout and stderr to workdir/{name}/{logfile}
     logfile: std.out
     # if null, will log every epoch, otherwise every this number of steps

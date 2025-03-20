@@ -47,7 +47,7 @@ class MotifEval(CodesignEval):
         motif_aatype[motif_mask] = prot.aatype
 
         name = path.split('/')[-1].split('.')[0]
-        return self.make_data(
+        data = self.make_data(
             name=f"{name}_sample{idx // len(self.cfg.path)}",
             seqres=aatype_to_seqres(motif_aatype),
             seq_mask=np.ones(L),
@@ -61,6 +61,7 @@ class MotifEval(CodesignEval):
             struct_align_mask=np.ones(L),
             residx=np.arange(L),
         )
+        return data
 
     def compute_metrics(
         self, rank=0, world_size=1, device=None, savedir=".", logger=None
@@ -253,7 +254,7 @@ class MotifEval(CodesignEval):
             name = data["name"]
 
             mask = data['ref_conf_mask'].bool()
-            # mask = ~data['seq_noise'].bool()
+            
             ref_motif = data['ref_conf'][mask]
             samp_motif = data['struct'][mask]
 

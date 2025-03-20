@@ -4,15 +4,6 @@ import torch.nn.functional as F
 from .gmha import GeometricMultiHeadAttention
 from ..utils.rotation_conversions import axis_angle_to_matrix
 from ..utils.rigid_utils import Rigid, Rotation
-from .layers import (
-    Dropout,
-    PairToSequence,
-    SequenceToPair,
-)
-from .tri_mul import (
-    TriangleMultiplicationIncoming,
-    TriangleMultiplicationOutgoing,
-)
 from ..utils.checkpointing import checkpoint_blocks
 
 
@@ -138,17 +129,8 @@ class OpenProtTransformerBlock(nn.Module):
         pairwise_dim=128,
         pairwise_heads=4,
         rope=False,  # rotate scalar queries and keys
-        pair_bias=False,  # use pairs to bias
-        pair_bias_linear=False,
-        pair_updates=False,
-        pair_ffn=False,
-        pair_ff_expand=1,
-        tri_mul=False,
-        pair_values=False,  # aggregate values from pair reps
         rope_attn=False,
         rope_values=False,
-        frame_update=False,
-        update_x=True,
         adaLN=False,
         readout_adaLN=False,
         attn_mask=False,
@@ -162,11 +144,7 @@ class OpenProtTransformerBlock(nn.Module):
         self.mha = GeometricMultiHeadAttention(
             dim=dim,
             heads=heads,
-            pairwise_dim=pairwise_dim,
             rope=rope,
-            pair_bias=pair_bias,
-            pair_values=pair_values,
-            pair_bias_linear=pair_bias_linear,
             attn_mask=attn_mask,
             rope_attn=rope_attn,
             rope_values=rope_values,
@@ -186,13 +164,7 @@ class OpenProtTransformerBlock(nn.Module):
             }[act]
         )
 
-        self.pair_updates = pair_updates
-        self.pair_ffn = pair_ffn
-        self.frame_update = frame_update
-        self.tri_mul = tri_mul
-        self.update_x = update_x
         self.adaLN = adaLN
-        self.readout_adaLN = readout_adaLN
         
         self.mha_norm = nn.LayerNorm(dim, elementwise_affine=not adaLN)
         self.ff_norm = nn.LayerNorm(dim, elementwise_affine=not adaLN)
@@ -207,60 +179,13 @@ class OpenProtTransformerBlock(nn.Module):
             nn.init.constant_(self.adaLN_modulation[-1].weight, 0)
             nn.init.constant_(self.adaLN_modulation[-1].bias, 0)
 
-        if (pair_bias and pair_bias_linear) or pair_values:
-            self.pair_norm = nn.LayerNorm(pairwise_dim)
-
-        if frame_update:
-
-            if readout_adaLN:
-                self.linear_frame_update = FinalLayer(
-                    dim,
-                    3 + rot_dim if update_rots else 3,
-                )
-            else:
-                self.linear_frame_update = nn.Sequential(
-                    nn.LayerNorm(dim),
-                    nn.Linear(dim, 3 + rot_dim if update_rots else 3),
-                )
-
-                torch.nn.init.zeros_(self.linear_frame_update[-1].weight)
-                torch.nn.init.zeros_(self.linear_frame_update[-1].bias)
-
-        if pair_updates:
-            self.sequence_to_pair = SequenceToPair(dim, pairwise_dim // 2, pairwise_dim)
-
-            if tri_mul:
-                self.tri_mul_out = TriangleMultiplicationOutgoing(
-                    pairwise_dim, pairwise_dim
-                )
-                self.tri_mul_in = TriangleMultiplicationIncoming(
-                    pairwise_dim, pairwise_dim
-                )
-                dropout = 0
-                self.row_drop = Dropout(dropout * 2, 2)
-                self.col_drop = Dropout(dropout * 2, 1)
-                torch.nn.init.zeros_(self.tri_mul_in.linear_z.weight)
-                torch.nn.init.zeros_(self.tri_mul_in.linear_z.bias)
-                torch.nn.init.zeros_(self.tri_mul_out.linear_z.weight)
-                torch.nn.init.zeros_(self.tri_mul_out.linear_z.bias)
-
-            if pair_ffn:
-                self.mlp_pair = FeedForward(pairwise_dim, pair_ff_expand * pairwise_dim)
-                self.pair_ff_norm = nn.LayerNorm(pairwise_dim)
-
-            torch.nn.init.zeros_(self.sequence_to_pair.o_proj.weight)
-            torch.nn.init.zeros_(self.sequence_to_pair.o_proj.bias)
-
+       
     def forward(
         self,
         x,
         z,
-        trans,
         mask,
         x_cond=None,
-        postcond_fn=lambda x: x,
-        relpos_mask=None,
-        rots=None,
         idx=None,
         chain=None,
         mol_type=None,
@@ -275,18 +200,12 @@ class OpenProtTransformerBlock(nn.Module):
         else:
             shift_mha, scale_mha, gate_mha, shift_mlp, scale_mlp, gate_mlp = [None] * 6
 
-        x_in = x
-
         
-
         x = x + self.mha_dropout(gate(
             self.mha(
                 x=modulate(self.mha_norm(x), shift_mha, scale_mha),
                 z=self.pair_norm(z) if hasattr(self, "pair_norm") else z,
                 mask=mask.bool(),
-                trans=postcond_fn(trans),
-                rots=rots,
-                relpos_mask=relpos_mask,
                 idx=idx,
                 chain=chain,
                 mol_type=mol_type,
@@ -298,38 +217,7 @@ class OpenProtTransformerBlock(nn.Module):
             self.ff_norm(x), shift_mlp, scale_mlp
         )), gate_mlp))
 
-        if self.pair_updates:
-            z = z + self.sequence_to_pair(x)
-            if self.tri_mul:
-                tri_mask = (
-                    mask.unsqueeze(2) * mask.unsqueeze(1) if mask is not None else None
-                )
-                z = z + self.row_drop(self.tri_mul_out(z, mask=tri_mask))
-                z = z + self.col_drop(self.tri_mul_in(z, mask=tri_mask))
-            if self.pair_ffn:
-                z = z + self.mlp_pair(self.pair_ff_norm(z))
-
-        
-        if self.frame_update:
-            if self.readout_adaLN:
-                update = self.linear_frame_update(x, x_cond)
-            else:
-                update = self.linear_frame_update(x)
-            if self.update_rots:
-                # rigids = Rigid(trans=trans, rots=Rotation(rot_mats=rots))
-                # rigids = rigids.compose_q_update_vec(update)
-                # trans = rigids.get_trans()
-                # rots = rigids.get_rots().get_rot_mats()
-                
-                vec, rotvec = self.linear_frame_update(x).split(3, dim=-1)
-                trans = trans + vec # torch.einsum("blij,blj->bli", rots, vec)
-                rots = rots @ axis_angle_to_matrix(rotvec).mT
-            else:
-                trans = trans + update
-
-        if not self.update_x:
-            x = x_in
-        return x, z, trans, rots
+        return x, z
 
 
 class OpenProtModel(nn.Module):
@@ -394,26 +282,20 @@ class OpenProtModel(nn.Module):
         z = self.get_z(inp)
         
         chain = inp.get("chain", None)
-            
-        trans = inp.get("struct", None)
-        rots = inp.get("rots", None)
         x_cond = inp.get("x_cond", None)
-        postcond_fn = inp.get("postcond_fn", None)
-        struct_mask = inp.get("struct_mask", None)
         mol_type = inp.get("mol_type", None)
         
         for i, block in enumerate(self.blocks):
 
-            x = block(
+            x, _ = block(
                 x, 
                 z,
-                trans,
                 mask,
                 x_cond=x_cond,
                 idx=residx,
                 chain=chain,
                 mol_type=mol_type
-            )[0]
+            )
 
         
-        return {"x": x, "z": z, "trans": trans, "rots": rots}
+        return {"x": x, "z": z}

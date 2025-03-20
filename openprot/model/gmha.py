@@ -89,12 +89,7 @@ class GeometricMultiHeadAttention(nn.Module):
         self,
         dim,
         heads,
-        pairwise_dim=128,
-        pairwise_heads=4,
         rope=False,  # rotate scalar queries and keys
-        pair_bias=False,  # use pairs to bias
-        pair_values=False,  # aggregate values from pair reps
-        pair_bias_linear=False, # whether to transform z before pair bias
         rope_attn=False,
         rope_values=False,
         attn_mask=False,
@@ -108,12 +103,7 @@ class GeometricMultiHeadAttention(nn.Module):
         super().__init__()
         self.dim = dim
         self.heads = heads
-        self.pairwise_dim = pairwise_dim
-        self.pairwise_heads = pairwise_heads
         self.rope = rope
-        self.pair_bias = pair_bias
-        self.pair_bias_linear = pair_bias_linear
-        self.pair_values = pair_values
         self.rope_attn = rope_attn
         self.rope_values = rope_values
         self.cross_attn = cross_attn
@@ -145,9 +135,6 @@ class GeometricMultiHeadAttention(nn.Module):
         x,
         z,
         mask,
-        trans,
-        rots,
-        relpos_mask=None,
         idx=None,
         chain=None,
         mol_type=None,
