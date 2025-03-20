@@ -15,5 +15,9 @@ class InverseFolding(CodesignTask):
             data.crop(crop)
 
         self.add_sequence_noise(data, sup=True)
+        self.add_structure_noise(data, noise_level=0)
+
+        self.center_random_rot(data)
+        
         data["/inv_fold"] = np.ones((), dtype=np.float32)
         return data

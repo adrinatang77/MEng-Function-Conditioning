@@ -15,7 +15,6 @@ from ..utils.geometry import (
 from ..utils.rotation_conversions import axis_angle_to_matrix, random_rotations
 from ..utils.rigid_utils import Rigid, Rotation
 from ..utils import residue_constants as rc
-from ..model.positions import PositionEmbedder, PositionDecoder, PairwiseProjectionHead
 from ..generate import diffusion
 from functools import partial
 from multiflow.data import so3_utils
@@ -94,18 +93,14 @@ class StructureTrack(OpenProtTrack):
     def setup(self):
         self.diffusion = getattr(diffusion, self.cfg.diffusion.type)(self.cfg.diffusion)
         self._igso3 = None
-    @property
-    def igso3(self):
-        if self._igso3 is None:
-            sigma_grid = torch.linspace(0.1, 1.5, 1000)
-            self._igso3 = so3_utils.SampleIGSO3(
-                1000, sigma_grid, cache_dir='.cache')
-        return self._igso3
 
     def tokenize(self, data):
         pass 
 
     def add_modules(self, model):
+        if self.cfg.embed_mask:
+            model.frame_mask = nn.Parameter(torch.zeros(model.cfg.dim))
+            model.frame_mask_cond = nn.Parameter(torch.zeros(model.cfg.dim))
         model.trans_in = nn.Linear(3, model.cfg.dim)
         if self.cfg.readout_adaLN:
             model.trans_out = FinalLayer(model.cfg.dim, 3)
@@ -113,12 +108,33 @@ class StructureTrack(OpenProtTrack):
             model.trans_out = nn.Sequential(
                 nn.LayerNorm(model.cfg.dim), nn.Linear(model.cfg.dim, 3)
             )
+        if self.cfg.embed_ref:
+            model.ref_in = nn.Linear(3, model.cfg.dim)
+        if self.cfg.hotspots:
+            model.hotspot_in = nn.Parameter(torch.zeros(model.cfg.dim))
 
+    def get_hotspots(self, batch):
+        cmap = (
+            batch['struct'][:,None] - batch['struct'][:,:,None]
+        ).square().sum(-1).sqrt() < 15.0
+        cmap &= batch['chain'][:,None] != batch['chain'][:,:,None]
+        cmap &= batch['struct_mask'][:,None].bool() & batch['struct_mask'][:,:,None].bool()
+        cmap = torch.any(cmap, -1)
+
+        chain_idx = batch['mol_type'] + 0.01 * batch['chain']
+        lig_chain = torch.max(chain_idx, -1).values
+        cmap &= chain_idx == lig_chain[:,None]
+
+        cmap &= (torch.rand_like(cmap, dtype=float) < 0.5)
+        return cmap
+        
     def corrupt(self, batch, noisy_batch, target, logger=None):
 
+        # noisy_batch['hotspot'] = self.get_hotspots(batch)
         # add noise
+        
         noisy, target_tensor = self.diffusion.add_noise(
-            batch["struct"], batch["struct_noise"], batch["struct_mask"].bool() 
+            batch["struct"], batch["struct_noise"], batch["struct_align_mask"].bool() 
         ) # the mask is used to center the coords
 
         embed_as_mask = (
@@ -136,10 +152,17 @@ class StructureTrack(OpenProtTrack):
             self.cfg.edm.sigma_max,
             batch["struct_noise"]
         ) # used to compute diffusion loss
+
+        for key in [
+            'ref_conf',
+            'ref_conf_mask',
+            'struct_mask', # inf time centering
+            'mol_type'
+        ]:
+            noisy_batch[key] = batch[key]    
         
         noisy_batch["struct"] = noisy
         noisy_batch['struct_noise'] = noise_level
-        noisy_batch["struct_mask"] = batch["struct_mask"] # inf-time centering
         
         # training targets
         target['struct_noise'] = noise_level
@@ -161,6 +184,19 @@ class StructureTrack(OpenProtTrack):
         precond = self.diffusion.precondition(coords, noise)
         inp["x"] += model.trans_in(precond)
 
+        if self.cfg.embed_ref:
+            inp["x"] += torch.where(
+                batch['ref_conf_mask'][...,None].bool(),
+                model.ref_in(batch['ref_conf']),
+                0.0
+            )
+        if self.cfg.hotspots:
+            inp["x"] += torch.where(
+                batch['hotspot'][...,None],
+                model.hotspot_in[None,None],
+                0.0
+            )
+
         # embed sigma
         def sigma_transform(noise_level):
             t_emb = noise_level ** (1/self.cfg.edm.sched_p)
@@ -174,8 +210,6 @@ class StructureTrack(OpenProtTrack):
         if self.cfg.embed_sigma:
             inp["x"] += t_emb
                 
-        # finally provide the raw struct for relpos
-        inp["struct"] = coords
         inp["postcond_fn"] = lambda x: self.diffusion.postcondition(
             coords, x, noise,
         )
@@ -212,21 +246,9 @@ class StructureTrack(OpenProtTrack):
             loss = self.cfg.loss['aligned_mse'] * aligned_mse 
             loss += self.cfg.loss['lddt'] * soft_lddt
             loss += self.cfg.loss['mse'] * mse
-            
-        lddt = compute_lddt(
-            readout["trans"], target["struct"], target["struct_mask"]
-        )
-        rmsd = compute_rmsd(
-            readout["trans"], target["struct"], target["struct_mask"]
-        )
-        pseudo_tm = compute_pseudo_tm(
-            readout["trans"], target["struct"], target["struct_mask"]
-        )
-        if logger:
-            logger.masked_log("struct/lddt", lddt, dims=0)
-            logger.masked_log("struct/rmsd", rmsd, dims=0)
-            logger.masked_log("struct/pseudo_tm", pseudo_tm, dims=0)
 
+
+        self.compute_metrics(readout, target, logger=logger)
         mask = target["struct_supervise"]
         if logger:
             logger.masked_log("struct/toks_sup", mask, sum=True)
@@ -236,6 +258,28 @@ class StructureTrack(OpenProtTrack):
 
         return loss
 
+    @torch.no_grad()
+    def compute_metrics(self, readout, target, logger=None):
+        
+        lddt = compute_lddt(
+            readout["trans"], target["struct"], target["struct_mask"]
+        )
+        rmsd = compute_rmsd(
+            readout["trans"], target["struct"], target["struct_mask"]
+        )
+        pseudo_tm = compute_pseudo_tm(
+            readout["trans"], target["struct"], target["struct_mask"]
+        )
+        rmsd_arr = compute_rmsd(
+            readout["trans"], target["struct"], target["struct_mask"], reduce=False
+        )
+        lig_mask = (target['mol_type'] == 3).float()
+        lig_rmsd = torch.sqrt((torch.square(rmsd_arr) * lig_mask).sum(-1) / lig_mask.sum(-1))
+        if logger:
+            logger.masked_log("struct/lddt", lddt, dims=0)
+            logger.masked_log("struct/rmsd", rmsd, dims=0)
+            logger.masked_log("struct/pseudo_tm", pseudo_tm, dims=0)
+            logger.masked_log("struct/lig_rmsd", lig_rmsd, dims=0)
     def compute_lddt_loss(self, readout, target, logger=None, eps=1e-5):
 
         pred = readout["trans"]
@@ -268,10 +312,13 @@ class StructureTrack(OpenProtTrack):
         ) 
         # mse = torch.clamp(2 * mse, max=5)
 
+        # print(mse.shape, (mse * mask).sum() / mask.expand(mse.shape).sum())
+
         if aligned: key = 'aligned_mse'
         else: key = 'mse'
         if logger:
             logger.masked_log(f"struct/{key}_loss", mse, mask=mask)
+            logger.masked_log(f"struct/lig/{key}_loss", mse, mask=mask * (target['mol_type'] == 3).float())
         
         return mse
         
