@@ -47,7 +47,8 @@ class OpenProtDataset(torch.utils.data.Dataset):
             shape = [(n if n > 0 else L) for n in shape]
             if feat in kwargs:
                 assert type(kwargs[feat]) is np.ndarray, feat
-                data[feat] = kwargs[feat] 
+                data[feat] = kwargs[feat].astype(np.float32)
+                
             else:
                 data[feat] = np.zeros(shape, dtype=np.float32)
         return data
