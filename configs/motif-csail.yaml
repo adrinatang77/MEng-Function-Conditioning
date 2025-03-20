@@ -1,6 +1,6 @@
 ckpt: workdir/multi-motif-test/last.ckpt
 pretrained:  #  load weights from here first
-validate: # if true, only validate the model, don't train
+validate: true # if true, only validate the model, don't train
 logger:
     # set to true to log to neptune.ai
     neptune: true
@@ -66,6 +66,7 @@ features:
     ref_conf_idx: [-1]
     residx: [-1]
     chain: [-1]
+    func_cond: [-1]
 
 edm:
     sched_p: 7
@@ -311,6 +312,7 @@ tracks:
         esm_lm_head: true
         tied_weights: false
         reweight: linear
+        func_cond: false
         reweight_eps: 0.01
         init: 0.02
         all_atom: ${data.all_atom}
