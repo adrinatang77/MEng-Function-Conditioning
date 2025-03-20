@@ -1,6 +1,8 @@
 import argparse
 import os
 
+# os.environ["CUDA_VISIBLE_DEVICES"] = "7"
+
 parser = argparse.ArgumentParser()
 parser.add_argument("--config", type=str, default="config.yaml")
 parser.add_argument("--debug", action='store_true')
@@ -72,6 +74,7 @@ train_loader = torch.utils.data.DataLoader(
 )
 
 evals = OpenProtEvalManager(cfg, tracks)
+
 model = OpenProtWrapper(cfg, tracks, evals.evals)
 if cfg.pretrained is not None:
     ckpt = torch.load(cfg.pretrained)

@@ -44,7 +44,7 @@ def sinusoidal_embedding(pos, n_freqs, max_period, min_period):
 
 
 import esm
-from esm import Alphabet
+from esm.data import Alphabet
 
 RNA_LETTERS = {"A": 0, "G": 1, "C": 2, "U": 3}
 DNA_LETTERS = {"A": 0, "G": 1, "C": 2, "T": 3}
@@ -91,6 +91,16 @@ class EsmLMHead(nn.Module):
         # project back to size of vocabulary with bias
         x = self.decoder(x) + self.bias
         return x
+    
+class GOEmbeddingModule(nn.Module): # nn.Module for GO embeddings
+    def __init__(self, num_go_terms, embedding_dim, padding_idx=0):
+        super().__init__()
+        self.go_embedding = nn.Embedding(num_go_terms, embedding_dim, padding_idx=padding_idx)
+
+    def forward(self, go_terms):
+        go_term_embeddings_lookup = self.go_embedding(go_terms)
+        residue_go_embeddings = torch.sum(go_term_embeddings_lookup, dim=2) 
+        return residue_go_embeddings
         
 class SequenceTrack(OpenProtTrack):
 
@@ -101,6 +111,7 @@ class SequenceTrack(OpenProtTrack):
             self.ntoks = 21 + 5 + 5 + 128
         else:
             self.ntoks = NUM_TOKENS # 21
+            
     def tokenize(self, data):
         
         prot_aatype = np.array(seqres_to_aatype(data["seqres"]))
@@ -147,6 +158,7 @@ class SequenceTrack(OpenProtTrack):
         return esm_s, esm_z
 
     def add_modules(self, model):
+        
         model.seq_embed = nn.Embedding(self.ntoks, model.cfg.dim)
         if self.cfg.init:
             torch.nn.init.normal_(model.seq_embed.weight, std=self.cfg.init)
@@ -179,12 +191,17 @@ class SequenceTrack(OpenProtTrack):
 
             model.register_buffer("af2_to_esm", self._af2_to_esm(self.esm_dict))
 
+        if self.cfg.func_cond:
+            num_go_terms = 8225 + 1 # TODO: read in num GO terms as argument
+            model.func_embed = GOEmbeddingModule(num_go_terms, model.cfg.dim, padding_idx=0)
+            # model.func_embed = nn.Embedding(num_go_terms, model.cfg.dim, padding_idx=0) 
+
         # model.seq_mask = nn.Parameter(torch.zeros(model.cfg.dim))
         # keep this separate to avoid confusion
 
     def corrupt(self, batch, noisy_batch, target, logger=None):
         eps = 1e-6
-
+        
         tokens = batch["aatype"]
         rand_mask = torch.rand_like(batch['seq_noise']) < batch['seq_noise']
         rand_mask &= batch['mol_type'] == 0 # corrupt protein sequences only
@@ -208,6 +225,7 @@ class SequenceTrack(OpenProtTrack):
             target["seq_supervise"] *= 1/(batch['seq_noise'] + self.cfg.reweight_eps)
         target["aatype"] = tokens
 
+        noisy_batch['func_cond'] = batch['func_cond'] 
         
         mlm_mask = (torch.rand_like(batch['seq_noise']) < self.cfg.mlm_prob) & (batch['mol_type'] == 0) & ~mask
 
@@ -225,6 +243,7 @@ class SequenceTrack(OpenProtTrack):
             logger.masked_log("seq/toks", batch["seq_mask"], sum=True)
             
     def embed(self, model, batch, inp):
+
         def _af2_idx_to_esm_idx(aa, mask):
             aa = (aa + 1).masked_fill(mask != 1, 0)
             return model.af2_to_esm[aa]
@@ -244,6 +263,20 @@ class SequenceTrack(OpenProtTrack):
             inp["x"] += model.esm_s_mlp(esm_s)
 
         inp["x"] += model.seq_embed(batch["aatype"])
+
+        if self.cfg.func_cond:
+            residue_go_embeddings = model.func_embed(batch['func_cond'])
+            inp["x"] += residue_go_embeddings # add go embeddings
+
+            # # look up embeddings for all GO terms in the input
+            # # shape: (batch_size, seq_len, max_depth, embedding_dim)
+            # go_term_embeddings_lookup = model.func_embed(batch['func_cond'])
+
+            # # sum embeddings along the 'max_depth' dimension (dimension 2)
+            # # shape: (batch_size, seq_len, embedding_dim)
+            # residue_go_embeddings = torch.sum(go_term_embeddings_lookup, dim=2)
+
+        inp['residx'] = batch['residx'] # temporary
 
         if self.cfg.all_atom:
             inp["x_cond"] += model.mol_type_cond(batch['mol_type'].int())
