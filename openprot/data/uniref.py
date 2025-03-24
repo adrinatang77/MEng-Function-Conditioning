@@ -21,8 +21,9 @@ class UnirefDataset(OpenProtDataset):
             with open(self.cfg.go_vocab, 'r') as file:
                 self.go_vocab = json.load(file)
             self.func_db = open(self.cfg.seq_func_map)
-            with open(self.cfg.func_idx, 'r') as file:
-                self.func_idx = json.load(file)
+            # with open(self.cfg.func_idx, 'r') as file:
+            #     self.func_idx = json.load(file)
+            self.func_idx = open(self.cfg.func_idx)
 
     def actual_setup(self):
         self.db = open(self.cfg.path)
@@ -52,26 +53,39 @@ class UnirefDataset(OpenProtDataset):
         residx = np.arange(len(seqres), dtype=np.float32)
 
         if self.cfg.func_cond:
-
             go_term_array = np.zeros((len(seqres), self.cfg.max_depth), dtype=int) 
+            start_end = self.func_idx[idx]
 
-            # get the func labels for this seq name
-            if name in self.func_idx:
-                start = self.func_idx[name]['start']
-                end = self.func_idx[name]['end']
+            if start_end != None:
                 with lock:
-                    self.func_db.seek(start)
-                    go_item = self.func_db.read(end - start)
-                go_lines = go_item.split("\n")
-                go_header, go_lines = go_lines[0], go_lines[1:]
-                go_terms = "".join(go_lines)
+                    self.db.seek(start_end[0])
+                    item = self.func_db.read(start_end[1] - start_end[0])
+                lines = item.split("\n")
+                header, lines = lines[0], lines[1:]
+                if lines[0] != '': # GO term annotations exist
+                    lines = lines[0] # all GO terms
+                    go_terms = lines.split(',') # split string to get GO terms
+                    go_term_indices = list(set(np.array([go_index for go_term in go_terms if (go_index := self.go_vocab.get(go_term)) is not None], dtype=int)))
+                    num_go_terms = len(go_term_indices)
+                    go_term_array[:, :num_go_terms] = go_term_indices # protein-level GO terms
 
-                # split string to get GO terms
-                go_terms = go_terms.split(',')
-                go_term_indices = list(set(np.array([go_index for go_term in go_terms if (go_index := self.go_vocab.get(go_term)) is not None], dtype=int)))
-                num_go_terms = len(go_term_indices)
+            # # get the func labels for this seq name
+            # if name in self.func_idx:
+            #     start = self.func_idx[name]['start']
+            #     end = self.func_idx[name]['end']
+            #     with lock:
+            #         self.func_db.seek(start)
+            #         go_item = self.func_db.read(end - start)
+            #     go_lines = go_item.split("\n")
+            #     go_header, go_lines = go_lines[0], go_lines[1:]
+            #     go_terms = "".join(go_lines)
 
-                go_term_array[:, :num_go_terms] = go_term_indices # protein-level GO terms
+            #     # split string to get GO terms
+            #     go_terms = go_terms.split(',')
+            #     go_term_indices = list(set(np.array([go_index for go_term in go_terms if (go_index := self.go_vocab.get(go_term)) is not None], dtype=int)))
+            #     num_go_terms = len(go_term_indices)
+
+            #     go_term_array[:, :num_go_terms] = go_term_indices # protein-level GO terms
 
             func_cond = go_term_array
 

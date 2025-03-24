@@ -1,57 +1,54 @@
 import argparse
+import tqdm
+import numpy as np
+import json
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--fasta", type=str, required=True)
 parser.add_argument("--out", type=str, required=True)
 args = parser.parse_args()
 
-import tqdm
-import numpy as np
-import json
+print('Processing function data...')
 
-# index the file
-idx = {}
-pbar = tqdm.tqdm()
-
-prev_name = None
-
-with open(args.fasta) as f:
+func_processed = {} # name -> (start, end)
+with open(args.fasta, "r") as f:  
+    start = None
+    name = None
     while True:
         line = f.readline()
         if not line:
+            if start is not None:  # Handle the last entry
+                end = f.tell()
+                func_processed[name] = (start, end)
             break
         if line[0] == ">":
-            if prev_name is None: # first 
-                name = line.split('\n')[0]
-                start = f.tell() - len(line)
-                idx[name] = {'start': start, 'end': None}
-                prev_name = name
-            else:
-                name = line.split('\n')[0]
-                start = f.tell() - len(line)
-                idx[name] = {'start': start, 'end': None}
+            if start is not None:  # Process the previous entry
+                end = f.tell() - len(line)
+                func_processed[name] = (start, end)
+            name = line.split('\n')[0]
+            start = f.tell() - len(line)
 
-                # set the end of last entry
-                idx[prev_name]['end'] = start
-                prev_name = name
-            pbar.update()
+print('Processing Uniref50 order...')
 
-# create idx numpy array 
-starts = []
-prev_start = 0
-uniref = '/data/cb/scratch/datasets/uniref50.fasta'
-with open(uniref) as f: # going in same order as uniref50
-    while True:
-        line = f.readline()
-        if not line:
-            break
-        if line[0] == ">":
+# get uniref50 order
+uniref = '/data/cb/scratch/datasets/uniref50.fasta' # TODO: read this in as a parameter
+names = []
+with open(uniref, 'r') as f:
+    for line in f:
+        line = line.strip()
+        if line.startswith('>'):
             name = line.split(' ')[0]
-            if name in idx: 
-                starts.append(idx[name]['start']) # add to func idx
-                prev_start = idx[name]['start']
-            else:
-                starts.append(prev_start) # no func label
+            names.append(name)  
 
-np.save(args.out, np.array(starts))
-# np.save('/data/cb/scratch/datasets/func_data/extracted_data/swissprot_uniref50/swissprot_GO_idx.npy', np.array(starts))
+print('Creating index...')
+
+# now use order to create function index
+locs = []
+for name in names: # entry for every uniref50 entry 
+    if name in func_processed:
+        locs.append([func_processed[name][0], func_processed[name][1]])
+    else: # not in func_processed
+        locs.append(None)
+
+locs = np.array(locs, dtype=object)
+np.save(args.out, locs)
