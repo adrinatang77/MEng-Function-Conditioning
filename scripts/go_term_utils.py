@@ -103,3 +103,31 @@ def get_associated_go_terms(graph, go_ids, go_type=[], relationship_types=[]):
     if len(unique_terms) == 0:
         return None
     return unique_terms
+
+def parse_res_go_data_(data_str):
+    entries = {}
+    current_entry_id = None
+    lines = data_str.strip().split('\n')
+    i = 0
+    while i < len(lines):
+        line = lines[i].strip()
+        if line.startswith(">"):
+            current_entry_id = line[1:] 
+            entries[current_entry_id] = []
+            i += 2 # skip the sequence line
+        elif line.startswith("GO:"):
+            parts = line.split()
+            if len(parts) == 3:
+                go_id = parts[0]
+                start = int(parts[1])
+                end = int(parts[2])
+                entries[current_entry_id].append({
+                    "go_id": go_id,
+                    "start": start,
+                    "end": end
+                })
+            i += 1
+        else:
+            i += 1 # skip lines that are not entry IDs or GO terms
+
+    return entries
