@@ -248,7 +248,7 @@ class OpenProtModel(nn.Module):
             self.blocks.append(OpenProtTransformerBlock(**block_args))
 
     def get_z(self, inp):
-        # breakpoint()
+        
 
         idx = torch.where(
             inp['ref_conf_mask'][:,None].bool() & inp['ref_conf_mask'][:,:,None].bool(),

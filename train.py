@@ -1,11 +1,10 @@
 import argparse
 import os
 
-# os.environ["CUDA_VISIBLE_DEVICES"] = "7"
-
 parser = argparse.ArgumentParser()
 parser.add_argument("--config", type=str, default="config.yaml")
 parser.add_argument("--debug", action='store_true')
+parser.add_argument("--validate", action='store_true')
 args = parser.parse_args()
 from omegaconf import OmegaConf
 
@@ -18,6 +17,9 @@ if args.debug:
     cfg.trainer.devices = 1
     cfg.trainer.enable_progress_bar = True
 
+if args.validate:
+    cfg.validate = True
+    
 os.environ["CONFIG"] = args.config
 os.environ["MODEL_DIR"] = model_dir = os.path.join("workdir", cfg.logger.name)
 os.makedirs(model_dir, exist_ok=True)

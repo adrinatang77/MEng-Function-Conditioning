@@ -8,15 +8,36 @@ args = parser.parse_args()
 import tqdm
 import numpy as np
 
-starts = []
+
 pbar = tqdm.tqdm()
-with open(args.fasta) as f:
+name = None
+pos = None
+f = open(args.fasta)
+with open(args.out, "w") as g:
     while True:
         line = f.readline()
         if not line:
             break
         if line[0] == ">":
-            starts.append(f.tell() - len(line))
+            
+            newpos = f.tell() - len(line)
+            if name is not None:
+                g.write(f"{name} {pos} {newpos - pos}\n")
+        
+            pos = newpos
+            name = line.split()[0][1:]
             pbar.update()
 
-np.save(args.out, np.array(starts))
+
+# starts = []
+# pbar = tqdm.tqdm()
+# with open(args.fasta) as f:
+#     while True:
+#         line = f.readline()
+#         if not line:
+#             break
+#         if line[0] == ">":
+#             starts.append(f.tell() - len(line))
+#             pbar.update()
+
+# np.save(args.out, np.array(starts))

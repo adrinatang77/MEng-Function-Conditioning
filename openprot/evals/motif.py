@@ -14,7 +14,7 @@ from ..generate.sequence import SequenceUnmaskingStepper
 from ..utils.prot_utils import write_mmcif, aatype_to_seqres, compute_tmscore
 from ..utils import protein 
 from ..utils.geometry import rmsdalign, compute_rmsd, compute_lddt
-from ..utils.motif_utils import load_motif_spec, sample_motif_mask
+from ..utils.motif_utils import load_motif_spec, sample_motif_mask, save_motif_pdb
 from ..utils.structure import Structure, Polypeptide, Ligand
 from collections import defaultdict
 from biopandas.pdb import PandasPdb
@@ -37,6 +37,7 @@ class MotifEval(CodesignEval):
         spec = load_motif_spec(path)
         masks = sample_motif_mask(spec)
         motif_mask = masks['sequence']
+        motif_idx = masks['group']
         with open(path) as f:
             prot = protein.from_pdb_string(f.read())
 
@@ -51,16 +52,17 @@ class MotifEval(CodesignEval):
             name=f"{name}_sample{idx // len(self.cfg.path)}",
             seqres=aatype_to_seqres(motif_aatype),
             seq_mask=np.ones(L),
-            #seq_noise=np.ones(L),
             seq_noise=~motif_mask,
             struct_noise=np.ones(L) * self.cfg.struct.edm.sigma_max,
             struct=np.zeros((L, 3)),
             struct_mask=np.ones(L),
             ref_conf=masked_center(motif_ca, motif_mask),
             ref_conf_mask=motif_mask,
+            ref_conf_idx=motif_idx,
             struct_align_mask=np.ones(L),
             residx=np.arange(L),
         )
+        data['path'] = path
         return data
 
     def compute_metrics(
@@ -120,13 +122,19 @@ class MotifEval(CodesignEval):
                 prot = protein.from_pdb_string(f.read())
             with open(f"{savedir}/rank{rank}/{name}.pdb") as f:
                 pred = protein.from_pdb_string(f.read())
+
             with open(f"{savedir}/{name}_motif.pdb") as f:
                 motif = protein.from_pdb_string(f.read())
+
             
-            motif_rmsd = compute_rmsd(
-                torch.from_numpy(pred.atom_positions[motif.residue_index-1,1]),
-                torch.from_numpy(prot.atom_positions[motif.residue_index-1,1]),
-            )
+            motif_rmsd = []
+            for i in np.unique(motif.segment_index):
+                motif_residx = motif.residue_index[motif.segment_index == i]
+                motif_rmsd.append(compute_rmsd(
+                    torch.from_numpy(pred.atom_positions[motif_residx-1,1]),
+                    torch.from_numpy(prot.atom_positions[motif_residx-1,1]),
+                ))
+            motif_rmsd = torch.stack(motif_rmsd).max()
             
             lddt = compute_lddt(
                 torch.from_numpy(pred.atom_positions[:,1]), 
@@ -196,7 +204,7 @@ class MotifEval(CodesignEval):
             dev = cvd.split(',')[torch.cuda.current_device()]
         else:
             dev = torch.cuda.current_device()
-        
+
         subprocess.run(cmd, env=os.environ | {
             'CUDA_VISIBLE_DEVICES': str(dev)
         })  
@@ -253,12 +261,19 @@ class MotifEval(CodesignEval):
             data.update_seqres()
             name = data["name"]
 
-            mask = data['ref_conf_mask'].bool()
             
+            mask = data['ref_conf_mask'].bool()
             ref_motif = data['ref_conf'][mask]
             samp_motif = data['struct'][mask]
+            motif_idx = data['ref_conf_idx'][mask]
 
-            rmsd = compute_rmsd(ref_motif, samp_motif)
+            rmsds = []
+            for i in torch.unique(motif_idx):
+                rmsds.append(compute_rmsd(
+                    ref_motif[motif_idx == i],
+                    samp_motif[motif_idx == i]
+                ))
+            rmsd = torch.stack(rmsds).max()
             if logger is not None:
                 logger.log(f"{self.cfg.name}/samp_mRMSD", rmsd)
 
@@ -276,14 +291,12 @@ class MotifEval(CodesignEval):
                 f.write(f">{name}\n")  # FASTA format header
                 f.write(seq + "\n")
 
-            
-            prot = make_ca_prot(
-                data['ref_conf'].cpu().numpy(),
-                data["aatype"].cpu().numpy(),
+            save_motif_pdb(
+                data['path'], 
                 data["ref_conf_mask"].cpu().numpy(),
+                f"{savedir}/{name}_motif.pdb"
             )
-            with open(f"{savedir}/{name}_motif.pdb", "w") as f:
-                f.write(protein.to_pdb(prot))
+            
 
             
 
