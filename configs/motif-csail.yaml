@@ -1,6 +1,6 @@
 ckpt: workdir/multi-motif-test/last.ckpt
 pretrained:  #  load weights from here first
-validate: true # if true, only validate the model, don't train
+validate: false # if true, only validate the model, don't train
 logger:
     # set to true to log to neptune.ai
     neptune: true
