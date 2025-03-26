@@ -34,7 +34,7 @@ trainer:
 
 # custom args to OpenProtDataset and elsewhere
 data: 
-    num_workers: 0
+    num_workers: 8
     buffer: 1000
     max_sq_toks: # 400000
     max_toks: 8192
@@ -304,6 +304,19 @@ evals:
         replace_unmasked: false
         adjust_unmasked: false
         allow_mutation: false
+
+    cameo22:
+        type: StructurePredictionEval
+        path: /data/cb/scratch/datasets/pdb_npz
+        split: splits/cameo2022.csv
+        batch: 100
+        steps: 200
+        struct:
+            edm: ${edm}
+            temp_factor: 0.5
+            sde_weight: 1.0
+            align: false
+        
         
 
 tracks:

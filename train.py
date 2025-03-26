@@ -4,6 +4,8 @@ import os
 parser = argparse.ArgumentParser()
 parser.add_argument("--config", type=str, default="config.yaml")
 parser.add_argument("--debug", action='store_true')
+parser.add_argument("--gpus", type=int, default=None)
+parser.add_argument("--workers", type=int, default=None)
 parser.add_argument("--validate", action='store_true')
 args = parser.parse_args()
 from omegaconf import OmegaConf
@@ -16,6 +18,12 @@ if args.debug:
     cfg.logger.logfile = None
     cfg.trainer.devices = 1
     cfg.trainer.enable_progress_bar = True
+
+if args.gpus:
+    cfg.trainer.devices = args.gpus
+
+if args.workers:
+    cfg.data.num_workers = args.workers
 
 if args.validate:
     cfg.validate = True

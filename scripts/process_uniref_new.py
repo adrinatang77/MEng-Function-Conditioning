@@ -54,17 +54,20 @@ with open(args.out, 'w') as f:
             ur100 = tree['entry']['@id']
             ur90 = None
             ur50 = None
-            upkb = None
+            upkb = []
             for prop in tree['entry']['representativeMember']['dbReference']['property']:
                 if prop['@type'] == 'UniRef90 ID':
                     ur90 = prop['@value']
                 elif prop['@type'] == 'UniRef50 ID':
                     ur50 = prop['@value']
                 elif prop['@type'] == 'UniProtKB accession':
-                    upkb = prop['@value']
+                    upkb.append(prop['@value'])
+
             # seq = tree['entry']['representativeMember']['sequence']
-            
-            f.write(f"{ur100} {ur90} {ur50} {upkb}\n")
+            if ur90 and ur50: # skip those without cluster assignments
+                f.write(" ".join([
+                    ur100, ur90, ur50, *upkb, "\n"
+                ]))
             
             element.clear()
             progress.update()
