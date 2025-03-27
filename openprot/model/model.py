@@ -248,7 +248,10 @@ class OpenProtModel(nn.Module):
             self.blocks.append(OpenProtTransformerBlock(**block_args))
 
         if cfg.self_cond:
-            self.self_cond_emb = nn.Linear(cfg.dim, cfg.dim)
+            self.self_cond_emb = nn.Sequential(
+                nn.LayerNorm(cfg.dim),
+                nn.Linear(cfg.dim, cfg.dim),
+            )
 
     def get_z(self, inp):
         
