@@ -247,6 +247,9 @@ class OpenProtModel(nn.Module):
             block_args = default_block_args 
             self.blocks.append(OpenProtTransformerBlock(**block_args))
 
+        if cfg.self_cond:
+            self.self_cond_emb = nn.Linear(cfg.dim, cfg.dim)
+
     def get_z(self, inp):
         
 
@@ -284,6 +287,9 @@ class OpenProtModel(nn.Module):
         chain = inp.get("chain", None)
         x_cond = inp.get("x_cond", None)
         mol_type = inp.get("mol_type", None)
+
+        if self.cfg.self_cond:
+            x = x + self.self_cond_emb(inp['sc'])
         
         for i, block in enumerate(self.blocks):
 
