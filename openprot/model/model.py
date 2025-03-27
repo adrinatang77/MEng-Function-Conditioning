@@ -252,6 +252,8 @@ class OpenProtModel(nn.Module):
                 nn.LayerNorm(cfg.dim),
                 nn.Linear(cfg.dim, cfg.dim),
             )
+            torch.nn.init.zeros_(self.self_cond_emb[-1].weight)
+            torch.nn.init.zeros_(self.self_cond_emb[-1].bias)
 
     def get_z(self, inp):
         
