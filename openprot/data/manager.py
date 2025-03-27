@@ -8,8 +8,10 @@ import tqdm
 from .. import tracks
 from ..tracks.manager import OpenProtTrackManager
 from ..utils.misc_utils import autoimport
+from ..utils.logger import get_logger
 from .data import OpenProtData
 
+logger = get_logger(__name__)
 
 class OpenProtDatasetManager(torch.utils.data.IterableDataset):
     def __init__(self, cfg, tracks: OpenProtTrackManager, rank=0, world_size=1):
@@ -24,6 +26,7 @@ class OpenProtDatasetManager(torch.utils.data.IterableDataset):
             ds = autoimport(f"openprot.data.{type_}")(cfg.datasets[name], cfg.features)
             ds.cfg.name = name
             self.datasets[name] = ds
+            logger.info(f"Loaded {name} with {len(ds)} entries")
 
         self.tasks = {}
         for name in cfg.tasks:  # autoload the train tasks

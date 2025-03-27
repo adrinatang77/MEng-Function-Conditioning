@@ -22,7 +22,7 @@ if args.debug:
 if args.gpus:
     cfg.trainer.devices = args.gpus
 
-if args.workers:
+if args.workers is not None:
     cfg.data.num_workers = args.workers
 
 if args.validate:

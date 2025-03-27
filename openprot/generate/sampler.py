@@ -28,7 +28,7 @@ class OpenProtSampler:
             stepper.set_step(noisy_batch, sched, extra)
 
         out, readout = model.forward(noisy_batch)    
-        if sc: readout['sc'] = out['x']
+        if sc: noisy_batch['sc'] = out['x']
         
         for stepper in self.steppers:
             stepper.advance(noisy_batch, sched, readout, extra)
