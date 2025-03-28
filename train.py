@@ -49,7 +49,7 @@ from openprot.evals.manager import OpenProtEvalManager
 from openprot.tracks.manager import OpenProtTrackManager
 
 cfg.trainer.devices = int(os.environ.get("SLURM_NTASKS_PER_NODE", cfg.trainer.devices))
-
+torch.set_float32_matmul_precision('medium')
 trainer = pl.Trainer(
     **cfg.trainer,
     default_root_dir=model_dir,

@@ -8,7 +8,7 @@ logger:
     # please change "test" to something unique to your task
     project: openprot/struct-merge
     # will log to workdir and neptune.ai with this name
-    name: unified-test-nomulti
+    name: unified-struct-pred
     # if not null, will duplicate stdout and stderr to workdir/{name}/{logfile}
     logfile: std.out
     # if null, will log every epoch, otherwise every this number of steps
@@ -131,9 +131,19 @@ tasks:
         datasets:
             pdb: 0.25
             unified_struct: 0.75
+    
+    StructurePrediction:
+        fraction: 0.1
+        edm: ${edm}
+        struct: 
+            uniform_prob: 1.0
+        
+        datasets:
+            pdb: 0.25
+            unified_struct: 0.75
                 
     Codesign:
-        fraction: 0.8
+        fraction: 0.7
         weight: 1.0
         motif_prob: 0.5    
         motif: ${motif}
@@ -148,8 +158,7 @@ tasks:
         datasets:
             unified: 0.5
             unified_struct: 0.5
-
-
+                
 
 evals: 
     # multi_motif+1:

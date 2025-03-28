@@ -8,7 +8,7 @@ logger:
     # please change "test" to something unique to your task
     project: openprot/struct-merge
     # will log to workdir and neptune.ai with this name
-    name: unified-test-nomulti
+    name: unified-thresh80
     # if not null, will duplicate stdout and stderr to workdir/{name}/{logfile}
     logfile: std.out
     # if null, will log every epoch, otherwise every this number of steps
@@ -104,7 +104,7 @@ datasets:
         afdb: data/afdb_uniprot_v4/afdb_uniprot_v4
         uniref: data/uniref100.fasta
         struct: true
-        plddt_thresh: 70
+        plddt_thresh: 80
 
 tasks:
 
@@ -148,64 +148,9 @@ tasks:
         datasets:
             unified: 0.5
             unified_struct: 0.5
-
-
+                
 
 evals: 
-    # multi_motif+1:
-    #     type: MotifEval
-    #     path: 
-    #         - splits/multimotifs/1prw_four.pdb 
-    #     num_samples: 100
-    #     batch: 100
-    #     steps: 200
-    #     skew: 1.0
-    #     struct:
-    #         edm: ${edm}
-    #         temp_factor: 0.5
-    #         sde_weight: 1.0
-    #         align: false
-    #     seq:
-    #         temp_start: 0.1
-    #         temp_end: 0.1
-    #         strategy: random
-    #         noise: 20
-    #         logits: standard
-    #         adjust_unmasked: false # pseudo-masked logits
-    #         replace_unmasked: false # logit of current toks
-    #         topk_temp: 0.0
-    #         allow_mutation: false
-    #     schedule: {}
-    #     run_designability: true
-    #     run_pmpnn_designability: true
-
-    # multi_motif+0:
-    #     type: MotifEval
-    #     path: 
-    #         - splits/multimotifs/1prw_four.pdb 
-    #     num_samples: 100
-    #     batch: 100
-    #     steps: 200
-    #     skew: 0.0
-    #     struct:
-    #         edm: ${edm}
-    #         temp_factor: 0.5
-    #         sde_weight: 1.0
-    #         align: false
-    #     seq:
-    #         temp_start: 0.1
-    #         temp_end: 0.1
-    #         strategy: random
-    #         noise: 20
-    #         logits: standard
-    #         adjust_unmasked: false # pseudo-masked logits
-    #         replace_unmasked: false # logit of current toks
-    #         topk_temp: 0.0
-    #         allow_mutation: false
-    #     schedule: {}
-    #     run_designability: true
-    #     run_pmpnn_designability: true
-
     motif+0:
         type: MotifEval
         path: 
