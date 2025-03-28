@@ -56,10 +56,9 @@ class MotifEval(CodesignEval):
             struct_noise=np.ones(L) * self.cfg.struct.edm.sigma_max,
             struct=np.zeros((L, 3)),
             struct_mask=np.ones(L),
-            ref_conf=masked_center(motif_ca, motif_mask),
-            ref_conf_mask=motif_mask,
-            ref_conf_idx=motif_idx,
-            struct_align_mask=np.ones(L),
+            motif=masked_center(motif_ca, motif_mask),
+            motif_mask=motif_mask,
+            motif_idx=motif_idx,
             residx=np.arange(L),
         )
         data['path'] = path
@@ -262,10 +261,10 @@ class MotifEval(CodesignEval):
             name = data["name"]
 
             
-            mask = data['ref_conf_mask'].bool()
-            ref_motif = data['ref_conf'][mask]
+            mask = data['motif_mask'].bool()
+            ref_motif = data['motif'][mask]
             samp_motif = data['struct'][mask]
-            motif_idx = data['ref_conf_idx'][mask]
+            motif_idx = data['motif_idx'][mask]
 
             rmsds = []
             for i in torch.unique(motif_idx):
@@ -293,7 +292,7 @@ class MotifEval(CodesignEval):
 
             save_motif_pdb(
                 data['path'], 
-                data["ref_conf_mask"].cpu().numpy(),
+                data["motif_mask"].cpu().numpy(),
                 f"{savedir}/{name}_motif.pdb"
             )
             

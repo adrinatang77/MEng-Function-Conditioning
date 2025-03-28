@@ -23,7 +23,7 @@ trainer:
     max_steps: 1000000
     enable_progress_bar: false
     limit_train_batches: 1.0
-    limit_val_batches: 1.0
+    limit_val_batches: 1
     num_sanity_val_steps: 0
     gradient_clip_val: 1.0
     accumulate_grad_batches: 1
@@ -129,9 +129,9 @@ tasks:
         fraction: 0.1
         edm: ${edm}
         motif: ${motif}
-        motif_prob: 0.45
+        motif_prob: 0.5
         ppi: ${ppi}
-        ppi_prob: 0.15
+        ppi_prob: 0.0
         struct:
             beta: [1, 2]
             uniform_prob: 0.5
@@ -144,7 +144,7 @@ tasks:
         fraction: 0.1
         edm: ${edm}
         ppi: ${ppi}
-        ppi_prob: 0.25
+        ppi_prob: 0.0
         seq:
             uniform_prob: 1.0
         struct: {}
@@ -156,9 +156,9 @@ tasks:
     Codesign:
         fraction: 0.8
         motif: ${motif}
-        motif_prob: 0.45
+        motif_prob: 0.5
         ppi: ${ppi}
-        ppi_prob: 0.15
+        ppi_prob: 0.0
         seq:
             max_prob: 0.05
             uniform_prob: 0.95
@@ -174,60 +174,6 @@ tasks:
 
 
 evals: 
-    # multi_motif+1:
-    #     type: MotifEval
-    #     path: 
-    #         - splits/multimotifs/1prw_four.pdb 
-    #     num_samples: 100
-    #     batch: 100
-    #     steps: 200
-    #     skew: 1.0
-    #     struct:
-    #         edm: ${edm}
-    #         temp_factor: 0.5
-    #         sde_weight: 1.0
-    #         align: false
-    #     seq:
-    #         temp_start: 0.1
-    #         temp_end: 0.1
-    #         strategy: random
-    #         noise: 20
-    #         logits: standard
-    #         adjust_unmasked: false # pseudo-masked logits
-    #         replace_unmasked: false # logit of current toks
-    #         topk_temp: 0.0
-    #         allow_mutation: false
-    #     schedule: {}
-    #     run_designability: true
-    #     run_pmpnn_designability: true
-
-    # multi_motif+0:
-    #     type: MotifEval
-    #     path: 
-    #         - splits/multimotifs/1prw_four.pdb 
-    #     num_samples: 100
-    #     batch: 100
-    #     steps: 200
-    #     skew: 0.0
-    #     struct:
-    #         edm: ${edm}
-    #         temp_factor: 0.5
-    #         sde_weight: 1.0
-    #         align: false
-    #     seq:
-    #         temp_start: 0.1
-    #         temp_end: 0.1
-    #         strategy: random
-    #         noise: 20
-    #         logits: standard
-    #         adjust_unmasked: false # pseudo-masked logits
-    #         replace_unmasked: false # logit of current toks
-    #         topk_temp: 0.0
-    #         allow_mutation: false
-    #     schedule: {}
-    #     run_designability: true
-    #     run_pmpnn_designability: true
-
     motif+0:
         type: MotifEval
         path: 
@@ -267,8 +213,6 @@ evals:
         sample_length: 128
         steps: 200
         skew: 1.0
-        truncate: 
-        dir:
         struct:
             edm: ${edm}
             temp_factor: 0.5
@@ -298,8 +242,6 @@ evals:
         sample_length: 128
         steps: 200
         skew: 0.0
-        truncate:
-        dir:
         struct:
             edm: ${edm}
             temp_factor: 0.5
@@ -397,7 +339,7 @@ model: # custom args
     rope_attn: true
     rope_values: true
     attn_mask: false
-    cross_attn: true
+    cross_attn: false
     adaLN: true
     qk_norm: true
     act: gelu
