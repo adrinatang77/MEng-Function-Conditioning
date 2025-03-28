@@ -16,33 +16,6 @@ from transformers import EsmTokenizer
 MASK_IDX = 20
 NUM_TOKENS = MASK_IDX+1
 
-
-# processes a sequence (integers) into its class distribution representation (one-hot encoding)
-# returns tensor of size (seqlen, NUM_TOKENS)
-def seq2prob(seq):
-    seq = seq.to(torch.int64)
-    return F.one_hot(seq, num_classes=NUM_TOKENS)
-
-
-# given a probability distribution over classes, returns single sample
-# pt is probability distribution of shape (seqlen, NUM_TOKENS)
-def sample_p(pt):
-    pt = pt.to(torch.float32)
-    return torch.multinomial(pt, 1, replacement=True)
-
-
-def sinusoidal_embedding(pos, n_freqs, max_period, min_period):
-    periods = torch.exp(
-        torch.linspace(
-            math.log(min_period), math.log(max_period), n_freqs, device=pos.device
-        )
-    )
-    freqs = 2 * np.pi / periods
-    return torch.cat(
-        [torch.cos(pos[..., None] * freqs), torch.sin(pos[..., None] * freqs)], -1
-    )
-
-
 import esm
 from esm.data import Alphabet
 
@@ -172,15 +145,13 @@ class SequenceTrack(OpenProtTrack):
         if self.cfg.all_atom:
             model.mol_type_cond = nn.Embedding(4, model.cfg.dim)
         
-        
         if self.cfg.esm is not None:
-
             model.esm, self.esm_dict = esm_registry.get(self.cfg.esm)()
             model.esm.requires_grad_(False)
             model.esm.half()
             model.esm.eval()
             esm_dim = model.esm.layers[0].final_layer_norm.bias.shape[0]
-            # model.esm_in = nn.Linear(esm_dim, model.cfg.dim)
+            
             model.esm_s_combine = nn.Parameter(torch.zeros(model.esm.num_layers + 1))
             model.esm_s_mlp = nn.Sequential(
                 nn.LayerNorm(esm_dim),
@@ -289,19 +260,4 @@ class SequenceTrack(OpenProtTrack):
             logger.masked_log("seq/loss", loss, mask=mask)
             logger.masked_log("seq/perplexity", loss, mask=mask, post=np.exp)
 
-        # logits = readout["aatype"]
-        # logits[...,-1] -= 1e5
-        ## extract the pseudo-mask likelihoods
-        # probs = logits.softmax(-1)
-        # oh = torch.nn.functional.one_hot(target['noisy_aatype'], num_classes=self.ntoks)
-        # denom = 0.5 * oh + 0.05
-        # new_probs = probs / denom
-        # new_probs /= new_probs.sum(-1, keepdims=True)
-        # is_mask_prob = ((probs - oh) / (new_probs - oh))[...,0]
-        # is_unmask = (target['noisy_aatype'] != MASK_IDX)
-        # # print((is_mask_prob * is_unmask).sum(-1) / is_unmask.sum(-1))
-        # # print((is_mask_prob * is_unmask).sum() / is_unmask.sum())
-        # if logger:
-        #     logger.masked_log("seq/is_mask_prob", is_mask_prob, mask=is_unmask)
-        
         return loss * mask

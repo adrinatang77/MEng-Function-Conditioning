@@ -10,19 +10,20 @@ class CodesignTask(OpenProtTask):
 
     def sample_ppi(self, data):
         L = len(data['seqres'])
+        cfg = self.cfg.ppi
         
-        cmap = np.square(data['struct'][None] - data['struct'][:,None]).sum(-1)**0.5 < 8.0
+        cmap = np.square(data['struct'][None] - data['struct'][:,None]).sum(-1)**0.5 < cfg.contact
         cmap &= data['struct_mask'][None].astype(bool) & data['struct_mask'][:,None].astype(bool)
         ii, jj = np.meshgrid(np.arange(L), np.arange(L))
-        cmap &= ii - jj >= 24
+        cmap &= ii - jj >= cfg.long_range
         if np.sum(cmap) == 0:
             return False
 
         i, j = np.argwhere(cmap)[np.random.choice(range(cmap.sum()))]
 
         
-        gap_len = np.random.choice(range(6, min(j-i-6, 24)))
-        gap_start = np.random.choice(range(i+3, j-3-gap_len))
+        gap_len = np.random.choice(range(cfg.gap_min, min(j-i-2*cfg.gap_pad, cfg.gap_max)))
+        gap_start = np.random.choice(range(i+cfg.gap_pad, j-cfg.gap_pad-gap_len))
         
         mask = np.ones(L, dtype=bool)
         mask[gap_start:gap_start+gap_len] = 0
@@ -181,8 +182,8 @@ class Codesign(CodesignTask):
                 data["/codesign/ppi"] = np.ones((), dtype=np.float32)    
                 
             
-        self.add_sequence_noise(data, sup=True)
-        self.add_structure_noise(data, sup=True)
+        self.add_sequence_noise(data)
+        self.add_structure_noise(data)
 
         # this must happen after motifs have been assigned
         self.center_random_rot(data)

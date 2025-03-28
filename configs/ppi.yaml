@@ -84,6 +84,13 @@ motif:
     ymax: 0.5
     weight: 1.0
     multi_prob: 0.0
+
+ppi:
+    contact: 8
+    long_range: 24
+    gap_pad: 3
+    gap_min: 6
+    gap_max: 24
     
 datasets:
     pdb:
@@ -122,7 +129,9 @@ tasks:
         fraction: 0.1
         edm: ${edm}
         motif: ${motif}
-        motif_prob: 0.5
+        motif_prob: 0.45
+        ppi: ${ppi}
+        ppi_prob: 0.15
         struct:
             beta: [1, 2]
             uniform_prob: 0.5
@@ -134,6 +143,8 @@ tasks:
     InverseFolding:
         fraction: 0.1
         edm: ${edm}
+        ppi: ${ppi}
+        ppi_prob: 0.25
         seq:
             uniform_prob: 1.0
         struct: {}
@@ -144,9 +155,10 @@ tasks:
                 
     Codesign:
         fraction: 0.8
-        motif_prob: 0.5    
-        ppi_prob: 0.05
         motif: ${motif}
+        motif_prob: 0.45
+        ppi: ${ppi}
+        ppi_prob: 0.15
         seq:
             max_prob: 0.05
             uniform_prob: 0.95
@@ -156,8 +168,8 @@ tasks:
             uniform_prob: 0.95
         
         datasets:
-            # unified: 0.5
-            unified_struct: 1.0
+            pdb: 0.25
+            unified_struct: 0.75
 
 
 
@@ -344,13 +356,11 @@ tracks:
     # register tracks here
     StructureTrack: 
         loss_weight: 1.0
-        embed_sigma: false
-        embed_mask: false
-        embed_ref: true
+        embed_motif: true
+        embed_ligand: true
         edm: ${edm}
         all_atom: ${data.all_atom}
         readout_adaLN: false
-        interp_aligned_loss: false
         loss:
             mse: 1.0
             aligned_mse: 0.0
