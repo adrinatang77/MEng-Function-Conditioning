@@ -17,7 +17,8 @@ class UnifiedDataset(OpenProtDataset):
         mask = self.index[:,1] >= self.cfg.plddt_thresh
         self.index = self.index[mask,0]
         self.lens = lens[mask[:-1]]
-        self.afdb = foldcomp.open(self.cfg.afdb)
+        if self.cfg.struct:
+            self.afdb = foldcomp.open(self.cfg.afdb)
         
     def __len__(self):
         return len(self.index) - 1  # unfortunately we have to skip the last one
@@ -64,7 +65,7 @@ class UnifiedDataset(OpenProtDataset):
         struct = None
         struct_mask = None
 
-        if L == entry['afdb'][2]: # afdb is not a fragment
+        if self.cfg.struct and L == entry['afdb'][2]: # afdb is not a fragment
             _, pdb = self.afdb[entry['afdb'][0]]
             prot = protein.from_pdb_string(pdb)
             afdb_seqres = "".join([rc.restypes_with_x[c] for c in prot.aatype])
