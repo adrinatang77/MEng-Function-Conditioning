@@ -53,14 +53,54 @@ class OpenProtDataset(torch.utils.data.Dataset):
                 data[feat] = np.zeros(shape, dtype=np.float32)
         return data
 
-
-class OpenProtData(dict):
-    def copy(self, *keys):
-        data = OpenProtData()
-        for key in keys:
-            data[key] = self[key]
+# these keys risk leaking information about the protein
+# so we exclude them by default when copying a data object
+excluded_keys = [
+    "seqres",
+    "aatype",
+    "atom_num",
+    "struct",
+]
+class OpenProtBatch(dict):
+    
+    def copy(self, all_keys=False):
+        data = OpenProtBatch()
+        for key in self:
+            if all_keys or (key not in excluded_keys):
+                data[key] = self[key]
         return data
 
+    def to(self, device):
+        for key in self.keys():
+            if isinstance(self[key], torch.Tensor):
+                self[key] = self[key].to(device)
+        return self
+
+    def unbatch(self, trim=True):
+        datas = [OpenProtData() for _ in self['seqres']]
+        for key in self:
+            for i in range(len(self['seqres'])):
+                datas[i][key] = self[key][i]
+
+        if trim:
+            datas = [data.trim() for data in datas]
+        return datas
+
+class OpenProtData(dict):
+
+    def copy(self, all_keys=False):
+        data = OpenProtData()
+        for key in self:
+            if all_keys or (key not in excluded_keys):
+                data[key] = self[key]
+        return data
+
+    def to(self, device):
+        for key in self.keys():
+            if isinstance(self[key], torch.Tensor):
+                self[key] = self[key].to(device)
+        return self
+        
     def update_seqres(self):
         
         seqres = []
@@ -100,17 +140,15 @@ class OpenProtData(dict):
         idx = np.argsort(dist)[:crop_len]
         return sorted(idx)        
         
-    def crop(self, crop_len: int):
+    def crop(self, crop_len=np.inf, idx=None):
         L = len(self["seqres"])
-        if L >= crop_len:  # needs crop
-            if np.unique(self['chain']).size > 1:
-                idx = self.get_spatial_crop(crop_len)
-            else:
+        if idx is not None or L >= crop_len:  # needs crop
+            if idx is None:
                 idx = self.get_contiguous_crop(crop_len)
             for key in self.keys():
                 # special attribute
                 if key == "seqres":
-                    self[key] = [self[key][i] for i in idx]
+                    self[key] = "".join([self[key][i] for i in idx])
                 
                 # non-array attribute
                 elif type(self[key]) not in [torch.Tensor, np.ndarray]:
@@ -175,7 +213,7 @@ class OpenProtData(dict):
             for data in datas:
                 data.pad(max(lens))
                 
-        batch = OpenProtData()
+        batch = OpenProtBatch()
         key_union = list(set(sum([list(data.keys()) for data in datas], [])))
         for key in key_union:
             try:
@@ -192,15 +230,7 @@ class OpenProtData(dict):
                 raise Exception(f"Key {key} exception: {e}")
         return batch
 
-    def unbatch(self, trim=True):
-        datas = [OpenProtData() for _ in self['seqres']]
-        for key in self:
-            for i in range(len(self['seqres'])):
-                datas[i][key] = self[key][i]
 
-        if trim:
-            datas = [data.trim() for data in datas]
-        return datas
 
     def trim(self):
         mask = self['pad_mask'].bool()
@@ -245,8 +275,4 @@ class OpenProtData(dict):
                 raise Exception(f"Key {key} exception: {e}")
         return batch
 
-    def to(self, device):
-        for key in self.keys():
-            if isinstance(self[key], torch.Tensor):
-                self[key] = self[key].to(device)
-        return self
+

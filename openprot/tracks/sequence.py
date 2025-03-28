@@ -196,9 +196,6 @@ class SequenceTrack(OpenProtTrack):
             model.func_embed = GOEmbeddingModule(num_go_terms, model.cfg.dim, padding_idx=0)
             # model.func_embed = nn.Embedding(num_go_terms, model.cfg.dim, padding_idx=0) 
 
-        # model.seq_mask = nn.Parameter(torch.zeros(model.cfg.dim))
-        # keep this separate to avoid confusion
-
     def corrupt(self, batch, noisy_batch, target, logger=None):
         eps = 1e-6
         
@@ -209,25 +206,23 @@ class SequenceTrack(OpenProtTrack):
         mask = rand_mask | ~batch["seq_mask"].bool() # these will be input as MASK
         sup = rand_mask & batch["seq_mask"].bool() # these will be actually supervised
 
-        #                                   !!!!!!!
-        noisy_batch["aatype"] = torch.where(rand_mask, MASK_IDX, tokens)
-
-        
-        # present = ~batch["seq_noise"].bool() & batch["seq_mask"].bool()
-        # target["seq_occupancy"] = present.sum(-1) / (1+batch['seq_mask'].sum(-1))        
-        
-        target["seq_supervise"] = torch.where(sup, batch["seq_weight"], 0.0)
+        noisy_batch["aatype"] = torch.where(mask, MASK_IDX, tokens)
+        target["seq_supervise"] = sup.float()
 
 
         if self.cfg.reweight == 'linear':
-            target["seq_supervise"] *= (1-batch['seq_noise'])
+            target["seq_supervise"] *= (1-batch['seq_noise'] + self.cfg.reweight_eps)
         elif self.cfg.reweight == 'inverse':
             target["seq_supervise"] *= 1/(batch['seq_noise'] + self.cfg.reweight_eps)
         target["aatype"] = tokens
 
         noisy_batch['func_cond'] = batch['func_cond'] 
         
-        mlm_mask = (torch.rand_like(batch['seq_noise']) < self.cfg.mlm_prob) & (batch['mol_type'] == 0) & ~mask
+        mlm_mask = (
+            (torch.rand_like(batch['seq_noise']) < self.cfg.mlm_prob)
+            & (batch['mol_type'] == 0)
+            & ~mask
+        )
 
         noisy_batch['aatype'] = torch.where(
             mlm_mask & (torch.rand_like(batch['seq_noise']) < self.cfg.mlm_ratio),
@@ -236,9 +231,6 @@ class SequenceTrack(OpenProtTrack):
         )
         target["seq_supervise"].masked_fill_(mlm_mask, self.cfg.mlm_weight)
 
-        
-        
-        
         if logger:
             logger.masked_log("seq/toks", batch["seq_mask"], sum=True)
             
@@ -275,8 +267,6 @@ class SequenceTrack(OpenProtTrack):
             # # sum embeddings along the 'max_depth' dimension (dimension 2)
             # # shape: (batch_size, seq_len, embedding_dim)
             # residue_go_embeddings = torch.sum(go_term_embeddings_lookup, dim=2)
-
-        inp['residx'] = batch['residx'] # temporary
 
         if self.cfg.all_atom:
             inp["x_cond"] += model.mol_type_cond(batch['mol_type'].int())

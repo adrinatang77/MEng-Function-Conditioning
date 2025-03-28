@@ -259,8 +259,8 @@ class OpenProtModel(nn.Module):
         
 
         idx = torch.where(
-            inp['ref_conf_mask'][:,None].bool() & inp['ref_conf_mask'][:,:,None].bool(),
-            inp['ref_conf_idx'][:,None] != inp['ref_conf_idx'][:,:,None],
+            inp['motif_mask'][:,None].bool() & inp['motif_mask'][:,:,None].bool(),
+            inp['motif_idx'][:,None] != inp['motif_idx'][:,:,None],
             0
         )
         return idx

@@ -6,7 +6,7 @@ from abc import abstractmethod
 from ..utils.misc_utils import autoimport
 import os
 import tqdm
-from ..tracks.manager import OpenProtTrackManager, conserved_keys
+from ..tracks.manager import OpenProtTrackManager
 from ..utils import residue_constants as rc
 from ..data.data import OpenProtData
 from ..utils.tensor_utils import tensor_tree_map
@@ -213,7 +213,7 @@ class OpenProtWrapper(Wrapper):
             f'{os.environ["MODEL_DIR"]}/eval_step{self.trainer.global_step}/{name}'
         )
         os.makedirs(savedir, exist_ok=True)
-        noisy_batch = batch.copy(*conserved_keys)
+        noisy_batch = batch.copy()
         for track in self.tracks.values():
             track.corrupt(batch, noisy_batch, {})
         self.evals[name].run_batch(
