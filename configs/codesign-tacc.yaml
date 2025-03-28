@@ -1,4 +1,4 @@
-ckpt: # 
+ckpt: 
 pretrained:  #  load weights from here first
 validate: false # if true, only validate the model, don't train
 logger:
@@ -8,7 +8,7 @@ logger:
     # please change "test" to something unique to your task
     project: openprot/struct-merge
     # will log to workdir and neptune.ai with this name
-    name: tune-gelu
+    name: tune-baseline3
     # if not null, will duplicate stdout and stderr to workdir/{name}/{logfile}
     logfile: std.out
     # if null, will log every epoch, otherwise every this number of steps
@@ -242,10 +242,13 @@ tracks:
         reweight: linear
         reweight_eps: 0.01
         init: 0.02
+        mlm_prob: 0.03
+        mlm_ratio: 1.0
+        mlm_weight: 1.0
         all_atom: ${data.all_atom}
 
 model: # custom args
-    ema: false
+    ema: 0.999
     dim: 512
     heads: 16
     blocks: 30
@@ -257,9 +260,7 @@ model: # custom args
     chain_mask: false
     cross_attn: false
     adaLN: true
-    qk_norm: false
-    adaLN_sigmoid: false
-    adaLN_SiLU: true
+    qk_norm: true
     act: gelu
 
 optimizer:
