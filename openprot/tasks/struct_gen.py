@@ -18,7 +18,7 @@ class StructureGeneration(CodesignTask):
         if rand < self.cfg.motif_prob:
             self.sample_motifs(data)
         
-        if rand < self.cfg.motif_prob + self.cfg.ppi_prob:
+        elif rand < self.cfg.motif_prob + self.cfg.ppi_prob:
             is_ppi = self.sample_ppi(data)
             if is_ppi:
                 data["/struct_gen/ppi"] = np.ones((), dtype=np.float32)    

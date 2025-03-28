@@ -125,6 +125,7 @@ class StructureTrack(OpenProtTrack):
             & (batch['ligand_mask'] == 0) # is not ligand
             & (batch['struct_noise'] > self.cfg.edm.sigma_min+1e-6) # nonzero noise
         )
+        
         target["struct"] = target_tensor 
             
         if logger:

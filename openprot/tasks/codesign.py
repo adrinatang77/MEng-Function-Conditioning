@@ -36,7 +36,7 @@ class CodesignTask(OpenProtTask):
         else:
             data['ligand_mask'][gap_start:] = 1
             
-            
+        return True
             
         
     def sample_motifs(self, data):
@@ -176,7 +176,7 @@ class Codesign(CodesignTask):
         if rand < self.cfg.motif_prob:
             self.sample_motifs(data)
         
-        if rand < self.cfg.motif_prob + self.cfg.ppi_prob:
+        elif rand < self.cfg.motif_prob + self.cfg.ppi_prob:
             is_ppi = self.sample_ppi(data)
             if is_ppi:
                 data["/codesign/ppi"] = np.ones((), dtype=np.float32)    
