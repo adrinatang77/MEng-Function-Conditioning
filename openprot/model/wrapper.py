@@ -8,6 +8,7 @@ import os
 import tqdm
 from ..tracks.manager import OpenProtTrackManager, conserved_keys
 from ..utils import residue_constants as rc
+from ..data.data import OpenProtData
 from ..utils.tensor_utils import tensor_tree_map
 from omegaconf import OmegaConf
 from .ema import ExponentialMovingAverage
@@ -72,23 +73,14 @@ class Wrapper(pl.LightningModule):
             if p.requires_grad and p.grad is None:
                 print(name, "has no grad")
                 quit = True
-
+            
         if quit:
             exit()
 
     def configure_optimizers(self):
         cls = getattr(torch.optim, self.cfg.optimizer.type)
         all_params = filter(lambda p: p.requires_grad, self.model.parameters())
-        # TEMPORARY AND HACKY
-        # post_params = self.model.blocks[12:].parameters()
-        optimizer = cls(
-            # [
-            #     {"params": list(set(all_params) - set(post_params))},
-            #     {"params": post_params, "lr": self.cfg.optimizer.lr*8},
-            # ],
-            all_params,
-            lr=self.cfg.optimizer.lr,
-        )
+        optimizer = cls(all_params, lr=self.cfg.optimizer.lr)
 
         warmup = torch.optim.lr_scheduler.LinearLR(
             optimizer,
@@ -127,7 +119,7 @@ class OpenProtWrapper(Wrapper):
         self.evals = evals
         if self.cfg.model.ema:
             self.ema = ExponentialMovingAverage(self.model, self.cfg.model.ema)
-
+        self.generator = torch.Generator().manual_seed(cfg.data.seed)
         
     def on_save_checkpoint(self, checkpoint):
         esm_keys = {k for k in checkpoint['state_dict'].items() if "model.esm." in k}
@@ -162,6 +154,10 @@ class OpenProtWrapper(Wrapper):
         ## embed the tracks into an input dict
         inp = self.tracks.embed(self.model, noisy_batch)
 
+        ## account for self cond
+        if self.cfg.model.self_cond:
+            inp['sc'] = noisy_batch.get('sc', torch.zeros_like(inp['x']))
+            
         ## run it thorugh the model
         out = self.model(inp)
 
@@ -177,7 +173,13 @@ class OpenProtWrapper(Wrapper):
     
         ## corrupt all the tracks
         noisy_batch, target = self.tracks.corrupt(batch, logger=self._logger)
-        
+
+        if torch.rand(1, generator=self.generator).item() < self.cfg.model.self_cond_prob:
+            with torch.cuda.amp.autocast(enabled=False): 
+                with torch.no_grad():
+                    out, readout = self.forward(OpenProtData(**noisy_batch))
+            noisy_batch['sc'] = out['x']
+
         out, readout = self.forward(noisy_batch)
 
         ## compute the loss

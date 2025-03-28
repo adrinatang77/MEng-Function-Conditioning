@@ -270,16 +270,17 @@ class StructureTrack(OpenProtTrack):
         pseudo_tm = compute_pseudo_tm(
             readout["trans"], target["struct"], target["struct_mask"]
         )
-        rmsd_arr = compute_rmsd(
-            readout["trans"], target["struct"], target["struct_mask"], reduce=False
-        )
-        lig_mask = (target['mol_type'] == 3).float()
-        lig_rmsd = torch.sqrt((torch.square(rmsd_arr) * lig_mask).sum(-1) / lig_mask.sum(-1))
+        # rmsd_arr = compute_rmsd(
+        #     readout["trans"], target["struct"], target["struct_mask"], reduce=False
+        # )
+        #lig_mask = (target['mol_type'] == 3).float()
+        #lig_rmsd = torch.sqrt((torch.square(rmsd_arr) * lig_mask).sum(-1) / lig_mask.sum(-1))
+        mask = torch.any(target['struct_mask'].bool()).float()
         if logger:
-            logger.masked_log("struct/lddt", lddt, dims=0)
-            logger.masked_log("struct/rmsd", rmsd, dims=0)
-            logger.masked_log("struct/pseudo_tm", pseudo_tm, dims=0)
-            logger.masked_log("struct/lig_rmsd", lig_rmsd, dims=0)
+            logger.masked_log("struct/lddt", lddt, mask=mask, dims=0)
+            logger.masked_log("struct/rmsd", rmsd, mask=mask, dims=0)
+            logger.masked_log("struct/pseudo_tm", pseudo_tm, mask=mask, dims=0)
+            # logger.masked_log("struct/lig_rmsd", lig_rmsd, mask=mask, dims=0)
     def compute_lddt_loss(self, readout, target, logger=None, eps=1e-5):
 
         pred = readout["trans"]

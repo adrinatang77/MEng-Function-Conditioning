@@ -45,8 +45,8 @@ class OpenProtDataset(torch.utils.data.Dataset):
         L = len(data["seqres"])
         for feat, shape in self.feats.items():
             shape = [(n if n > 0 else L) for n in shape]
-            if feat in kwargs:
-                assert type(kwargs[feat]) is np.ndarray, feat
+            if feat in kwargs and kwargs[feat] is not None:
+                assert type(kwargs[feat]) is np.ndarray, (feat, kwargs[feat])
                 data[feat] = kwargs[feat].astype(np.float32)
                 
             else:

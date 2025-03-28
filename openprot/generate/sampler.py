@@ -10,7 +10,7 @@ class OpenProtSampler:
         self.schedules = schedules
         self.steppers = steppers
 
-    def sample(self, model, noisy_batch, steps=100, trunc=None):
+    def sample(self, model, noisy_batch, steps=100, trunc=None, sc=True):
 
         extra = {}
         steps = np.linspace(0, 1, steps+1)
@@ -18,16 +18,20 @@ class OpenProtSampler:
         for t, s in tqdm.tqdm(steps):
             if trunc is not None and t < trunc: continue
             sched = {key: (sched(t), sched(s)) for key, sched in self.schedules.items()}
-            noisy_batch = self.single_step(model, noisy_batch, sched, extra)
+            noisy_batch = self.single_step(model, noisy_batch, sched, extra, sc=sc)
 
         return noisy_batch, extra
         
-    def single_step(self, model, noisy_batch, sched, extra={}): # step from t to s
-
+    def single_step(self, model, noisy_batch, sched, extra={}, sc=True): # step from t to s
+        
         for stepper in self.steppers:
             stepper.set_step(noisy_batch, sched, extra)
-            _, out = model.forward(noisy_batch)
-            stepper.advance(noisy_batch, sched, out, extra)
+
+        out, readout = model.forward(noisy_batch)    
+        if sc: noisy_batch['sc'] = out['x']
+        
+        for stepper in self.steppers:
+            stepper.advance(noisy_batch, sched, readout, extra)
 
         return noisy_batch
         

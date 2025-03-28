@@ -24,6 +24,7 @@ class OpenProtTask:
         for name in self.cfg.datasets:
             idx = np.arange(len(self.datasets[name]))
             hash_ = int(hashlib.sha256(name.encode()).hexdigest(), 16) % 10000
+            hash_ += int(hashlib.sha256(self.cfg.name.encode()).hexdigest(), 16) % 10000
             with temp_seed(hash_+self.cfg.seed):
                 np.random.shuffle(idx)
             self.shuffled_idx[name] = idx
