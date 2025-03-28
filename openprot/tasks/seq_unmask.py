@@ -12,11 +12,9 @@ class SequenceUnmasking(CodesignTask):
         if crop is not None:
             data.crop(crop)
 
-        noise_level = self.add_sequence_noise(data, sup=True)
+        noise_level = self.add_sequence_noise(data)
         self.add_structure_noise(data, noise_level=1.01)
         
         data["/seq_gen"] = np.ones((), dtype=np.float32)
-        # i = int(20 * noise_level)
-        # data[f"/seq_gen_{i}"] = np.ones((), dtype=np.float32)
         
         return data

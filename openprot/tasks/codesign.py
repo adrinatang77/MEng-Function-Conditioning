@@ -2,6 +2,7 @@ from .task import OpenProtTask
 import numpy as np
 import math
 from ..utils import residue_constants as rc
+from ..generate.diffusion import t_to_sigma
 from scipy.spatial.transform import Rotation as R
 import torch
 
@@ -92,7 +93,7 @@ class CodesignTask(OpenProtTask):
             data["motif"][data['motif_idx'] == i] = conf
             
         
-    def add_sequence_noise(self, data, noise_level=None, sup=False):
+    def add_sequence_noise(self, data, noise_level=None):
         
         def sample_noise_level():
             rand = np.random.rand()
@@ -124,7 +125,7 @@ class CodesignTask(OpenProtTask):
             0,
         ).astype(np.float32)
 
-    def add_structure_noise(self, data, eps=1e-6, noise_level=None, sup=False):
+    def add_structure_noise(self, data, eps=1e-6, noise_level=None):
         
 
         def sample_noise_level():
@@ -146,14 +147,6 @@ class CodesignTask(OpenProtTask):
                 noise_level = np.random.beta(*self.cfg.struct.beta)
             
             return noise_level
-
-        def t_to_sigma(t):
-            p = self.cfg.edm.sched_p
-            sigma = (
-                self.cfg.edm.sigma_min ** (1 / p)
-                + t * (self.cfg.edm.sigma_max ** (1 / p) - self.cfg.edm.sigma_min ** (1 / p))
-            ) ** p
-            return sigma
         
         L = len(data["seqres"])
 
@@ -162,8 +155,8 @@ class CodesignTask(OpenProtTask):
             
         data["struct_noise"] = np.where( # not ligand
             data['ligand_mask'] == 0,
-            t_to_sigma(noise_level),
-            t_to_sigma(0),
+            t_to_sigma(self.cfg.edm, noise_level),
+            t_to_sigma(self.cfg.edm, 0),
         ).astype(np.float32)
 
         return noise_level
@@ -190,9 +183,9 @@ class Codesign(CodesignTask):
             
         self.add_sequence_noise(data, sup=True)
         self.add_structure_noise(data, sup=True)
-        
-        self.center_random_rot(data)
 
+        # this must happen after motifs have been assigned
+        self.center_random_rot(data)
             
         if data["dataset"] == "boltz_lig":
             data["/codesign/lig"] = np.ones((), dtype=np.float32)

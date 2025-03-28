@@ -30,11 +30,8 @@ class UnifiedDataset(OpenProtDataset):
             f.seek(self.index[idx])
             line = f.read(self.lens[idx])
             
-        try:
-            js = json.loads(line)
-        except:
-            breakpoint()
-
+        js = json.loads(line)
+        
         # filter based on plddt
         for key90 in list(js.keys()):
             js[key90] = {
