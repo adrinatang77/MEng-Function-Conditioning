@@ -66,7 +66,7 @@ class CodesignTask(OpenProtTask):
         rand = np.array([getattr(a, 'rand', 0) for a in M for i in a])
         
         data['motif'][is_motif] = data['struct'][is_motif]
-        data['motif_mask'][is_motif] = data['motif_mask'][is_motif]
+        data['motif_mask'][is_motif] = data['struct_mask'][is_motif]
         
         if np.random.rand() < self.cfg.motif.multi_prob:
             data['motif_idx'][is_motif] = (rand < 0.5).astype(np.float32)[is_motif]

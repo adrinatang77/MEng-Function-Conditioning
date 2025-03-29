@@ -8,7 +8,7 @@ logger:
     # please change "test" to something unique to your task
     project: openprot/struct-merge
     # will log to workdir and neptune.ai with this name
-    name: refactor-test
+    name: ppi-test
     # if not null, will duplicate stdout and stderr to workdir/{name}/{logfile}
     logfile: std.out
     # if null, will log every epoch, otherwise every this number of steps
@@ -129,9 +129,9 @@ tasks:
         fraction: 0.1
         edm: ${edm}
         motif: ${motif}
-        motif_prob: 0.5
+        motif_prob: 0.4
         ppi: ${ppi}
-        ppi_prob: 0.0
+        ppi_prob: 0.2
         struct:
             beta: [1, 2]
             uniform_prob: 0.5
@@ -144,7 +144,7 @@ tasks:
         fraction: 0.1
         edm: ${edm}
         ppi: ${ppi}
-        ppi_prob: 0.0
+        ppi_prob: 0.2
         seq:
             uniform_prob: 1.0
         struct: {}
@@ -156,9 +156,9 @@ tasks:
     Codesign:
         fraction: 0.8
         motif: ${motif}
-        motif_prob: 0.5
+        motif_prob: 0.4
         ppi: ${ppi}
-        ppi_prob: 0.0
+        ppi_prob: 0.2
         seq:
             max_prob: 0.05
             uniform_prob: 0.95
@@ -339,7 +339,7 @@ model: # custom args
     rope_attn: true
     rope_values: true
     attn_mask: false
-    cross_attn: false
+    cross_attn: true
     adaLN: true
     qk_norm: true
     act: gelu
