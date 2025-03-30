@@ -18,7 +18,7 @@ if args.debug:
     cfg.logger.logfile = None
     cfg.trainer.devices = 1
     cfg.trainer.enable_progress_bar = True
-
+    
 if args.gpus:
     cfg.trainer.devices = args.gpus
 
@@ -66,7 +66,7 @@ trainer = pl.Trainer(
             filename="last",
             enable_version_counter=False,
         ),
-        ModelSummary(max_depth=4),
+        ModelSummary(max_depth=3),
     ],
     num_nodes=int(os.environ.get("SLURM_NNODES", 1)),
 )

@@ -34,14 +34,14 @@ trainer:
 
 # custom args to OpenProtDataset and elsewhere
 data: 
-    num_workers: 8
+    num_workers: 16
     buffer: 1000
     max_sq_toks: # 400000
     max_toks: 8192
     batch: null
     crop: 384
     seed: 138
-    all_atom: false
+    all_atom: true
 
 # These are the raw features which are expected to be supplied by the Datasets
 # before they are TOKENIZED by the Tracks.
@@ -66,10 +66,17 @@ features:
     motif: [-1, 3] 
     motif_mask: [-1]
     motif_idx: [-1]
+    motif_nma: [-1, 3]
+    motif_nma_mask: [-1]
 
     # 1 if is ligand, even if struct doesn't exist
     ligand_mask: [-1] 
-    
+    hotspot_mask: [-1]
+
+    cath: [-1, 3]
+    _cath_noise: []
+
+    # func cond should be similar
     func_cond: [-1]
 
 edm:
@@ -84,13 +91,15 @@ motif:
     ymax: 0.5
     weight: 1.0
     multi_prob: 0.0
+    nma_prob: 0.5
 
 ppi:
     contact: 8
     long_range: 24
-    gap_pad: 3
-    gap_min: 6
+    gap_pad: 5
+    gap_min: 12
     gap_max: 24
+    hotspot: 12
     
 datasets:
     pdb:
@@ -108,21 +117,29 @@ datasets:
     #     struct: false
     #     plddt_thresh: -1
     unified_struct:
-        type: AFDBDataset
-        path: data/afdb_rep_v4/afdb_rep_v4
-        annotations: data/afdb_rep_v4.pkl.gz
-        blacklist: 
-        plddt_thresh: 
-        index: data/afdbreps_l-256_plddt_80.txt
-    # unified_struct: # size 25M
-    #     type: UnifiedDataset
-    #     index: data/unified.jsonl.idx
-    #     path: data/unified.jsonl
-    #     afdb: data/afdb_uniprot_v4/afdb_uniprot_v4
-    #     uniref: data/uniref100.fasta
-    #     struct: true
-    #     plddt_thresh: 80
+        # type: AFDBDataset
+        # path: data/afdb_rep_v4/afdb_rep_v4
+        # annotations: data/afdb_rep_v4.pkl.gz
+        # blacklist: 
+        # plddt_thresh: 
+        # index: data/afdbreps_l-256_plddt_80.txt
+        type: UnifiedDataset
+        index: data/unified_afdb.jsonl.idx
+        path: data/unified_afdb.jsonl
+        afdb: data/afdb_uniprot_v4/afdb_uniprot_v4
+        ted: data/ted_365m.domain_summary.cath.globularity.taxid.tsv
+        uniref: data/uniref100.fasta
+        alphafill: data/alphafill
+        alphafill_only: true
+        struct: true
+        plddt_thresh: 80
 
+    # boltz_lig:
+    #     type: BoltzDataset
+    #     path: /data/cb/scratch/datasets/boltz/processed_data/
+    #     cutoff: 2018-05-01
+    #     mol_type: lig
+    
 tasks:
 
     StructureGeneration:
@@ -130,8 +147,6 @@ tasks:
         edm: ${edm}
         motif: ${motif}
         motif_prob: 0.4
-        ppi: ${ppi}
-        ppi_prob: 0.2
         struct:
             beta: [1, 2]
             uniform_prob: 0.5
@@ -143,8 +158,6 @@ tasks:
     InverseFolding:
         fraction: 0.1
         edm: ${edm}
-        ppi: ${ppi}
-        ppi_prob: 0.2
         seq:
             uniform_prob: 1.0
         struct: {}
@@ -152,13 +165,27 @@ tasks:
         datasets:
             pdb: 0.25
             unified_struct: 0.75
-                
+
+    # BinderCodesign:
+    #     fraction: 0.0
+    #     seq:
+    #         max_prob: 0.1
+    #         uniform_prob: 0.8
+    #         zero_prob: 0.1
+    #     edm: ${edm}
+    #     ppi: ${ppi}
+    #     struct:
+    #         max_prob: 0.1 
+    #         uniform_prob: 0.8
+    #         zero_prob: 0.1
+    #     datasets:
+    #         boltz_lig: 0.5
+    #         unified_struct: 0.5
+
     Codesign:
         fraction: 0.8
         motif: ${motif}
-        motif_prob: 0.4
-        ppi: ${ppi}
-        ppi_prob: 0.2
+        motif_prob: 0.5
         seq:
             max_prob: 0.05
             uniform_prob: 0.95
@@ -300,6 +327,7 @@ tracks:
         loss_weight: 1.0
         embed_motif: true
         embed_ligand: true
+        embed_nma: true
         edm: ${edm}
         all_atom: ${data.all_atom}
         readout_adaLN: false
@@ -325,7 +353,12 @@ tracks:
         mlm_prob: 0.03
         mlm_ratio: 1.0
         mlm_weight: 1.0
-
+        
+    CATHTrack:
+        idx: splits/cath-names.txt
+        drop_prob: [0.5, 0.1, 0.15]
+        
+    
 model: # custom args
     ema: 0.999
     self_cond: false
@@ -338,7 +371,7 @@ model: # custom args
     ff_expand: 4
     rope_attn: true
     rope_values: true
-    attn_mask: false
+    attn_mask: 2
     cross_attn: true
     adaLN: true
     qk_norm: true

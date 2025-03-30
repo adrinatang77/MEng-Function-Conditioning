@@ -1,9 +1,9 @@
 import argparse
-
+#  {'ur50': 2302908, 'ur90': 30045247, 'ur100': 167814824, 'afdb_match': 167732948, 'ted_match': 164222486, 'alphafill_match': 715729})
 parser = argparse.ArgumentParser()
 parser.add_argument("--afdb", type=str, default='tmp/afdb_uniprot_v4.idx')
 parser.add_argument("--ted", type=str, default='tmp/ted.idx')
-parser.add_argument("--alphafill", type=str, default='data/alphafill/')
+parser.add_argument("--alphafill", type=str, default='tmp/alphafill.idx')
 parser.add_argument("--fs_mapping", type=str, default='data/1-AFDBClusters-entryId_repId_taxId.tsv')
 parser.add_argument("--fs_mapping2", type=str, default='data/7-AFDB50-repId_memId.tsv')
 parser.add_argument("--mapping2", type=str, default='/data/cb/scratch/datasets/uniprot_uniref_map/uniref_id_mapping.dat.gz')
@@ -68,25 +68,12 @@ print('Loaded TED', len(ted), flush=True)
 ############################### ALPHAFILL ####################
 alphafill = {}
 print('Loading AlphaFill', flush=True)
-with open(args.alphafill + '/manifest') as f:
-    for line in tqdm.tqdm(f, total=3531084):
-        line = line.strip()
-        if line[:3] == 'AF-' and line[-7:] == '.cif.gz':
-            
-            try:
-                _, upkb, _, _ = line.split('-')
-            except:
-                print(line, flush=True)
-                continue
-
-            js = f"{args.alphafill}/{upkb[:2]}/{line.replace('gz','json')}"
-            js = json.load(open(js))
-            if len(js['hits']) > 0:
-                ur100 = upkb 
-                alphafill[ur100] = line        
-                
-            
-        if args.debug and len(alphafill) > 1000: break
+with open(args.alphafill) as f:
+    for line in tqdm.tqdm(f, total=856037):
+        name, count = line.strip().split()
+        _, upkb, _, _ = name.split('-')
+        ur100 = upkb 
+        alphafill[ur100] = name, int(count)
 print('Loaded AlphaFill', len(alphafill), flush=True)
 
 ############################### PROCESS MAPPINGS ####################
@@ -119,6 +106,7 @@ with open(args.out, 'w') as f:
                 count['ur100'] += 1
                 
                 afdb_tup = afdb.get(ur100, None)
+                # NEXT TIME - skip if afdb_tup is None
                 if afdb_tup:
                     count['afdb_match'] += 1
                     plddt = max(afdb_tup[1], plddt)
@@ -133,9 +121,8 @@ with open(args.out, 'w') as f:
                     count['ted_match'] += 1
                     js[ur90][ur100]['ted'] = ted_tup
 
-                
                 alphafill_tup = alphafill.get(ur100, None)
-                if alphafill_tup:
+                if afdb_tup and alphafill_tup:
                     count['alphafill_match'] += 1
                     js[ur90][ur100]['alphafill'] = alphafill_tup
                     alphafill_count += 1

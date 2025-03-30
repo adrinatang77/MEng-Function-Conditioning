@@ -167,7 +167,6 @@ class OpenProtWrapper(Wrapper):
         return out, readout
 
     def general_step(self, batch):
-
         self._logger.register_masks(batch)
         self._logger.masked_log("toks", batch["pad_mask"], sum=True)
     

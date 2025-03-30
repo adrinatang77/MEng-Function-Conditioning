@@ -90,6 +90,11 @@ class StructureTrack(OpenProtTrack):
         if self.cfg.embed_ligand:
             model.ligand_cond = nn.Parameter(torch.zeros(model.cfg.dim))
         
+        if self.cfg.embed_nma:
+            model.nma_in = nn.Linear(3, model.cfg.dim)
+                                    
+            
+        
     def corrupt(self, batch, noisy_batch, target, logger=None):
 
         noisy, target_tensor = self.diffusion.add_noise(
@@ -127,10 +132,13 @@ class StructureTrack(OpenProtTrack):
         )
         
         target["struct"] = target_tensor 
-            
+
+        
         if logger:
             logger.masked_log("struct/toks", batch["struct_mask"], sum=True)
-
+            logger.masked_log("struct/motif_toks", batch["motif_mask"], sum=True)
+            logger.masked_log("struct/ligand_toks", batch["struct_mask"] * batch['ligand_mask'], sum=True)
+            logger.masked_log("struct/hotspot_toks", batch["hotspot_mask"], sum=True)
     def embed(self, model, batch, inp):
 
         coords = batch["struct"]
@@ -155,6 +163,12 @@ class StructureTrack(OpenProtTrack):
             inp["x_cond"] += torch.where(
                 batch['ligand_mask'][...,None].bool(),
                 model.ligand_cond,
+                0.0
+            )
+        if self.cfg.embed_nma:
+            inp["x"] += torch.where(
+                batch['motif_nma_mask'][...,None].bool(),
+                model.nma_in(batch['motif_nma']),
                 0.0
             )
 

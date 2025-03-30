@@ -140,7 +140,8 @@ class OpenProtData(dict):
         idx = np.argsort(dist)[:crop_len]
         return sorted(idx)        
         
-    def crop(self, crop_len=np.inf, idx=None):
+    def crop(self, crop_len=np.inf, idx=None, inplace=True):
+        data = self if inplace else OpenProtData()
         L = len(self["seqres"])
         if idx is not None or L >= crop_len:  # needs crop
             if idx is None:
@@ -148,25 +149,26 @@ class OpenProtData(dict):
             for key in self.keys():
                 # special attribute
                 if key == "seqres":
-                    self[key] = "".join([self[key][i] for i in idx])
+                    data[key] = "".join([self[key][i] for i in idx])
                 
                 # non-array attribute
                 elif type(self[key]) not in [torch.Tensor, np.ndarray]:
-                    pass
+                    data[key] = self[key]
 
                 # global attribute
-                elif key[0] == "/":
-                    pass
+                elif key[0] == "/" or key[0] == '_':
+                    data[key] = self[key]
 
-                # pairwise attribute
-                elif key[0] == "_":
-                    self[key] = self[key][idx, idx]
+                # # pairwise attribute
+                # # THIS PROBABLY IS WRONG
+                # elif key[0] == "_":
+                #     data[key] = self[key][idx, idx]
 
                 # regular attribute
                 else:
-                    self[key] = self[key][idx]
+                    data[key] = self[key][idx]
 
-        return self
+        return data
 
     def pad(self, pad_len: int):
         L = len(self["seqres"])
@@ -182,16 +184,16 @@ class OpenProtData(dict):
                     pass
 
                 # global attribute
-                elif key[0] == "/":
+                elif key[0] == "/" or key[0] == '_':
                     pass
 
-                # pairwise attribute
-                elif key[0] == "_":
-                    shape = self[key].shape
-                    dtype = self[key].dtype
-                    padded = np.zeros((pad_len, pad_len, *shape[2:]), dtype=dtype)
-                    padded[:L, :L] = self[key]
-                    self[key] = padded
+                # # pairwise attribute
+                # elif key[0] == "_":
+                #     shape = self[key].shape
+                #     dtype = self[key].dtype
+                #     padded = np.zeros((pad_len, pad_len, *shape[2:]), dtype=dtype)
+                #     padded[:L, :L] = self[key]
+                #     self[key] = padded
 
                 # regular attribute
                 else:
@@ -228,6 +230,7 @@ class OpenProtData(dict):
                     batch[key] = torch.stack(batch[key])
             except Exception as e:
                 raise Exception(f"Key {key} exception: {e}")
+                
         return batch
 
 
@@ -243,12 +246,12 @@ class OpenProtData(dict):
                 pass
 
             # global attribute
-            elif key[0] == "/":
+            elif key[0] == "/" or key[0] == '_':
                 pass
 
-            # pairwise attribute
-            elif key[0] == "_":
-                self[key] = self[key][mask,mask]
+            # # pairwise attribute
+            # elif key[0] == "_":
+            #     self[key] = self[key][mask,mask]
 
             # regular attribute
             else:

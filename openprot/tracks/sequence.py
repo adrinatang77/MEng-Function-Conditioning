@@ -202,8 +202,12 @@ class SequenceTrack(OpenProtTrack):
         )
         target["seq_supervise"].masked_fill_(mlm_mask, self.cfg.mlm_weight)
 
+        gen_mask = batch['seq_mask'].bool() & (batch['ligand_mask'] == 0)
         if logger:
             logger.masked_log("seq/toks", batch["seq_mask"], sum=True)
+            logger.masked_log("seq/length", gen_mask.sum(-1).float(), dims=0)
+            
+            
             
     def embed(self, model, batch, inp):
 

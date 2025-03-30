@@ -14,13 +14,15 @@ class InverseFolding(CodesignTask):
         if crop is not None:
             data.crop(crop)
 
-        if np.random.rand() < self.cfg.ppi_prob:
-            is_ppi = self.sample_ppi(data)
-            if is_ppi:
-                data["/inv_fold/ppi"] = np.ones((), dtype=np.float32)    
+        # if np.random.rand() < self.cfg.ppi_prob:
+        #     is_ppi = self.sample_ppi(data)
+        #     if is_ppi:
+        #         data["/inv_fold/ppi"] = np.ones((), dtype=np.float32)    
                 
         self.add_sequence_noise(data)
         self.add_structure_noise(data, noise_level=0)
+
+        data["_cath_noise"] = np.ones((), dtype=np.float32)
 
         self.center_random_rot(data)
         
