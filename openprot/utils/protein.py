@@ -69,6 +69,9 @@ class Protein:
     # Chain indices for multi-chain predictions
     chain_index: Optional[np.ndarray] = None
 
+    # Added this for motifs
+    segment_index: Optional[np.ndarray] = None
+
     # Optional remark about the protein. Included as a comment in output PDB
     # files
     remark: Optional[str] = None
@@ -116,6 +119,7 @@ def from_pdb_string(pdb_str: str, chain_id: Optional[str] = None) -> Protein:
     atom_mask = []
     residue_index = []
     chain_ids = []
+    segment_ids = []
     b_factors = []
 
     for chain in model:
@@ -150,6 +154,7 @@ def from_pdb_string(pdb_str: str, chain_id: Optional[str] = None) -> Protein:
             atom_mask.append(mask)
             residue_index.append(res.id[1])
             chain_ids.append(chain.id)
+            segment_ids.append(res.segid.strip())
             b_factors.append(res_b_factors)
 
     parents = None
@@ -169,6 +174,7 @@ def from_pdb_string(pdb_str: str, chain_id: Optional[str] = None) -> Protein:
     unique_chain_ids = np.unique(chain_ids)
     chain_id_mapping = {cid: n for n, cid in enumerate(string.ascii_uppercase)}
     chain_index = np.array([chain_id_mapping[cid] for cid in chain_ids])
+    segment_index = np.array([chain_id_mapping.get(cid, -1) for cid in segment_ids]) # new
 
     return Protein(
         atom_positions=np.array(atom_positions),
@@ -176,6 +182,7 @@ def from_pdb_string(pdb_str: str, chain_id: Optional[str] = None) -> Protein:
         aatype=np.array(aatype),
         residue_index=np.array(residue_index),
         chain_index=chain_index,
+        segment_index=segment_index,
         b_factors=np.array(b_factors),
         parents=parents,
         parents_chain_index=parents_chain_index,

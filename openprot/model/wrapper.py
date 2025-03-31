@@ -8,12 +8,10 @@ import os
 import tqdm
 from ..tracks.manager import OpenProtTrackManager
 from ..utils import residue_constants as rc
+from ..data.data import OpenProtData
 from ..utils.tensor_utils import tensor_tree_map
-from .multiflow_wrapper import MultiflowWrapper
 from omegaconf import OmegaConf
 from .ema import ExponentialMovingAverage
-from multiflow.data import so3_utils
-# from ..evals.manager import OpenProtEvalManager
 
 
 class Wrapper(pl.LightningModule):
@@ -75,23 +73,14 @@ class Wrapper(pl.LightningModule):
             if p.requires_grad and p.grad is None:
                 print(name, "has no grad")
                 quit = True
-
+            
         if quit:
             exit()
 
     def configure_optimizers(self):
         cls = getattr(torch.optim, self.cfg.optimizer.type)
         all_params = filter(lambda p: p.requires_grad, self.model.parameters())
-        # TEMPORARY AND HACKY
-        # post_params = self.model.blocks[12:].parameters()
-        optimizer = cls(
-            # [
-            #     {"params": list(set(all_params) - set(post_params))},
-            #     {"params": post_params, "lr": self.cfg.optimizer.lr*8},
-            # ],
-            all_params,
-            lr=self.cfg.optimizer.lr,
-        )
+        optimizer = cls(all_params, lr=self.cfg.optimizer.lr)
 
         warmup = torch.optim.lr_scheduler.LinearLR(
             optimizer,
@@ -123,24 +112,14 @@ class OpenProtWrapper(Wrapper):
     def __init__(self, cfg, tracks: OpenProtTrackManager, evals: dict):
         super().__init__(cfg)
         
-        # if cfg.model.multiflow:
-            
-        #     mf_cfg = OmegaConf.load(cfg.model.multiflow_cfg)
-        #     self.model = MultiflowWrapper(mf_cfg)
-        #     if cfg.model.multiflow_ckpt:
-        #         ckpt = torch.load(cfg.model.multiflow_ckpt, map_location=self.device)
-        #         self.model.load_state_dict(ckpt['state_dict'], strict=True)
-        
-            
-        # else:
         self.model = OpenProtModel(cfg.model)
         tracks.add_modules(self.model)
 
         self.tracks = tracks
         self.evals = evals
         if self.cfg.model.ema:
-            self.ema = ExponentialMovingAverage(self.model, self.cfg.model.ema_decay)
-
+            self.ema = ExponentialMovingAverage(self.model, self.cfg.model.ema)
+        self.generator = torch.Generator().manual_seed(cfg.data.seed)
         
     def on_save_checkpoint(self, checkpoint):
         esm_keys = {k for k in checkpoint['state_dict'].items() if "model.esm." in k}
@@ -175,6 +154,10 @@ class OpenProtWrapper(Wrapper):
         ## embed the tracks into an input dict
         inp = self.tracks.embed(self.model, noisy_batch)
 
+        ## account for self cond
+        if self.cfg.model.self_cond:
+            inp['sc'] = noisy_batch.get('sc', torch.zeros_like(inp['x']))
+            
         ## run it thorugh the model
         out = self.model(inp)
 
@@ -184,13 +167,18 @@ class OpenProtWrapper(Wrapper):
         return out, readout
 
     def general_step(self, batch):
-
         self._logger.register_masks(batch)
         self._logger.masked_log("toks", batch["pad_mask"], sum=True)
     
         ## corrupt all the tracks
         noisy_batch, target = self.tracks.corrupt(batch, logger=self._logger)
-        
+
+        if torch.rand(1, generator=self.generator).item() < self.cfg.model.self_cond_prob:
+            with torch.cuda.amp.autocast(enabled=False): 
+                with torch.no_grad():
+                    out, readout = self.forward(OpenProtData(**noisy_batch))
+            noisy_batch['sc'] = out['x']
+
         out, readout = self.forward(noisy_batch)
 
         ## compute the loss
@@ -206,69 +194,6 @@ class OpenProtWrapper(Wrapper):
 
         return (loss * batch["pad_mask"]).sum() / batch["pad_mask"].sum()
 
-    def multiflow_loss(self, batch):
-        loss_mask = batch['mask']
-        gt_trans_1 = batch['gt_trans']
-        gt_rotmats_1 = batch['gt_rots']
-        gt_aatypes_1 = batch['gt_aatype']
-        rotmats_t = batch['noisy_rots']
-        gt_rot_vf = so3_utils.calc_rot_vf(
-            rotmats_t, gt_rotmats_1.type(torch.float32))
-        
-        # Timestep used for normalization.
-        r3_t = batch['r3_t'] # (B, 1)
-        so3_t = batch['so3_t'] # (B, 1)
-        cat_t = batch['cat_t'] # (B, 1)
-        r3_norm_scale = 1 - torch.min(
-            r3_t[..., None], torch.tensor(0.9)) # (B, 1, 1)
-        so3_norm_scale = 1 - torch.min(
-            so3_t[..., None], torch.tensor(0.9)) # (B, 1, 1)
-        cat_norm_scale = 1.0
-
-        
-            
-        pred_trans_1 = batch['pred_trans']
-        pred_rotmats_1 = batch['pred_rots']
-        pred_logits = batch['pred_aatype'] # (B, N, aatype_pred_num_tokens)
-        pred_rots_vf = so3_utils.calc_rot_vf(rotmats_t, pred_rotmats_1)
-
-        num_batch, num_res = gt_aatypes_1.shape
-        ce_loss = torch.nn.functional.cross_entropy(
-            pred_logits.reshape(-1, 21),
-            gt_aatypes_1.flatten().long(),
-            reduction='none',
-        ).reshape(num_batch, num_res) / cat_norm_scale
-        
-        aatypes_loss = ce_loss * loss_mask # torch.sum(ce_loss * loss_mask, dim=-1) / (loss_denom / 3)
-        
-        # Translation VF loss
-        trans_error = (gt_trans_1 - pred_trans_1) / r3_norm_scale * 0.1
-        
-        trans_loss = (trans_error**2 * loss_mask[...,None]).sum(-1) / 3
-        
-        trans_loss = torch.clamp(2 * trans_loss, max=5)
-        # Rotation VF loss
-        
-        rots_vf_error = (gt_rot_vf - pred_rots_vf) / so3_norm_scale
-        rots_vf_loss = torch.sum(
-            rots_vf_error ** 2 * loss_mask[..., None],
-            dim=(-1),
-        ) / 3 
-
-        
-        # trans_loss = torch.nan_to_num(trans_loss, 0.0)
-        # rots_vf_loss = torch.nan_to_num(rots_vf_loss, 0.0)
-        # aatypes_loss = torch.nan_to_num(aatypes_loss, 0.0)
-        
-        loss = trans_loss + rots_vf_loss + aatypes_loss
-        
-        return {
-            'trans_loss': trans_loss,
-            'rots_vf_loss': rots_vf_loss,
-            # 'auxiliary_loss': auxiliary_loss,
-            'aatypes_loss': aatypes_loss
-        }
-        
     def on_validation_epoch_end(self):
         savedir = f'{os.environ["MODEL_DIR"]}/eval_step{self.trainer.global_step}'
         for name, eval_ in self.evals.items():
@@ -287,7 +212,7 @@ class OpenProtWrapper(Wrapper):
             f'{os.environ["MODEL_DIR"]}/eval_step{self.trainer.global_step}/{name}'
         )
         os.makedirs(savedir, exist_ok=True)
-        noisy_batch = batch.copy("name", "pad_mask")
+        noisy_batch = batch.copy()
         for track in self.tracks.values():
             track.corrupt(batch, noisy_batch, {})
         self.evals[name].run_batch(

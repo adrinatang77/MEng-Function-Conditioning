@@ -8,8 +8,10 @@ import tqdm
 from .. import tracks
 from ..tracks.manager import OpenProtTrackManager
 from ..utils.misc_utils import autoimport
+from ..utils.logger import get_logger
 from .data import OpenProtData
 
+logger = get_logger(__name__)
 
 class OpenProtDatasetManager(torch.utils.data.IterableDataset):
     def __init__(self, cfg, tracks: OpenProtTrackManager, rank=0, world_size=1):
@@ -24,9 +26,12 @@ class OpenProtDatasetManager(torch.utils.data.IterableDataset):
             ds = autoimport(f"openprot.data.{type_}")(cfg.datasets[name], cfg.features)
             ds.cfg.name = name
             self.datasets[name] = ds
+            logger.info(f"Loaded {name} with {len(ds)} entries")
 
         self.tasks = {}
         for name in cfg.tasks:  # autoload the train tasks
+            cfg.tasks[name].name = name
+            cfg.tasks[name].seed = cfg.data.seed
             task = autoimport(f"openprot.tasks.{name}")(cfg.tasks[name], self.datasets)
             self.tasks[name] = task
 
@@ -88,7 +93,7 @@ class OpenProtDatasetManager(torch.utils.data.IterableDataset):
             
         batches = []
         buf = []
-        for _ in range(self.cfg.data.buffer):
+        for _ in tqdm.trange(self.cfg.data.buffer):
             buf.append(next(it))
         
         while True:

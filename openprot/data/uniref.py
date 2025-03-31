@@ -15,9 +15,8 @@ lock = threading.Lock()
 
 class UnirefDataset(OpenProtDataset):
     def setup(self):
-        self.db = open(self.cfg.path)
+        # self.db = open(self.cfg.path)
         self.index = np.load(self.cfg.index)
-        self.need_setup = True
         if self.cfg.func_cond:
             with open(self.cfg.go_vocab, 'r') as file:
                 self.go_vocab = json.load(file)
@@ -28,23 +27,16 @@ class UnirefDataset(OpenProtDataset):
             self.res_func_db = open(self.cfg.res_go_terms)
             self.res_func_idx = open(self.cfg.res_func_idx)
 
-    def actual_setup(self):
-        self.db = open(self.cfg.path)
-        self.index = np.load(self.cfg.index)
-        self.need_setup = False
-
     def __len__(self):
         return len(self.index) - 1  # unfortunately we have to skip the last one
 
     def __getitem__(self, idx: int):
-        if self.need_setup:
-            self.actual_setup()
-
-        start = self.index[idx]
-        end = self.index[idx + 1]
-        with lock:
-            self.db.seek(start)
-            item = self.db.read(end - start)
+        
+        with open(self.cfg.path) as db:
+            start = self.index[idx]
+            end = self.index[idx + 1]
+            db.seek(start)
+            item = db.read(end - start)
         lines = item.split("\n")
         header, lines = lines[0], lines[1:]
         seqres = "".join(lines)
@@ -119,7 +111,8 @@ class UnirefDataset(OpenProtDataset):
                 seqres=seqres,
                 seq_mask=seq_mask,
                 residx=residx,
-                func_cond=func_cond)
+                func_cond=func_cond
+            )
         
         return self.make_data(
             name=name,

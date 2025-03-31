@@ -27,21 +27,6 @@ class CodesignEval(OpenProtEval):
                 + (1-t) * (sigma_max ** (1 / p) - sigma_min ** (1 / p))
             ) ** p
 
-        
-
-        # max_t = self.cfg.struct.max_t
-        # def log_sched_fn(t):
-        #     exp = 10 ** (-2*t)
-        #     return max_t * (exp - 1e-2) / (1 - 1e-2)
-
-        # if self.cfg.struct.sched == 'linear':
-        #     sched_fn = lambda t: max_t * (1-t)
-        # elif self.cfg.struct.sched == 'edm':
-        # elif self.cfg.struct.sched == 'log':
-        #     sched_fn = log_sched_fn
-        # else:
-        #     raise Exception("unrecognized schedule")
-
         sched_fn = edm_sched_fn
         def t_skew_func(t, skew):
             midpoint_y = 0.5 + skew / 2# [0, 1]
@@ -63,31 +48,9 @@ class CodesignEval(OpenProtEval):
     def __getitem__(self, idx):
         L = self.cfg.sample_length
         
-        max_noise = self.cfg.struct.edm.sigma_max
-        if self.cfg.truncate:
-            struct_noise = self.struct_sched_fn(self.cfg.truncate)
-            seq_noise = self.seq_sched_fn(self.cfg.truncate)
-        else:
-            struct_noise = max_noise
-            seq_noise = 1
+        struct_noise = self.cfg.struct.edm.sigma_max
+        seq_noise = 1
 
-        if self.cfg.dir is not None:
-            with open(f"{self.cfg.dir}/sample{idx}.pdb") as f:
-                prot = protein.from_pdb_string(f.read())
-            
-            seqres = aatype_to_seqres(prot.aatype)
-            data = self.make_data(
-                name=f"sample{idx}",
-                seqres=seqres,
-                seq_mask=np.ones(L),
-                seq_noise=np.ones(L, dtype=np.float32) * seq_noise,
-                struct=prot.atom_positions[:,1].astype(np.float32),
-                struct_noise=np.ones(L, dtype=np.float32) * struct_noise,
-                struct_mask=prot.atom_mask[:,1].astype(np.float32),
-                residx=np.arange(L, dtype=np.float32),
-            )
-            return data
-        
         data = self.make_data(
             name=f"sample{idx}",
             seqres="A"*L,
@@ -340,7 +303,7 @@ class CodesignEval(OpenProtEval):
             SequenceUnmaskingStepper(self.cfg.seq)
         ])
         
-        sample, extra = sampler.sample(model, noisy_batch, self.cfg.steps, trunc=self.cfg.truncate)
+        sample, extra = sampler.sample(model, noisy_batch, self.cfg.steps, trunc=self.cfg.get('truncate', False))
 
         pred_traj = torch.stack(extra['preds'])
         samp_traj = torch.stack(extra['traj'])

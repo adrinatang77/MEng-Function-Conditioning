@@ -24,7 +24,14 @@ class Diffusion:
     def compute_loss(self, pred, target, t, mask):
         NotImplemented
 
-
+def t_to_sigma(cfg, t):
+    p = cfg.sched_p
+    sigma = (
+        cfg.sigma_min ** (1 / p)
+        + t * (cfg.sigma_max ** (1 / p) - cfg.sigma_min ** (1 / p))
+    ) ** p
+    return sigma
+    
 def sigmoid(x):
     return 1 / (1 + np.exp(-x))
 
@@ -34,38 +41,12 @@ def masked_center(x, mask=None, eps=1e-5):
         return x - x.mean(-2, keepdims=True)
     mask = mask[..., None]
     com = (x * mask).sum(-2, keepdims=True) / (eps + mask.sum(-2, keepdims=True))
-    return torch.where(mask, x - com, x)
-
-
-class GaussianFM(Diffusion):
-    def add_noise(self, pos, t, mask=None):
-        noise = torch.randn_like(pos) * self.cfg.data_sigma
-        pos = masked_center(pos, mask)
-        if self.cfg.train_align:
-            pos = rmsdalign(noise, pos, weights=mask)
-
-        t = t[..., None]
-        noisy = t * noise + (1 - t) * pos
-        target = pos
-        
-        return noisy, target
-
-    def precondition(self, inp, t):
-        return inp / self.cfg.data_sigma
-
-    def postcondition(self, inp, out, t):
-        return inp + out * t.unsqueeze(-1) * self.cfg.data_sigma
-
-    def compute_loss(self, pred, target, t, mask, eps=1e-6):
-        return torch.square(pred - target).sum(-1) / (t**2+eps) / self.cfg.data_sigma**2
+    return x - com
 
 class EDMDiffusion(Diffusion):
 
     def get_sigma(self, t, eps=1e-4):
-        if self.cfg.rescale_time:
-            return t
-        else:
-            return t / (1-t+eps) * self.cfg.data_sigma
+        return t
 
     def add_noise(self, pos, t, mask=None):
 

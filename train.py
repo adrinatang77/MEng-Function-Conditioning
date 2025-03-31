@@ -1,16 +1,34 @@
 import argparse
 import os
 
-# os.environ["CUDA_VISIBLE_DEVICES"] = "7"
-
 parser = argparse.ArgumentParser()
 parser.add_argument("--config", type=str, default="config.yaml")
+parser.add_argument("--debug", action='store_true')
+parser.add_argument("--gpus", type=int, default=None)
+parser.add_argument("--workers", type=int, default=None)
+parser.add_argument("--validate", action='store_true')
 args = parser.parse_args()
 from omegaconf import OmegaConf
 
 cfg = OmegaConf.load(args.config)
-os.environ["CONFIG"] = args.config
 
+if args.debug:
+    cfg.logger.neptune = False
+    cfg.logger.name = 'default'
+    cfg.logger.logfile = None
+    cfg.trainer.devices = 1
+    cfg.trainer.enable_progress_bar = True
+    
+if args.gpus:
+    cfg.trainer.devices = args.gpus
+
+if args.workers is not None:
+    cfg.data.num_workers = args.workers
+
+if args.validate:
+    cfg.validate = True
+    
+os.environ["CONFIG"] = args.config
 os.environ["MODEL_DIR"] = model_dir = os.path.join("workdir", cfg.logger.name)
 os.makedirs(model_dir, exist_ok=True)
 
@@ -31,7 +49,7 @@ from openprot.evals.manager import OpenProtEvalManager
 from openprot.tracks.manager import OpenProtTrackManager
 
 cfg.trainer.devices = int(os.environ.get("SLURM_NTASKS_PER_NODE", cfg.trainer.devices))
-
+torch.set_float32_matmul_precision('medium')
 trainer = pl.Trainer(
     **cfg.trainer,
     default_root_dir=model_dir,
@@ -48,7 +66,7 @@ trainer = pl.Trainer(
             filename="last",
             enable_version_counter=False,
         ),
-        ModelSummary(max_depth=4),
+        ModelSummary(max_depth=3),
     ],
     num_nodes=int(os.environ.get("SLURM_NNODES", 1)),
 )

@@ -6,7 +6,7 @@ from . import residue_constants as rc
 from .tensor_utils import batched_gather
 
 @torch.cuda.amp.autocast(False)
-def compute_rmsd(a, b, weights=None):
+def compute_rmsd(a, b, weights=None, reduce=True):
     B = a.shape[:-2]
     N = a.shape[-2]
 
@@ -14,7 +14,11 @@ def compute_rmsd(a, b, weights=None):
         weights = a.new_ones(*B, N)
 
     b = rmsdalign(a, b, weights)
-    return torch.sqrt((torch.square(a - b).sum(-1) * weights).sum(-1) / weights.sum(-1))
+    sqdist = torch.square(a - b).sum(-1)
+    if reduce:
+        return torch.sqrt((sqdist * weights).sum(-1) / weights.sum(-1))
+    else:
+        return torch.sqrt(sqdist)
 
 @torch.cuda.amp.autocast(False)
 def compute_pseudo_tm(a, b, weights=None):

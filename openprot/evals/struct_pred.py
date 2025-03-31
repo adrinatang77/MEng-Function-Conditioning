@@ -24,24 +24,30 @@ class StructurePredictionEval(OpenProtEval):
 
     def __getitem__(self, idx):
         name = self.df.index[idx]
-        prot = dict(
-            np.load(f"{self.cfg.path}/{name[1:3]}/{name}.npz", allow_pickle=True)
-        )
+  
         seqres = self.df.seqres[name]
         L = len(seqres)
         data = self.make_data(
             name=name,
             seqres=seqres,
-            seq_mask=np.ones(len(seqres)),
-            struct=prot["all_atom_positions"][:,1].astype(np.float32),
-            struct_mask=prot["all_atom_mask"][:,1].astype(np.float32),
-            struct_noise=np.ones(L, dtype=np.float32) * 160, # temporary
-            residx=np.arange(L, dtype=np.float32),
+            seq_mask=np.ones(L),
+            struct=np.zeros((L,3)),
+            struct_mask=np.ones(L),
+            struct_noise=np.ones(L) * self.cfg.struct.edm.sigma_max,
+            residx=np.arange(L),
         )
 
         return data
 
-    def run_diffusion(self, model, batch, noisy_batch, savedir):
+    def run_batch(
+        self,
+        model,
+        batch: dict,
+        noisy_batch: dict,
+        savedir=".", 
+        device=None,
+        logger=None
+    ):
         def edm_sched_fn(t):
             p = self.cfg.struct.edm.sched_p
             sigma_max = self.cfg.struct.edm.sigma_max
@@ -58,72 +64,49 @@ class StructurePredictionEval(OpenProtEval):
             EDMDiffusionStepper(self.cfg.struct)
         ])
         
-        sample_batch, extra = sampler.sample(model, noisy_batch, self.cfg.steps)
+        sample, extra = sampler.sample(model, noisy_batch, self.cfg.steps)
         pred_traj = torch.stack(extra['preds'])
         samp_traj = torch.stack(extra['traj'])
 
-        B = len(sample_batch['struct'])
-        
-        for i in range(B):
+        for i, name in enumerate(batch['name']):
             prot = make_ca_prot(
-                sample_batch['struct'][i].cpu().numpy(),
-                batch["aatype"][i].cpu().numpy(),
-                batch["struct_mask"][i].cpu().numpy(),
+                sample['struct'][i].cpu().numpy(),
+                sample["aatype"][i].cpu().numpy(),
+                sample["struct_mask"][i].cpu().numpy(),
             )
-    
-            ref_str = protein.to_pdb(prot)
-            name = batch["name"][i]
-            with open(f"{savedir}/{name}.pdb", "w") as f:
-                f.write(ref_str)
-    
+            
             with open(f"{savedir}/{name}_traj.pdb", "w") as f:
                 f.write(write_ca_traj(prot, samp_traj[:, i].cpu().numpy()))
     
             with open(f"{savedir}/{name}_pred_traj.pdb", "w") as f:
                 f.write(write_ca_traj(prot, pred_traj[:, i].cpu().numpy()))
 
-        return sample_batch['struct']
-
-    def run_batch(
-        self,
-        model,
-        batch: dict,
-        noisy_batch: dict,
-        savedir=".", 
-        device=None,
-        logger=None
-    ):
-
-        noisy_batch["struct"] = torch.randn_like(noisy_batch["struct"]) * 160.
-        if self.cfg.diffusion:
-            coords = self.run_diffusion(model, batch, noisy_batch, savedir)
-        else:
-            _, readout = model.forward(noisy_batch)
-            coords = readout["trans"][-1]
-
+        batch['struct'] = sample['struct']
         
-        coords = rmsdalign(batch["struct"], coords, batch["struct_mask"])
-        B = len(coords)
-        for i in range(B):
-            aatype = batch["aatype"].cpu().numpy()[i]
+        for i, data in enumerate(batch.unbatch()):
+
+            name = data["name"]
             
-            lddt = compute_lddt(
-                coords[i],
-                batch["struct"][i],
-                batch["struct_mask"][i]
-            )
+            ref = dict(np.load(f"{self.cfg.path}/{name[1:3]}/{name}.npz", allow_pickle=True))
             
-            tmscore = compute_tmscore(  # second is reference
-                coords1=coords.cpu().numpy()[i],
-                coords2=batch["struct"].cpu().numpy()[i],
+            ref_pos = torch.from_numpy(ref['all_atom_positions'][:,1]).to(data['struct'])
+            mask = torch.from_numpy(ref['all_atom_mask'][:,1]).to(data['struct'])
+
+            lddt = compute_lddt(data['struct'], ref_pos, mask)
+            rmsd = compute_rmsd(data['struct'], ref_pos, mask)
+            
+            # second is reference
+            aatype = data['aatype'].cpu().numpy()
+            tmscore = compute_tmscore(
+                coords1=data['struct'].cpu(),
+                coords2=ref_pos.cpu(),
                 seq1=aatype,
                 seq2=aatype,
                 mask1=None,
-                mask2=batch["struct_mask"].cpu().numpy()[i],
+                mask2=mask.cpu(),
                 seq=True
             )
-    
-            rmsd = compute_rmsd(batch["struct"][i], coords[i], batch["struct_mask"][i])
+            
             if logger:
                 logger.log(f"{self.cfg.name}/lddt", lddt)
                 logger.log(f"{self.cfg.name}/tm", tmscore["tm"])
@@ -131,17 +114,21 @@ class StructurePredictionEval(OpenProtEval):
                 logger.log(f"{self.cfg.name}/gdt_ha", tmscore["gdt_ha"])
                 logger.log(f"{self.cfg.name}/rmsd", rmsd)
     
+
             prot = make_ca_prot(
-                coords=batch["struct"].cpu().numpy()[i],
-                aatype=aatype,
-                mask=batch["struct_mask"].cpu().numpy()[i],
+                data['struct'].cpu().numpy(),
+                data["aatype"].cpu().numpy(),
+                data["struct_mask"].cpu().numpy(),
+            )
+            pred_str = protein.to_pdb(prot)
+            prot = make_ca_prot(
+                ref['all_atom_positions'][:,1],
+                data["aatype"].cpu().numpy(), # ref['aatype'] is one-hot...
+                ref['all_atom_mask'][:,1],
             )
             ref_str = protein.to_pdb(prot)
             
-            prot.atom_mask[..., 1] = batch["pad_mask"].cpu().numpy()[i]
-            prot.atom_positions[..., 1, :] = coords.cpu().numpy()[i]
-            pred_str = protein.to_pdb(prot)
-    
+            
             ref_str = "\n".join(ref_str.split("\n")[1:-3])
             pred_str = "\n".join(pred_str.split("\n")[1:-3])
     

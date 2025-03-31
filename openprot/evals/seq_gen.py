@@ -49,40 +49,38 @@ class SequenceGenerationEval(OpenProtEval):
     ):
         torch.cuda.empty_cache()
 
-        pass
-
-        # idx = list(range(rank, self.cfg.num_samples, world_size))
-        # os.makedirs(f"{savedir}/rank{rank}", exist_ok=True)
-        # for i in idx:
-        #     shutil.copy(f"{savedir}/sample{i}.fasta", f"{savedir}/rank{rank}")
-        # cmd = [
-        #     "bash",
-        #     "scripts/switch_conda_env.sh",
-        #     "eval",
-        #     "python",
-        #     "-m",
-        #     "scripts.esmfold",
-        #     "--outdir",
-        #     savedir,
-        #     "--dir",
-        #     f"{savedir}/rank{rank}",
-        #     "--print",
-        # ]
-        # cvd = os.environ.get('CUDA_VISIBLE_DEVICES', None)
-        # if cvd:
-        #     dev = cvd.split(',')[torch.cuda.current_device()]
-        # else:
-        #     dev = torch.cuda.current_device()
-        # out = subprocess.run(cmd, env=os.environ | {
-        #     'CUDA_VISIBLE_DEVICES': str(dev)
-        # })  
-        # for i in idx:
-        #     try:
-        #         plddt = PandasPdb().read_pdb(f"{savedir}/sample{i}.pdb").df['ATOM']['b_factor'].mean()
-        #         if logger is not None:
-        #             logger.log(f"{self.cfg.name}/plddt", plddt)
-        #     except:
-        #         pass
+        idx = list(range(rank, self.cfg.num_samples, world_size))
+        os.makedirs(f"{savedir}/rank{rank}", exist_ok=True)
+        for i in idx:
+            shutil.copy(f"{savedir}/sample{i}.fasta", f"{savedir}/rank{rank}")
+        cmd = [
+            "bash",
+            "scripts/switch_conda_env.sh",
+            "eval",
+            "python",
+            "-m",
+            "scripts.esmfold",
+            "--outdir",
+            savedir,
+            "--dir",
+            f"{savedir}/rank{rank}",
+            "--print",
+        ]
+        cvd = os.environ.get('CUDA_VISIBLE_DEVICES', None)
+        if cvd:
+            dev = cvd.split(',')[torch.cuda.current_device()]
+        else:
+            dev = torch.cuda.current_device()
+        out = subprocess.run(cmd, env=os.environ | {
+            'CUDA_VISIBLE_DEVICES': str(dev)
+        })  
+        for i in idx:
+            try:
+                plddt = PandasPdb().read_pdb(f"{savedir}/sample{i}.pdb").df['ATOM']['b_factor'].mean()
+                if logger is not None:
+                    logger.log(f"{self.cfg.name}/plddt", plddt)
+            except:
+                pass
 
     
 

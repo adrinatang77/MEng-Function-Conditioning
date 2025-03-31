@@ -8,17 +8,29 @@ def masked_center(x, mask=None, eps=1e-5):
         return x - x.mean(-2, keepdims=True)
     mask = mask[..., None]
     com = (x * mask).sum(-2, keepdims=True) / (eps + mask.sum(-2, keepdims=True))
-    return torch.where(mask, x - com, x)
+    return x - com
 
 class EDMDiffusionStepper:
-    def __init__(self, cfg=None):
+    def __init__(self, cfg=None, mask=None):
         self.cfg = cfg
+        self.mask = mask
         
     def set_step(self, batch, sched, extra={}):
+        if self.mask is not None:
+            mask = self.mask
+        else:
+            mask = batch['pad_mask'].bool()
         t, _ = sched['structure']
-        batch["struct_noise"] = torch.ones_like(batch["struct_noise"]) * t
+        batch["struct_noise"] = torch.where(
+            mask, t, batch["struct_noise"]
+        )
         
     def advance(self, batch, sched, out, extra={}):
+        
+        if self.mask is not None:
+            mask = self.mask
+        else:
+            mask = batch['pad_mask'].bool()
 
         if 'traj' not in extra: extra['traj'] = []
         if 'preds' not in extra: extra['preds'] = []
@@ -29,8 +41,10 @@ class EDMDiffusionStepper:
         dt = t2 - t1
         g = np.sqrt(2 * t2)
 
-        x0 = out['trans'][-1]
-        x0 = masked_center(x0, batch['struct_mask'].bool())
+        x0 = out['trans']
+
+        if self.cfg.align:
+            x0 = masked_center(x0, batch['struct_mask'].bool())
         
         extra['preds'].append(x0)
         
@@ -42,13 +56,11 @@ class EDMDiffusionStepper:
         else:
             gamma = self.cfg.temp_factor
 
-        # dx = g**2 * s * dt + g * gamma * np.sqrt(dt) * noise # SDE
-        # dx = 0.5 * g**2 * s * dt # + g * gamma * np.sqrt(dt) * noise # ODE
         ode = 0.5 * g**2 * s * dt 
         sde = 0.5 * g**2 * s * dt + g * gamma * np.sqrt(dt) * noise
         dx = ode + self.cfg.sde_weight * sde
         
-        batch['struct'] = x + dx
+        batch['struct'] = x + torch.where(mask[...,None], dx, 0.0)
         extra['traj'].append(batch['struct'])
 
 class GaussianFMStepper:
