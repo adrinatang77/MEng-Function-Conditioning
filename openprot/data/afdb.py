@@ -11,8 +11,10 @@ from .data import OpenProtDataset
 from ..utils.prot_utils import seqres_to_aatype
 
 class AFDBDataset(OpenProtDataset):
-
+    
     def setup(self):
+        self.num = 0
+        self.denom = 0
         self.db = foldcomp.open(self.cfg.path)
         if self.cfg.blacklist is not None:
             blacklist = pd.read_csv(
@@ -22,7 +24,7 @@ class AFDBDataset(OpenProtDataset):
             )
             self.blacklist = set(blacklist["target"])
 
-        print(len(self.db))
+        # print(len(self.db))
         self.idx = np.arange(len(self.db))
         self.annotations = pd.read_pickle(self.cfg.annotations)
         if self.cfg.plddt_thresh is not None:
@@ -47,6 +49,9 @@ class AFDBDataset(OpenProtDataset):
             return self[(idx + 1) % len(self)]
 
         prot = protein.from_pdb_string(pdb)
+        self.num += prot.b_factors[:,1].mean()
+        self.denom += 1
+        # print(self.num / self.denom)
         seqres = "".join([rc.restypes_with_x[c] for c in prot.aatype])
         return self.make_data(
             name=name,

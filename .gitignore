@@ -5,6 +5,7 @@ fasta
 *.pyc
 workdir
 .cache
+data
 trash
 .ipynb_checkpoints
 *.ipynb

@@ -1,7 +1,7 @@
 import torch
 import numpy as np
 import pandas as pd
-from .data import OpenProtDataset
+from .data import OpenProtDataset, OpenProtData
 from ..utils import residue_constants as rc
 from collections import defaultdict
 from boltz.data.const import prot_token_to_letter, dna_token_to_letter, rna_token_to_letter
@@ -28,7 +28,8 @@ class BoltzDataset(OpenProtDataset):
             self.df = self.df[self.df.n_nuc == 1]
         if self.cfg.mol_type == 'lig':
             self.df = self.df[self.df.n_ligand == 1]
-            
+
+        assert self.cfg.mol_type == 'lig'
         print('Grouping dataframe...')
         self.clusters = []
         
@@ -49,31 +50,27 @@ class BoltzDataset(OpenProtDataset):
         ones = np.ones(L, dtype=np.float32)
 
         if chain.mol_type == 3:
-            return {
-                'seqres': '*'*L,
-                'atom_num': chain.atoms['element'],
-                'mol_type': ones * chain.mol_type,
-                'seq_mask': ones,
-                'struct': chain.atoms['coords'],
-                'struct_mask': chain.atoms['is_present'],
-                'ref_conf': chain.atoms['conformer'],
-                'ref_conf_mask': ones,
-                'residx': chain.get_atom_residx(),
-                'chain': ones * chain.idx,
-            }
+            return self.make_data(
+                name='',
+                seqres='*'*L,
+                atom_num=chain.atoms['element'],
+                mol_type=ones * chain.mol_type,
+                seq_mask=ones,
+                struct=chain.atoms['coords'],
+                struct_mask=chain.atoms['is_present'],
+                residx=chain.get_atom_residx(),
+                chain=ones * chain.idx,
+            )
         else:
-            return {
-                'seqres': chain.get_seqres(),
-                'atom_num': np.zeros(L),
-                'mol_type': ones * chain.mol_type,
-                'seq_mask': chain.get_seqres_mask(),
-                'struct': chain.get_central_atoms()['coords'],
-                'struct_mask': chain.get_central_atoms()['is_present'],
-                'ref_conf': np.zeros((L, 3)),
-                'ref_conf_mask': np.zeros(L),
-                'residx': chain.residues['res_idx'],
-                'chain': ones * chain.idx,
-            }
+            return self.make_data(
+                name='',
+                seqres=chain.get_seqres(),
+                seq_mask=chain.get_seqres_mask(),
+                struct=chain.get_central_atoms()['coords'],
+                struct_mask=chain.get_central_atoms()['is_present'],
+                residx=chain.residues['res_idx'],
+                chain=ones*chain.idx,
+            )
                 
 
     def __getitem__(self, idx: int):
@@ -92,10 +89,6 @@ class BoltzDataset(OpenProtDataset):
         
         if chain2 is not None:
             data2 = self.unpack_chain(struct.get_chain(int(chain2)))
-            for key in data2:
-                if key == 'seqres':
-                    data['seqres'] += data2['seqres']
-                else:
-                    data[key] = np.concatenate([data[key], data2[key]])
-
-        return self.make_data(name=name, **data)
+            data = OpenProtData.concat([data, data2])
+            data['name'] = name
+        return data

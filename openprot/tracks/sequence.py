@@ -16,33 +16,6 @@ from transformers import EsmTokenizer
 MASK_IDX = 20
 NUM_TOKENS = MASK_IDX+1
 
-
-# processes a sequence (integers) into its class distribution representation (one-hot encoding)
-# returns tensor of size (seqlen, NUM_TOKENS)
-def seq2prob(seq):
-    seq = seq.to(torch.int64)
-    return F.one_hot(seq, num_classes=NUM_TOKENS)
-
-
-# given a probability distribution over classes, returns single sample
-# pt is probability distribution of shape (seqlen, NUM_TOKENS)
-def sample_p(pt):
-    pt = pt.to(torch.float32)
-    return torch.multinomial(pt, 1, replacement=True)
-
-
-def sinusoidal_embedding(pos, n_freqs, max_period, min_period):
-    periods = torch.exp(
-        torch.linspace(
-            math.log(min_period), math.log(max_period), n_freqs, device=pos.device
-        )
-    )
-    freqs = 2 * np.pi / periods
-    return torch.cat(
-        [torch.cos(pos[..., None] * freqs), torch.sin(pos[..., None] * freqs)], -1
-    )
-
-
 import esm
 from esm.data import Alphabet
 
@@ -172,15 +145,13 @@ class SequenceTrack(OpenProtTrack):
         if self.cfg.all_atom:
             model.mol_type_cond = nn.Embedding(4, model.cfg.dim)
         
-        
         if self.cfg.esm is not None:
-
             model.esm, self.esm_dict = esm_registry.get(self.cfg.esm)()
             model.esm.requires_grad_(False)
             model.esm.half()
             model.esm.eval()
             esm_dim = model.esm.layers[0].final_layer_norm.bias.shape[0]
-            # model.esm_in = nn.Linear(esm_dim, model.cfg.dim)
+            
             model.esm_s_combine = nn.Parameter(torch.zeros(model.esm.num_layers + 1))
             model.esm_s_mlp = nn.Sequential(
                 nn.LayerNorm(esm_dim),
@@ -196,9 +167,6 @@ class SequenceTrack(OpenProtTrack):
             model.func_embed = GOEmbeddingModule(num_go_terms, model.cfg.dim, padding_idx=0)
             # model.func_embed = nn.Embedding(num_go_terms, model.cfg.dim, padding_idx=0) 
 
-        # model.seq_mask = nn.Parameter(torch.zeros(model.cfg.dim))
-        # keep this separate to avoid confusion
-
     def corrupt(self, batch, noisy_batch, target, logger=None):
         eps = 1e-6
         
@@ -209,25 +177,23 @@ class SequenceTrack(OpenProtTrack):
         mask = rand_mask | ~batch["seq_mask"].bool() # these will be input as MASK
         sup = rand_mask & batch["seq_mask"].bool() # these will be actually supervised
 
-        #                                   !!!!!!!
-        noisy_batch["aatype"] = torch.where(rand_mask, MASK_IDX, tokens)
-
-        
-        # present = ~batch["seq_noise"].bool() & batch["seq_mask"].bool()
-        # target["seq_occupancy"] = present.sum(-1) / (1+batch['seq_mask'].sum(-1))        
-        
-        target["seq_supervise"] = torch.where(sup, batch["seq_weight"], 0.0)
+        noisy_batch["aatype"] = torch.where(mask, MASK_IDX, tokens)
+        target["seq_supervise"] = sup.float()
 
 
         if self.cfg.reweight == 'linear':
-            target["seq_supervise"] *= (1-batch['seq_noise'])
+            target["seq_supervise"] *= (1-batch['seq_noise'] + self.cfg.reweight_eps)
         elif self.cfg.reweight == 'inverse':
             target["seq_supervise"] *= 1/(batch['seq_noise'] + self.cfg.reweight_eps)
         target["aatype"] = tokens
 
         noisy_batch['func_cond'] = batch['func_cond'] 
         
-        mlm_mask = (torch.rand_like(batch['seq_noise']) < self.cfg.mlm_prob) & (batch['mol_type'] == 0) & ~mask
+        mlm_mask = (
+            (torch.rand_like(batch['seq_noise']) < self.cfg.mlm_prob)
+            & (batch['mol_type'] == 0)
+            & ~mask
+        )
 
         noisy_batch['aatype'] = torch.where(
             mlm_mask & (torch.rand_like(batch['seq_noise']) < self.cfg.mlm_ratio),
@@ -236,11 +202,12 @@ class SequenceTrack(OpenProtTrack):
         )
         target["seq_supervise"].masked_fill_(mlm_mask, self.cfg.mlm_weight)
 
-        
-        
-        
+        gen_mask = batch['seq_mask'].bool() & (batch['ligand_mask'] == 0)
         if logger:
             logger.masked_log("seq/toks", batch["seq_mask"], sum=True)
+            logger.masked_log("seq/length", gen_mask.sum(-1).float(), dims=0)
+            
+            
             
     def embed(self, model, batch, inp):
 
@@ -276,8 +243,6 @@ class SequenceTrack(OpenProtTrack):
             # # shape: (batch_size, seq_len, embedding_dim)
             # residue_go_embeddings = torch.sum(go_term_embeddings_lookup, dim=2)
 
-        inp['residx'] = batch['residx'] # temporary
-
         if self.cfg.all_atom:
             inp["x_cond"] += model.mol_type_cond(batch['mol_type'].int())
         
@@ -299,19 +264,4 @@ class SequenceTrack(OpenProtTrack):
             logger.masked_log("seq/loss", loss, mask=mask)
             logger.masked_log("seq/perplexity", loss, mask=mask, post=np.exp)
 
-        # logits = readout["aatype"]
-        # logits[...,-1] -= 1e5
-        ## extract the pseudo-mask likelihoods
-        # probs = logits.softmax(-1)
-        # oh = torch.nn.functional.one_hot(target['noisy_aatype'], num_classes=self.ntoks)
-        # denom = 0.5 * oh + 0.05
-        # new_probs = probs / denom
-        # new_probs /= new_probs.sum(-1, keepdims=True)
-        # is_mask_prob = ((probs - oh) / (new_probs - oh))[...,0]
-        # is_unmask = (target['noisy_aatype'] != MASK_IDX)
-        # # print((is_mask_prob * is_unmask).sum(-1) / is_unmask.sum(-1))
-        # # print((is_mask_prob * is_unmask).sum() / is_unmask.sum())
-        # if logger:
-        #     logger.masked_log("seq/is_mask_prob", is_mask_prob, mask=is_unmask)
-        
         return loss * mask

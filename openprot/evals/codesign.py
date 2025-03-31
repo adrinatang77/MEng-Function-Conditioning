@@ -48,31 +48,9 @@ class CodesignEval(OpenProtEval):
     def __getitem__(self, idx):
         L = self.cfg.sample_length
         
-        max_noise = self.cfg.struct.edm.sigma_max
-        if self.cfg.get('truncate', False):
-            struct_noise = self.struct_sched_fn(self.cfg.truncate)
-            seq_noise = self.seq_sched_fn(self.cfg.truncate)
-        else:
-            struct_noise = max_noise
-            seq_noise = 1
+        struct_noise = self.cfg.struct.edm.sigma_max
+        seq_noise = 1
 
-        if self.cfg.get('dir', None) is not None:
-            with open(f"{self.cfg.dir}/sample{idx}.pdb") as f:
-                prot = protein.from_pdb_string(f.read())
-            
-            seqres = aatype_to_seqres(prot.aatype)
-            data = self.make_data(
-                name=f"sample{idx}",
-                seqres=seqres,
-                seq_mask=np.ones(L),
-                seq_noise=np.ones(L, dtype=np.float32) * seq_noise,
-                struct=prot.atom_positions[:,1].astype(np.float32),
-                struct_noise=np.ones(L, dtype=np.float32) * struct_noise,
-                struct_mask=prot.atom_mask[:,1].astype(np.float32),
-                residx=np.arange(L, dtype=np.float32),
-            )
-            return data
-        
         data = self.make_data(
             name=f"sample{idx}",
             seqres="A"*L,
