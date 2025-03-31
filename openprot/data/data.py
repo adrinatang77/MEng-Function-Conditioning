@@ -60,6 +60,8 @@ excluded_keys = [
     "aatype",
     "atom_num",
     "struct",
+    "cath",
+    "nma",
 ]
 class OpenProtBatch(dict):
     
@@ -269,9 +271,11 @@ class OpenProtData(dict):
         for key in key_union:
             try:
                 if type(batch[key][0]) is np.ndarray:
-                    batch[key] = np.concatenate(batch[key], 0)
+                    if len(batch[key][0].shape) == 0: batch[key] = batch[key][0]
+                    else: batch[key] = np.concatenate(batch[key], 0)
                 elif type(batch[key][0]) is torch.Tensor:
-                    batch[key] = torch.cat(batch[key], 0)
+                    if len(batch[key][0].shape) == 0: batch[key] = batch[key][0]
+                    else: batch[key] = torch.cat(batch[key], 0)
                 elif type(batch[key][0]) is str:
                     batch[key] = "".join(batch[key])
             except Exception as e:

@@ -9,55 +9,7 @@ import os
 from ..data.data import OpenProtData
 
 class CodesignTask(OpenProtTask):
-
-    # def sample_ppi(self, data):
-    #     L = len(data['seqres'])
-    #     cfg = self.cfg.ppi
-
-    #     dmat = np.square(data['struct'][None] - data['struct'][:,None]).sum(-1)**0.5 
-    #     cmap = dmat < cfg.contact
-    #     cmap &= data['struct_mask'][None].astype(bool) & data['struct_mask'][:,None].astype(bool)
-    #     ii, jj = np.meshgrid(np.arange(L), np.arange(L))
-    #     cmap &= ii - jj >= cfg.long_range
-    #     if np.sum(cmap) == 0:
-    #         return False
-
-    #     i, j = np.argwhere(cmap)[np.random.choice(range(cmap.sum()))]
-
-        
-    #     gap_len = np.random.choice(range(
-    #         cfg.gap_min,
-    #         min(j-i-2*cfg.gap_pad, cfg.gap_max)
-    #     ))
-    #     gap_start = np.random.choice(range(i+cfg.gap_pad, j-cfg.gap_pad-gap_len))
-        
-    #     mask = np.ones(L, dtype=bool)
-    #     mask[gap_start:gap_start+gap_len] = 0
-    #     data.crop(idx=np.arange(L)[mask])
-
-    #     if np.random.rand() > 0.5:
-    #         data['ligand_mask'][:gap_start] = 1
-    #     else:
-    #         data['ligand_mask'][gap_start:] = 1
-    #     data['chain'][gap_start:] = 1
-        
-    #     # label hotspots
-    #     dmat = dmat[mask][:,mask]
-    #     hotspot = dmat < self.cfg.ppi.hotspot
-    #     hotspot &= (
-    #         data['struct_mask'][None].astype(bool)
-    #         & data['struct_mask'][:,None].astype(bool)
-    #     )
-    #     hotspot &= data['chain'][None] != data['chain'][:,None]
-    #     hotspot = np.any(hotspot, -1)
-
-        
-    #     data['hotspot_mask'] = hotspot * data['ligand_mask']
-        
             
-    #     return True
-            
-        
     def sample_motifs(self, data):
         N = len(data['seqres'])
         Ns = np.random.randint(1, self.cfg.motif.nmax)
@@ -92,27 +44,17 @@ class CodesignTask(OpenProtTask):
 
         if np.random.rand() < self.cfg.motif.nma_prob:
             self.compute_motif_nma(data)
-
+        
     def compute_motif_nma(self, data):
-
-        return # for now
-        if np.any(data['struct_mask'] == 0): return # missing calpha
-        
-        
-        
-        myhess = compute_hessian(data['struct'])
-        eigval, eigvec = scipy.linalg.eigh(myhess, subset_by_index=[6,6])
-        mode = eigvec.reshape(-1, 3) / eigval**0.5
-        if np.random.rand() < 0.5:
-            mode = -mode
 
         idx = np.unique(data['motif_idx'])
         for i in idx: 
             mask = (data['motif_mask'] == 1) & (data['motif_idx'] == i)
-            nma = mode[mask]
+            if mask.sum() == 0: continue
+            nma = data['nma'][mask]
             nma = nma - nma.mean(0)
             data['motif_nma'][mask] = nma
-            data['motif_nma_mask'][mask] = 1
+            data['motif_nma_mask'][mask] = data['nma_mask'][mask]
             
     def center_random_rot(self, data, eps=1e-6):
         # center the structures

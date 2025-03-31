@@ -62,7 +62,7 @@ class CATHTrack(OpenProtTrack):
         ).sum(-2)
         inp["x_cond"] += torch.where(
             (batch['cath'] > 0)[...,None],
-            model.cath_embed(batch['cath'].int()), 
+            model.cath_embed_cond(batch['cath'].int()), 
             0.0
         ).sum(-2)
         

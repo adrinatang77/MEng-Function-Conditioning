@@ -8,14 +8,16 @@ from ..utils import residue_constants as rc
 from .data import OpenProtDataset, OpenProtData
 import json
 from ..utils.structure import Structure
+from io import BytesIO
 
 class UnifiedDataset(OpenProtDataset):
     def setup(self):
         arr = np.load(self.cfg.index)
 
-        
+        self.num = 0
+        self.denom = 0
         if self.cfg.alphafill:
-            mask = arr[:,4] >= self.cfg.plddt_thresh
+            mask = arr[:,3] >= self.cfg.plddt_thresh
 
         else:
             mask = arr[:,2] >= self.cfg.plddt_thresh
@@ -41,7 +43,7 @@ class UnifiedDataset(OpenProtDataset):
         def filter_func(entry):
             if entry['afdb'][1] < self.cfg.plddt_thresh:
                 return False
-            if self.cfg.alphafill_only and 'alphafill' not in entry:
+            if self.cfg.alphafill and 'alphafill' not in entry:
                 return False
             return True
             
@@ -87,6 +89,9 @@ class UnifiedDataset(OpenProtDataset):
             afdb_name, pdb = self.afdb[entry['afdb'][0]]
             
             prot = protein.from_pdb_string(pdb)
+            self.denom += 1
+            self.num += prot.b_factors[:,1].mean()
+            # print(self.num / self.denom)
             afdb_seqres = "".join([rc.restypes_with_x[c] for c in prot.aatype])
             if (seqres is None) or seqres == afdb_seqres:
                 struct = prot.atom_positions[:,1]
@@ -115,6 +120,17 @@ class UnifiedDataset(OpenProtDataset):
                 if label == '-': continue
                 for i, c in enumerate(label.split('.')[:3]):
                     cath[mask,i] = int(c)
+
+        nma = None
+        nma_mask = None
+        if 'nma' in entry:
+            
+            fidx, pos, length = entry['nma']
+            path = f"{self.cfg.nma}.{fidx}"
+            with open(path, 'rb') as f:
+                f.seek(pos)
+                nma = np.load(BytesIO(f.read(length)))
+            nma_mask = np.ones(len(nma))
                 
         data = self.make_data(
             name=name,
@@ -124,6 +140,8 @@ class UnifiedDataset(OpenProtDataset):
             struct=struct,
             struct_mask=struct_mask,
             cath=cath,
+            nma=nma,
+            nma_mask=nma_mask,
         )
 
         dur5 = time.time() - start_t
@@ -131,29 +149,30 @@ class UnifiedDataset(OpenProtDataset):
         # print(1000*dur1, 1000*dur2, 1000*dur3, 1000*dur4, 1000*dur5)
         
         
-        # if 'alphafill' in entry:
-        #     _, name, _, _ = entry['alphafill'][0].split('-')
-        #     path = f"{self.cfg.alphafill}/{name[:2]}/{entry['alphafill'][0]}"
-        #     try:
-        #         struct = Structure.from_mmcif(path)
-        #     except:
-        #         print('AlphaFill failure', entry)
-        #         return data
-        #     chain = struct.get_chain(np.random.choice(range(1, len(struct.chains))))
+        if 'alphafill' in entry:
+            path = entry['alphafill'][0].replace('.cif.gz', '.npz')
+            _, name, _, _ = path.split('-')
+            path = f"{self.cfg.alphafill}/{name[:2]}/{path}"
+            try:
+                struct = Structure.from_npz(path)
+                chain = struct.get_chain(np.random.choice(range(1, len(struct.chains))))
+            except:
+                return data
+            
 
-        #     ones = np.ones(len(chain.atoms))
-        #     ligand = self.make_data(
-        #         name='',
-        #         seqres='*'*len(chain.atoms),
-        #         atom_num=chain.atoms['element'],
-        #         mol_type=ones*chain.mol_type,
-        #         seq_mask=ones,
-        #         struct=chain.atoms['coords'],
-        #         struct_mask=chain.atoms['is_present'],
-        #         residx=chain.get_atom_residx(),
-        #         chain=ones,
-        #     )
-        #     data = OpenProtData.concat([data, ligand])
+            ones = np.ones(len(chain.atoms))
+            ligand = self.make_data(
+                name='',
+                seqres='*'*len(chain.atoms),
+                atom_num=chain.atoms['element'],
+                mol_type=ones*chain.mol_type,
+                seq_mask=ones,
+                struct=chain.atoms['coords'],
+                struct_mask=chain.atoms['is_present'],
+                residx=chain.get_atom_residx(),
+                chain=ones,
+            )
+            data = OpenProtData.concat([data, ligand])
 
             # dur6 = time.time() - start_t
             # print(1000*dur1, 1000*dur2, 1000*dur3, 1000*dur4, 1000*dur5, 1000*dur6)

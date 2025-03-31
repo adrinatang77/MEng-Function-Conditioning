@@ -4,6 +4,7 @@ parser = argparse.ArgumentParser()
 parser.add_argument("--afdb", type=str, default='tmp/afdb_uniprot_v4.idx')
 parser.add_argument("--ted", type=str, default='tmp/ted.idx')
 parser.add_argument("--alphafill", type=str, default='tmp/alphafill.idx')
+parser.add_argument("--nma", type=str, default='data/nma/afdb_uniprot_v4.out')
 parser.add_argument("--fs_mapping", type=str, default='data/1-AFDBClusters-entryId_repId_taxId.tsv')
 parser.add_argument("--fs_mapping2", type=str, default='data/7-AFDB50-repId_memId.tsv')
 parser.add_argument("--mapping2", type=str, default='/data/cb/scratch/datasets/uniprot_uniref_map/uniref_id_mapping.dat.gz')
@@ -53,6 +54,24 @@ for i, path in enumerate(afdb_glob):
             
     if args.debug: break
 
+############################### AFDB NMA ####################
+nma = {}
+nma_glob = glob.glob(f"{args.nma}.*.idx")
+for i, path in enumerate(nma_glob):
+    print(f'Loading {i+1}/{len(nma_glob)} NMA files', flush=True)
+    with open(path) as f:
+        for line in tqdm.tqdm(f):
+            fidx = path.split('.')[-2]
+            
+            name, pos, length = line.strip().split()
+            _, upkb, _, _ = name.split('-')
+
+            ur100 = upkb
+            nma[ur100] = int(fidx), int(pos), int(length)
+            
+    if args.debug: break
+
+
 ############################### TED CATH ANNOTATIONS ####################
 ted = {}
 print('Loading TED', flush=True)
@@ -96,7 +115,7 @@ with open(args.out, 'w') as f:
         valid = False
         plddt = -1
         alphafill_plddt = -1
-        alphafill_count = 0
+        
         js = {}
             
         for ur90 in ur50_90[ur50]:
@@ -106,14 +125,15 @@ with open(args.out, 'w') as f:
                 count['ur100'] += 1
                 
                 afdb_tup = afdb.get(ur100, None)
-                # NEXT TIME - skip if afdb_tup is None
-                if afdb_tup:
-                    count['afdb_match'] += 1
-                    plddt = max(afdb_tup[1], plddt)
-                    valid = True
+                if afdb_tup is None:
+                    continue 
                     
+                count['afdb_match'] += 1
+                plddt = max(afdb_tup[1], plddt)
+                valid = True
+                
                 js[ur90][ur100] = {
-                    'afdb': afdb_tup or (-1, 0, 0),
+                    'afdb': afdb_tup,
                 }
 
                 ted_tup = ted.get(ur100, None)
@@ -122,18 +142,23 @@ with open(args.out, 'w') as f:
                     js[ur90][ur100]['ted'] = ted_tup
 
                 alphafill_tup = alphafill.get(ur100, None)
-                if afdb_tup and alphafill_tup:
+                if alphafill_tup:
                     count['alphafill_match'] += 1
                     js[ur90][ur100]['alphafill'] = alphafill_tup
-                    alphafill_count += 1
+                    
                     alphafill_plddt = max(afdb_tup[1], alphafill_plddt)
+
+                nma_tup = nma.get(ur100, None)
+                if nma_tup:
+                    count['nma_match'] += 1
+                    js[ur90][ur100]['nma'] = nma_tup
                 if count['ur100'] % int(1e6) == 0:
                     print(count, flush=True)
         
         if valid: # unfortunately there is a single missing uniref seq
             s = json.dumps(js) + '\n'
             f.write(s)
-            idx.append((pos, len(s), plddt, alphafill_count, alphafill_plddt))
+            idx.append((pos, len(s), plddt, alphafill_plddt))
             pos += len(s)
         
 print(count, flush=True)

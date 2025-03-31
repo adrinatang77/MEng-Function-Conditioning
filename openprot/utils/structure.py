@@ -355,7 +355,13 @@ class Structure:
     def get_chains(self):
         return [self.get_chain(i) for i in range(len(self.chains))]
     
-        
+    def to_npz(self, path):
+        np.savez(
+            path,
+            chains=self.chains,
+            residues=self.residues,
+            atoms=self.atoms,
+        )
     def from_npz(path):
         self = Structure()
         npz = np.load(path)

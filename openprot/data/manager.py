@@ -93,7 +93,7 @@ class OpenProtDatasetManager(torch.utils.data.IterableDataset):
             
         batches = []
         buf = []
-        for _ in range(self.cfg.data.buffer):
+        for _ in tqdm.trange(self.cfg.data.buffer):
             buf.append(next(it))
         
         while True:

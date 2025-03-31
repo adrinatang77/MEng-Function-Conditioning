@@ -62,13 +62,16 @@ features:
     struct: [-1, 3]
     struct_mask: [-1]
     struct_noise: [-1]
-    
+
+    nma: [-1, 3]
+    nma_mask: [-1]
+
     motif: [-1, 3] 
     motif_mask: [-1]
     motif_idx: [-1]
     motif_nma: [-1, 3]
     motif_nma_mask: [-1]
-
+    
     # 1 if is ligand, even if struct doesn't exist
     ligand_mask: [-1] 
     hotspot_mask: [-1]
@@ -129,8 +132,8 @@ datasets:
         afdb: data/afdb_uniprot_v4/afdb_uniprot_v4
         ted: data/ted_365m.domain_summary.cath.globularity.taxid.tsv
         uniref: data/uniref100.fasta
-        alphafill: data/alphafill
-        alphafill_only: true
+        alphafill: data/alphafill_npz
+        nma: data/nma/afdb_uniprot_v4.out
         struct: true
         plddt_thresh: 80
 
@@ -355,6 +358,7 @@ tracks:
         mlm_weight: 1.0
         
     CATHTrack:
+        loss_weight: 0.0
         idx: splits/cath-names.txt
         drop_prob: [0.5, 0.1, 0.15]
         
