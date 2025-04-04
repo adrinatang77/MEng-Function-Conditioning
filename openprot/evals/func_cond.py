@@ -375,13 +375,24 @@
 #                     seq = "".join([rc.restypes_with_x[aa] for aa in seqs[i]])
 #                     seq = seq.replace('X', '-')
 #                     f.write(seq+'\n')
-                    
-import json
+       
+from collections import defaultdict
+from .eval import OpenProtEval
+from ..utils import protein
+from ..utils.geometry import compute_lddt
+from ..utils import residue_constants as rc
+from ..tracks.sequence import MASK_IDX
+from ..generate.sampler import OpenProtSampler
+from ..generate.sequence import SequenceUnmaskingStepper
 import numpy as np
 import torch
 import os
+import math
+import tqdm
+import shutil
+import torch.nn.functional as F
 import subprocess
-from collections import defaultdict
+import json
 import pandas as pd
 
 from .seq_gen import SequenceGenerationEval
@@ -424,14 +435,13 @@ class FunctionConditioningEval(SequenceGenerationEval):
         go_terms = self.sample_to_go_terms.get(sample_name, [])
         
         # Create function conditioning array
-        if go_terms:
-            max_depth = self.cfg.max_depth
-            func_cond = np.zeros((L, max_depth), dtype=int)
-            
-            go_term_indices = list(set(np.array([go_index for go_term in go_terms if (go_index := self.go_vocab.get(go_term)) is not None], dtype=int)))
-            num_go_terms = len(go_term_indices)
+        max_depth = self.cfg.max_depth
+        func_cond = np.zeros((L, max_depth), dtype=int)
 
-            func_cond[:, :num_go_terms] = go_term_indices
+        go_term_indices = list(set(np.array([go_index for go_term in go_terms if (go_index := self.go_vocab.get(go_term)) is not None], dtype=int)))
+        num_go_terms = len(go_term_indices)
+
+        func_cond[:, :num_go_terms] = go_term_indices
         
         # Create data with function conditioning
         data = self.make_data(
@@ -445,7 +455,7 @@ class FunctionConditioningEval(SequenceGenerationEval):
         
         return data
     
-    def compute_metrics(self, rank=0, world_size=1, device=None, savedir=".", logger=None):
+    def compute_deepfri_recall(self, rank=0, world_size=1, device=None, savedir=".", logger=None):
         # Call parent method to compute basic metrics
         super().compute_metrics(rank, world_size, device, savedir, logger)
         
@@ -508,7 +518,7 @@ class FunctionConditioningEval(SequenceGenerationEval):
             "--outdir", seq_output_dir,
             "--model", "sequence",
             "--ontology", "mf",
-            "--threshold", "0.05"
+            "--threshold", self.cfg.threshold,
         ]
         subprocess.run(cmd)
         
@@ -587,3 +597,41 @@ class FunctionConditioningEval(SequenceGenerationEval):
         if logger is not None:
             logger.log(f"{self.cfg.name}/deepfri_seq_recall", seq_recall)
             logger.log(f"{self.cfg.name}/deepfri_seq_avg_conf", seq_avg_conf)
+            
+    def run_batch(
+        self,
+        model,
+        batch: dict,
+        noisy_batch: dict,
+        savedir=".", 
+        device=None,
+        logger=None
+    ):
+
+
+        sampler = OpenProtSampler(schedules={
+            'sequence': lambda t: 1-t,
+        }, steppers=[
+            SequenceUnmaskingStepper(self.cfg)
+        ])
+        
+        sample, extra = sampler.sample(model, noisy_batch, self.cfg.steps)
+        B = len(sample['aatype'])
+        for i in range(B):
+            name = batch["name"][i]
+
+            seq = "".join([rc.restypes_with_x[aa] for aa in sample["aatype"][i]])
+            with open(f"{savedir}/{name}.fasta", "w") as f:
+                f.write(f">{name}\n")  # FASTA format header
+                f.write(seq + "\n")
+
+            if logger is not None:
+                logger.log(f"{self.cfg.name}/seqent", self.compute_sequence_entropy(seq))
+                
+            with open(f"{savedir}/{name}_traj.fasta", "w") as f:
+                for seqs in extra['seq_traj']:
+                    seq = "".join([rc.restypes_with_x[aa] for aa in seqs[i]])
+                    seq = seq.replace('X', '-')
+                    f.write(seq+'\n')
+        
+        self.compute_deepfri_recall(logger=logger, savedir=savedir)
