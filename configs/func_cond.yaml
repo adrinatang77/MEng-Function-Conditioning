@@ -6,14 +6,14 @@ logger:
     neptune: True
     run_id: null
     # please change "test" to something unique to your task
-    project: openprot/struct-merge
+    project: openprot/function
     # will log to workdir and neptune.ai with this name
-    name: func-cond-full-protein-1
+    name: func-cond-go
     # if not null, will duplicate stdout and stderr to workdir/{name}/{logfile}
     logfile: std.out
     # if null, will log every epoch, otherwise every this number of steps
     train_log_freq: 100
-    val_log_freq: null
+    val_log_freq: 1
     ckpt_freq: 50000000000
     save_freq: 1000
 trainer:
@@ -27,7 +27,7 @@ trainer:
     num_sanity_val_steps: 0
     gradient_clip_val: 1.0
     accumulate_grad_batches: 1
-    val_check_interval: 10000
+    val_check_interval: 5000
     check_val_every_n_epoch: 1
     logger: false
     precision: 16-mixed
@@ -96,8 +96,8 @@ datasets:
         go_ancestors: /data/cb/scratch/datasets/func_data/mf_go_term_ancestors.json
         prot_go_terms: /data/cb/scratch/datasets/func_data/extracted_data/swissprot_uniref50/swissprot_uniref50_seq_func_map.txt
         prot_func_idx: /data/cb/scratch/datasets/func_data/extracted_data/swissprot_uniref50/swissprot_GO_idx.npy 
-        res_go_terms: /data/cb/scratch/adrina/Code/openprot/interproscan_data_test/go_terms.txt # TODO: finalize 
-        res_func_idx: /data/cb/scratch/adrina/Code/openprot/interproscan_data_test/go_positions.idx.npy # TODO: finalize 
+        res_go_terms: /data/cb/scratch/adrina/Code/openprot/interproscan_data_old/go_terms.txt # TODO: finalize 
+        res_func_idx: /data/cb/scratch/adrina/Code/openprot/interproscan_data_old/go_positions.idx.npy # TODO: finalize 
         max_depth: 86 # max GO depth
 
 tasks:
@@ -343,18 +343,35 @@ tracks:
 
 
 model: # custom args
-    ema: false
+#     ema: false
+#     dim: 512
+#     heads: 16
+#     blocks: 30
+#     dropout: 0.2
+#     token_dropout: 0.0
+    
+#     ff_expand: 4
+#     rope: false
+#     custom_rope: true
+#     ## adaLN args
+#     trunk_adaLN: false
+    
+    ema: 0.999
+    self_cond: false
+    self_cond_prob: 0.0
     dim: 512
     heads: 16
     blocks: 30
     dropout: 0.2
     token_dropout: 0.0
-    
     ff_expand: 4
-    rope: false
-    custom_rope: true
-    ## adaLN args
-    trunk_adaLN: false
+    rope_attn: true
+    rope_values: true
+    attn_mask: false
+    cross_attn: false
+    adaLN: false
+    qk_norm: true
+    act: gelu
     
     
 

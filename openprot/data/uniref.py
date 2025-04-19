@@ -23,9 +23,9 @@ class UnirefDataset(OpenProtDataset):
             self.prot_func_db = open(self.cfg.prot_go_terms)
             # with open(self.cfg.func_idx, 'r') as file:
             #     self.func_idx = json.load(file)
-            self.prot_func_idx = open(self.cfg.prot_func_idx)
+            self.prot_func_idx = np.load(self.cfg.prot_func_idx, allow_pickle=True)
             self.res_func_db = open(self.cfg.res_go_terms)
-            self.res_func_idx = open(self.cfg.res_func_idx)
+            self.res_func_idx = np.load(self.cfg.res_func_idx, allow_pickle=True)
 
     def __len__(self):
         return len(self.index) - 1  # unfortunately we have to skip the last one

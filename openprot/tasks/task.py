@@ -8,7 +8,7 @@ class OpenProtTask:
         self.cfg = cfg
         self.datasets = datasets
         self.dataset_probs = np.array(
-            [cfg.datasets[ds] for ds in cfg.datasets]
+            [cfg.datasets[ds]["fraction"] for ds in cfg.datasets]
         )
         assert self.dataset_probs.sum() == 1
         self.rng = np.random.default_rng(seed=cfg.seed)
