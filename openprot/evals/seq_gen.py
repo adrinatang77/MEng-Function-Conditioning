@@ -39,7 +39,9 @@ class SequenceGenerationEval(OpenProtEval):
 
     def compute_sequence_entropy(self, seq):
         p = np.zeros(21)
+        print(seq)
         for s in seq:
+            print(rc.restype_order_with_x[s])
             p[rc.restype_order_with_x[s]] += 1
         p /= p.sum()
         return np.e ** (-np.nansum(p * np.log(p)))

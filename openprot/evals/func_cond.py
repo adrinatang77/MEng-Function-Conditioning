@@ -509,16 +509,16 @@ class FunctionConditioningEval(SequenceGenerationEval):
         
         cmd = [
             "bash",
-            "scripts/switch_conda_env.sh",
+            "openprot/scripts/switch_conda_env.sh",
             "deepfri",
             "python",
             "-m",
-            "scripts.deepfri",
+            "openprot.scripts.deepfri",
             "--fasta_dir", fasta_dir,
             "--outdir", seq_output_dir,
             "--model", "sequence",
             "--ontology", "mf",
-            "--threshold", self.cfg.threshold,
+            "--threshold", str(self.cfg.threshold),
         ]
         subprocess.run(cmd)
         

@@ -258,12 +258,12 @@ class OpenProtModel(nn.Module):
     def get_z(self, inp):
         
 
-        idx = torch.where(
-            inp['motif_mask'][:,None].bool() & inp['motif_mask'][:,:,None].bool(),
-            inp['motif_idx'][:,None] != inp['motif_idx'][:,:,None],
-            0
-        )
-        return idx
+#         idx = torch.where(
+#             inp['motif_mask'][:,None].bool() & inp['motif_mask'][:,:,None].bool(),
+#             inp['motif_idx'][:,None] != inp['motif_idx'][:,:,None],
+#             0
+#         )
+#         return idx
         
         
         SAME_NONPOLY_CHAIN = 65
@@ -289,9 +289,12 @@ class OpenProtModel(nn.Module):
         assert "z" not in inp
         z = self.get_z(inp)
         
-        chain = inp.get("chain", None)
-        x_cond = inp.get("x_cond", None)
-        mol_type = inp.get("mol_type", None)
+#         chain = inp.get("chain", None)
+#         x_cond = inp.get("x_cond", None)
+#         mol_type = inp.get("mol_type", None)
+        chain = None
+        x_cond = None
+        mol_type = None
 
         if self.cfg.self_cond:
             x = x + self.self_cond_emb(inp['sc'])

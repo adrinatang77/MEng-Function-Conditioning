@@ -105,11 +105,13 @@ class CodesignTask(OpenProtTask):
         if noise_level is None:
             noise_level = sample_noise_level()
         
-        data["seq_noise"] = np.where( # not ligand or motif
-            (data['motif_mask'] == 0) & (data['ligand_mask'] == 0),
-            noise_level,
-            0,
-        ).astype(np.float32)
+#         data["seq_noise"] = np.where( # not ligand or motif
+#             (data['motif_mask'] == 0) & (data['ligand_mask'] == 0),
+#             noise_level,
+#             0,
+#         ).astype(np.float32)
+
+        data["seq_noirse"] = np.full(L, noise_level, dtype=np.float32)
 
     def add_structure_noise(self, data, eps=1e-6, noise_level=None):
         
@@ -139,11 +141,13 @@ class CodesignTask(OpenProtTask):
         if noise_level is None:
             noise_level = sample_noise_level()
             
-        data["struct_noise"] = np.where( # not ligand
-            data['ligand_mask'] == 0,
-            t_to_sigma(self.cfg.edm, noise_level),
-            t_to_sigma(self.cfg.edm, 0),
-        ).astype(np.float32)
+#         data["struct_noise"] = np.where( # not ligand
+#             data['ligand_mask'] == 0,
+#             t_to_sigma(self.cfg.edm, noise_level),
+#             t_to_sigma(self.cfg.edm, 0),
+#         ).astype(np.float32)
+        
+        data["struct_noise"] = np.full(L, t_to_sigma(self.cfg.edm, noise_level), dtype=np.float32)
 
         return noise_level
 

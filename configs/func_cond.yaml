@@ -3,7 +3,7 @@ pretrained:  #  load weights from here first
 validate: false # if true, only validate the model, don't train
 logger:
     # set to true to log to neptune.ai
-    neptune: True
+    neptune: true
     run_id: null
     # please change "test" to something unique to your task
     project: openprot/function
@@ -18,7 +18,7 @@ logger:
     save_freq: 1000
 trainer:
     accelerator: auto
-    devices: 1
+    devices: 2
     max_epochs: 1
     max_steps: 1000000
     enable_progress_bar: false
@@ -88,14 +88,14 @@ datasets:
     uniref:
         type: UnirefDataset
         # path: /scratch/projects/cgai/openprot/data/uniref50.fasta
-        path: /data/cb/scratch/datasets/uniref50.fasta
+#         path: /data/cb/scratch/datasets/uniref50.fasta
         # index: /scratch/projects/cgai/openprot/data/uniref50.idx.npy  
-        index: /data/cb/scratch/share/openprot/uniref50.index # uniref50.idx.npy  
+#         index: /data/cb/scratch/share/openprot/uniref50.index # uniref50.idx.npy  
         func_cond: True
         go_vocab: /data/cb/scratch/datasets/func_data/extracted_data/swissprot_uniref50/go_term_vocab.json
         go_ancestors: /data/cb/scratch/datasets/func_data/mf_go_term_ancestors.json
-        prot_go_terms: /data/cb/scratch/datasets/func_data/extracted_data/swissprot_uniref50/swissprot_uniref50_seq_func_map.txt
-        prot_func_idx: /data/cb/scratch/datasets/func_data/extracted_data/swissprot_uniref50/swissprot_GO_idx.npy 
+#         prot_go_terms: /data/cb/scratch/datasets/func_data/extracted_data/swissprot_uniref50/swissprot_uniref50_seq_func_map.txt
+#         prot_func_idx: /data/cb/scratch/datasets/func_data/extracted_data/swissprot_uniref50/swissprot_GO_idx.npy 
         res_go_terms: /data/cb/scratch/adrina/Code/openprot/interproscan_data_old/go_terms.txt # TODO: finalize 
         res_func_idx: /data/cb/scratch/adrina/Code/openprot/interproscan_data_old/go_positions.idx.npy # TODO: finalize 
         max_depth: 86 # max GO depth
@@ -337,9 +337,12 @@ tracks:
         tied_weights: false
         reweight: linear
         reweight_eps: 0.01
-        init: 
+        init: 0.02
         all_atom: false
-        func_cond: True # if true, use function conditioning (changes seq data loading, etc)
+        func_cond: true # if true, use function conditioning (changes seq data loading, etc)
+        mlm_prob: 0.03
+        mlm_ratio: 1.0
+        mlm_weight: 1.0
 
 
 model: # custom args
