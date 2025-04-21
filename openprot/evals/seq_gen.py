@@ -57,11 +57,11 @@ class SequenceGenerationEval(OpenProtEval):
             shutil.copy(f"{savedir}/sample{i}.fasta", f"{savedir}/rank{rank}")
         cmd = [
             "bash",
-            "scripts/switch_conda_env.sh",
+            "openprot/scripts/switch_conda_env.sh",
             "eval",
             "python",
             "-m",
-            "scripts.esmfold",
+            "openprot.scripts.esmfold",
             "--outdir",
             savedir,
             "--dir",
