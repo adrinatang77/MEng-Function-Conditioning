@@ -1,0 +1,392 @@
+ckpt: /data/cb/scratch/adrina/Code/openprot/workdir/func-cond-go-1024/last.ckpt
+pretrained:  #  load weights from here first
+validate: false # if true, only validate the model, don't train
+logger:
+    # set to true to log to neptune.ai
+    neptune: true
+    run_id: null
+    # please change "test" to something unique to your task
+    project: openprot/function
+    # will log to workdir and neptune.ai with this name
+    name: func-cond-go-1024
+    # if not null, will duplicate stdout and stderr to workdir/{name}/{logfile}
+    logfile: std.out
+    # if null, will log every epoch, otherwise every this number of steps
+    train_log_freq: 100
+    val_log_freq: 1
+    ckpt_freq: 50000000000
+    save_freq: 1000
+trainer:
+    accelerator: auto
+    devices: 6
+    max_epochs: 1
+    max_steps: 1000000
+    enable_progress_bar: false
+    limit_train_batches: 1.0
+    limit_val_batches: 1.0
+    num_sanity_val_steps: 0
+    gradient_clip_val: 1.0
+    accumulate_grad_batches: 1
+    val_check_interval: 100000
+    check_val_every_n_epoch: 1
+    logger: false
+    precision: 16-mixed
+
+# custom args to OpenProtDataset and elsewhere
+data: 
+    num_workers: 8
+    buffer: 1000
+    max_sq_toks: null # 400000
+    max_toks: 8192
+    batch: null
+    crop: 384
+    seed: 137
+
+# These are the raw features which are expected to be supplied by the Datasets
+# before they are TOKENIZED by the Tracks.
+# We specify them and their shapes so that datasets can supply default values if missing
+# for example, a structure dataset will not supply any dynamics information.
+# We also need to set defaults for the "mask" and "noise" because not all Tasks will set them.
+# -1 means this is the LEGNTH dim. 
+features:
+    # sequence feats
+    atom_num: [-1] # ligands only
+    mol_type: [-1] # default 0 = protein
+    seq_mask: [-1]
+    seq_noise: [-1]
+    seq_weight: [-1]
+    struct: [-1, 3]
+    struct_mask: [-1]
+    struct_noise: [-1]
+    struct_weight: [-1]
+    ref_conf: [-1, 3]
+    residx: [-1]
+    chain: [-1]
+    func_cond: [-1]
+
+edm:
+    sched_p: 7
+    sigma_max: 160
+    sigma_min: 0.05
+    sigma_data: 15
+    
+datasets:
+    # pdb:
+    #     type: PDBDataset
+    #     path: /data/cb/scratch/datasets/pdb_npz
+    #     cutoff: 2018-05-01
+    #     clusters: /data/cb/scratch/datasets/pdb_npz/pdb_clusters
+    #     blacklist: 
+    #     struct_mask: false
+    # afdb_genie:
+    #     type: AFDBDataset
+    #     path: /data/cb/scratch/datasets/afdb_rep_v4/afdb_rep_v4
+    #     annotations: /data/cb/scratch/datasets/afdb_rep_v4.pkl.gz
+    #     blacklist: 
+    #     plddt_thresh: 
+    #     index: /data/cb/scratch/datasets/afdbreps_l-256_plddt_80.txt
+    uniref:
+        type: UnirefDataset
+        # path: /scratch/projects/cgai/openprot/data/uniref50.fasta
+#         path: /data/cb/scratch/datasets/uniref50.fasta
+        # index: /scratch/projects/cgai/openprot/data/uniref50.idx.npy  
+#         index: /data/cb/scratch/share/openprot/uniref50.index # uniref50.idx.npy  
+        func_cond: True
+        go_vocab: /data/cb/scratch/datasets/func_data/extracted_data/swissprot_uniref50/go_term_vocab.json
+        go_ancestors: /data/cb/scratch/datasets/func_data/mf_go_term_ancestors.json
+#         prot_go_terms: /data/cb/scratch/datasets/func_data/extracted_data/swissprot_uniref50/swissprot_uniref50_seq_func_map.txt
+#         prot_func_idx: /data/cb/scratch/datasets/func_data/extracted_data/swissprot_uniref50/swissprot_GO_idx.npy 
+        res_go_terms: /data/cb/scratch/adrina/Code/openprot/interproscan_data_old/go_terms.txt # TODO: finalize 
+        res_func_idx: /data/cb/scratch/adrina/Code/openprot/interproscan_data_old/go_positions.idx.npy # TODO: finalize 
+        max_depth: 86 # max GO depth
+
+tasks:
+        
+    # StructureGeneration:
+    #     fraction: 0.1
+    #     edm: ${edm}
+    #     struct:
+    #         beta: [1, 2]
+    #         max_noise_prob: 0.0
+    #         uniform_prob: 0.5
+        
+    #     seed: 137
+        
+    #     datasets:
+    #         afdb_genie:
+    #             fraction: 0.75
+    #             start: 0
+    #             seed: 424
+    #         pdb:
+    #             fraction: 0.25
+    #             start: 0
+    #             seed: 424
+
+    # InverseFolding:
+    #     fraction: 0.1
+    #     edm: ${edm}
+    #     seq:
+    #         beta: [1, 2]
+    #         uniform_prob: 1.0
+    #         max_noise_prob: 0.0
+    #     seed: 137
+        
+    #     datasets:
+    #         pdb:
+    #             fraction: 0.25
+    #             start: 0
+    #             seed: 374
+    #         afdb_genie:
+    #             fraction: 0.75
+    #             start: 0
+    #             seed: 384
+
+    # Codesign:
+    #     fraction: 0.6
+    #     edm: ${edm}
+    #     seq:
+    #         beta: [1, 2]
+    #         max_noise_prob: 0.05
+    #         uniform_prob: 0.95
+    #     struct:
+    #         beta: [1, 2]
+    #         max_noise_prob: 0.05
+    #         uniform_prob: 0.95
+        
+    #     seed: 137
+    #     datasets:
+    #         pdb:
+    #             fraction: 0.25
+    #             start: 0
+    #             seed: 374
+    #         afdb_genie:
+    #             fraction: 0.75
+    #             start: 0
+    #             seed: 384
+                
+    # StructurePrediction:
+    #     fraction: 0.1
+    #     edm: ${edm}
+    #     struct:
+    #         beta: [1, 2]
+    #         uniform_prob: 0.0
+    #         max_noise_prob: 1.0
+    #     seed: 137
+    #     datasets:
+    #         afdb_genie:
+    #             fraction: 0.75
+    #             start: 0
+    #             seed: 40
+    #         pdb:
+    #             fraction: 0.25
+    #             start: 0
+    #             seed: 41
+
+    SequenceUnmasking: 
+        fraction: 1.0
+        edm: ${edm}
+        seq:
+            beta: [3, 9]
+            uniform_prob: 1.0
+            max_noise_prob: 0.0
+        seed: 137
+        datasets:
+            uniref:
+                fraction: 1.0
+                start: 0
+                seed: 40
+            
+evals: 
+    # cameo22_diff:
+    #     type: StructurePredictionEval
+    #     path: /data/cb/scratch/datasets/pdb_npz
+    #     split: splits/cameo2022.csv
+    #     diffusion: true
+    #     batch: 100
+    #     struct:
+    #         edm: ${edm}
+    #         temp_factor: 0.5
+    #         sde_weight: 1.0
+    #     steps: 50
+    # cameo22:
+    #     type: StructurePredictionEval
+    #     path: /data/cb/scratch/datasets/pdb_npz
+    #     split: splits/cameo2022.csv
+    #     diffusion: false
+    #     batch: 1
+    # codesign_skew+1:
+    #     type: CodesignEval
+    #     num_samples: 100
+    #     batch: 100
+    #     sample_length: 128
+    #     steps: 200
+    #     skew: 1.0
+    #     truncate: 
+    #     dir:
+    #     struct:
+    #         edm: ${edm}
+    #         temp_factor: 0.5
+    #         sde_weight: 1.0
+    #     seq:
+    #         temp_start: 0.1
+    #         temp_end: 0.1
+    #         strategy: random
+    #         noise: 20
+    #         logits: standard
+    #         adjust_unmasked: false # pseudo-masked logits
+    #         replace_unmasked: false # logit of current toks
+    #         topk_temp: 0.0
+    #         allow_mutation: false
+    #     schedule: {}
+    #     run_designability: true
+    #     run_pmpnn_designability: true
+    #     run_diversity: true
+    #     run_secondary: true
+    #     run_plot: true
+
+    # codesign_skew+0:
+    #     type: CodesignEval
+    #     num_samples: 100
+    #     batch: 100
+    #     sample_length: 128
+    #     steps: 200
+    #     skew: 0.0
+    #     truncate:
+    #     dir:
+    #     struct:
+    #         edm: ${edm}
+    #         temp_factor: 0.5
+    #         sde_weight: 1.0
+    #     seq:
+    #         temp_start: 1.0
+    #         temp_end: 0.1
+    #         strategy: dplm
+    #         noise: 20
+    #         logits: gumbel
+    #         adjust_unmasked: false # pseudo-masked logits
+    #         replace_unmasked: true # logit of current toks
+    #         topk_temp: 0.0
+    #         allow_mutation: false
+    #     schedule: {}
+    #     run_designability: true
+    #     run_pmpnn_designability: true
+    #     run_diversity: true
+    #     run_secondary: true
+    #     run_plot: true
+
+#     seq_gen_dplm: 
+#         type: SequenceGenerationEval
+#         num_samples: 100
+#         sample_length: 300
+#         batch: 100
+#         steps: 300
+#         temp_start: 0.5
+#         temp_end: 0.5
+#         strategy: dplm
+#         logits: gumbel
+#         remask: 0.0
+#         topk_temp: 0.0
+#         replace_unmasked: false
+#         adjust_unmasked: false
+#         allow_mutation: false
+    
+    seq_gen_func_cond:
+        type: FunctionConditioningEval
+        num_samples: 100
+        sample_length: 300
+        batch: 100
+        steps: 300
+        temp_start: 0.5
+        temp_end: 0.5
+        strategy: dplm
+        logits: gumbel
+        remask: 0.0
+        topk_temp: 0.0
+        replace_unmasked: false
+        adjust_unmasked: false
+        allow_mutation: false
+        go_vocab: /data/cb/scratch/datasets/func_data/extracted_data/swissprot_uniref50/go_term_vocab.json
+        go_ancestors: /data/cb/scratch/datasets/func_data/mf_go_term_ancestors.json
+        target_go_terms: /data/cb/scratch/adrina/Code/openprot/deepfri_molecular_function_terms.txt
+        max_depth: 86
+        threshold: 0.25
+        
+tracks:
+    # register tracks here
+    # StructureTrack: 
+    #     loss_weight: 1.0
+    #     embed_sigma: false
+    #     embed_mask: false
+    #     edm: ${edm}
+    #     readout_adaLN: false
+    #     interp_aligned_loss: false
+    #     loss:
+    #         mse: 1.0
+    #         aligned_mse: 0.0
+    #         lddt: 0.0
+    #     diffusion:
+    #         type: EDMDiffusion
+    #         data_sigma: ${edm.sigma_data}
+    #         train_align: false
+    #         rescale_time: ${edm.sigma_data}
+        
+    SequenceTrack:
+        esm: # esm2_3B # esm2_650M # esm2_8M_270K
+        loss_weight: 3.0 
+        esm_lm_head: true
+        tied_weights: false
+        reweight: linear
+        reweight_eps: 0.01
+        init: 0.02
+        all_atom: false
+        func_cond: true # if true, use function conditioning (changes seq data loading, etc)
+        mlm_prob: 0.03
+        mlm_ratio: 1.0
+        mlm_weight: 1.0
+
+
+model: # custom args
+#     ema: false
+#     dim: 512
+#     heads: 16
+#     blocks: 30
+#     dropout: 0.2
+#     token_dropout: 0.0
+    
+#     ff_expand: 4
+#     rope: false
+#     custom_rope: true
+#     ## adaLN args
+#     trunk_adaLN: false
+    
+    ema: 0.999
+    self_cond: false
+    self_cond_prob: 0.0
+    dim: 1024
+    heads: 16
+    blocks: 30
+    dropout: 0.2
+    token_dropout: 0.0
+    ff_expand: 4
+    rope_attn: true
+    rope_values: true
+    attn_mask: false
+    cross_attn: false
+    adaLN: false
+    qk_norm: true
+    act: gelu
+    
+    
+
+optimizer:
+    type: AdamW
+    lr: 1e-4
+    # betas: [0.9, 0.98]
+    # eps: 1e-8
+    # weight_decay: 0.01
+    # fused: true
+    scheduler: 
+        total_steps: 1000000
+        warmup_steps: 1000
+        start_decay: 10000
+        end_factor: 1.00
