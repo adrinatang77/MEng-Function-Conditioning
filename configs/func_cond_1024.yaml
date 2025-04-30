@@ -34,8 +34,8 @@ trainer:
 
 # custom args to OpenProtDataset and elsewhere
 data: 
-    num_workers: 8
-    buffer: 800
+    num_workers: 4
+    buffer: 500
     max_sq_toks: null # 400000
     max_toks: 8192
     batch: null
