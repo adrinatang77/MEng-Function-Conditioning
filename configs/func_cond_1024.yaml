@@ -19,15 +19,15 @@ logger:
 trainer:
     accelerator: auto
     devices: 7
-    max_epochs: 1
+    max_epochs: 3
     max_steps: 1000000
     enable_progress_bar: false
     limit_train_batches: 1.0
     limit_val_batches: 1.0
     num_sanity_val_steps: 0
     gradient_clip_val: 1.0
-    accumulate_grad_batches: 4
-    val_check_interval: 100000
+    accumulate_grad_batches: 7
+    val_check_interval: 50000
     check_val_every_n_epoch: 1
     logger: false
     precision: 16-mixed
@@ -35,7 +35,7 @@ trainer:
 # custom args to OpenProtDataset and elsewhere
 data: 
     num_workers: 4
-    buffer: 500
+    buffer: 250
     max_sq_toks: null # 400000
     max_toks: 8192
     batch: null
