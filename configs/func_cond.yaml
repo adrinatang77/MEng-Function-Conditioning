@@ -1,4 +1,4 @@
-ckpt: /data/cb/scratch/adrina/Code/openprot/workdir/func-cond-go/last.ckpt
+ckpt: # /data/cb/scratch/adrina/Code/openprot/workdir/func-cond-go/last.ckpt
 pretrained:  #  load weights from here first
 validate: false # if true, only validate the model, don't train
 logger:
@@ -18,7 +18,7 @@ logger:
     save_freq: 1000
 trainer:
     accelerator: auto
-    devices: 3
+    devices: 8
     max_epochs: 1
     max_steps: 1000000
     enable_progress_bar: false
@@ -26,7 +26,7 @@ trainer:
     limit_val_batches: 1.0
     num_sanity_val_steps: 0
     gradient_clip_val: 1.0
-    accumulate_grad_batches: 3
+    accumulate_grad_batches: 4
     val_check_interval: 10000
     check_val_every_n_epoch: 1
     logger: false
@@ -296,13 +296,14 @@ evals:
         sample_length: 300
         batch: 100
         steps: 300
-        temp_start: 0.5
-        temp_end: 0.5
+        temp_start: 1.0
+        temp_end: 0.1
         strategy: dplm
         logits: gumbel
         remask: 0.0
         topk_temp: 0.0
-        replace_unmasked: false
+        noise: 20
+        replace_unmasked: true
         adjust_unmasked: false
         allow_mutation: false
         go_vocab: /data/cb/scratch/datasets/func_data/extracted_data/swissprot_uniref50/go_term_vocab.json
