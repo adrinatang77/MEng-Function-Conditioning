@@ -295,7 +295,7 @@ evals:
         num_samples: 100
         sample_length: 300
         batch: 100
-        steps: 300
+        steps: 600
         temp_start: 0.5
         temp_end: 0.5
         strategy: dplm
