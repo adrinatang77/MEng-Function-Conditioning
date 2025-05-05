@@ -1,4 +1,4 @@
-ckpt: #/data/cb/scratch/adrina/Code/openprot/workdir/func-cond-go-1024/last.ckpt
+ckpt: /data/cb/scratch/adrina/Code/openprot/workdir/func-cond-go-2048/last.ckpt
 pretrained:  #  load weights from here first
 validate: false # if true, only validate the model, don't train
 logger:
@@ -8,7 +8,7 @@ logger:
     # please change "test" to something unique to your task
     project: openprot/function
     # will log to workdir and neptune.ai with this name
-    name: func-cond-go-1024
+    name: func-cond-go-2048-eval
     # if not null, will duplicate stdout and stderr to workdir/{name}/{logfile}
     logfile: std.out
     # if null, will log every epoch, otherwise every this number of steps
@@ -27,7 +27,7 @@ trainer:
     num_sanity_val_steps: 0
     gradient_clip_val: 1.0
     accumulate_grad_batches: 7
-    val_check_interval: 50000
+    val_check_interval: 100
     check_val_every_n_epoch: 1
     logger: false
     precision: 16-mixed
@@ -187,8 +187,8 @@ tasks:
         edm: ${edm}
         seq:
             beta: [3, 9]
-            uniform_prob: 1.0
-            max_noise_prob: 0.0
+            uniform_prob: 0.95
+            max_noise_prob: 0.05
         seed: 137
         datasets:
             uniref:
@@ -296,14 +296,15 @@ evals:
         sample_length: 300
         batch: 100
         steps: 300
-        temp_start: 0.5
-        temp_end: 0.5
-        strategy: dplm
-        logits: gumbel
+        temp_start: 0.1
+        temp_end: 0.1
+        strategy: random
+        noise: 20
+        logits: standard
         remask: 0.0
+        adjust_unmasked: false # pseudo-masked logits
+        replace_unmasked: false # logit of current toks
         topk_temp: 0.0
-        replace_unmasked: false
-        adjust_unmasked: false
         allow_mutation: false
         go_vocab: /data/cb/scratch/datasets/func_data/extracted_data/swissprot_uniref50/go_term_vocab.json
         go_ancestors: /data/cb/scratch/datasets/func_data/mf_go_term_ancestors.json
@@ -362,7 +363,7 @@ model: # custom args
     ema: 0.999
     self_cond: false
     self_cond_prob: 0.0
-    dim: 1024
+    dim: 2048
     heads: 16
     blocks: 30
     dropout: 0.2
