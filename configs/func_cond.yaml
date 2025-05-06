@@ -19,7 +19,7 @@ logger:
 trainer:
     accelerator: auto
     devices: 8
-    max_epochs: 1
+    max_epochs: 3
     max_steps: 1000000
     enable_progress_bar: false
     limit_train_batches: 1.0
