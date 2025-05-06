@@ -1,4 +1,4 @@
-ckpt: #/data/cb/scratch/adrina/Code/openprot/workdir/func-cond-go-1024/last.ckpt
+ckpt: /data/cb/scratch/adrina/Code/openprot/workdir/func-cond-go-1024/last.ckpt
 pretrained:  #  load weights from here first
 validate: false # if true, only validate the model, don't train
 logger:
@@ -26,7 +26,7 @@ trainer:
     limit_val_batches: 1.0
     num_sanity_val_steps: 0
     gradient_clip_val: 1.0
-    accumulate_grad_batches: 8
+    accumulate_grad_batches: 1
     val_check_interval: 10000
     check_val_every_n_epoch: 1
     logger: false
@@ -35,7 +35,7 @@ trainer:
 # custom args to OpenProtDataset and elsewhere
 data: 
     num_workers: 4
-    buffer: 250
+    buffer: 1000
     max_sq_toks: null # 400000
     max_toks: 8192
     batch: null
