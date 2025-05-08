@@ -20,6 +20,8 @@ class UnirefDataset(OpenProtDataset):
         if self.cfg.func_cond:
             with open(self.cfg.go_vocab, 'r') as file:
                 self.go_vocab = json.load(file)
+            with open(self.cfg.go_ancestors, 'r') as file:
+                self.go_ancestors = json.load(file)
 
     def __len__(self):
         return len(self.index) - 1  # unfortunately we have to skip the last one
@@ -70,17 +72,21 @@ class UnirefDataset(OpenProtDataset):
             for entry_id in go_terms_and_pos: # should be just one
                 go_terms_list = go_terms_and_pos[entry_id] 
                 for go_term in go_terms_list:
-                    go_id = go_term['go_id']
+                    root = go_term['go_id']
+                    go_ids = self.go_ancestors.get(root)
+                    if not go_ids:
+                        continue
                     start = go_term['start'] - 1 # 1-indexed
                     end = go_term['end'] - 1 # 1-indexed
 #                         print(go_id, start, end)
-
-                    go_index = self.go_vocab.get(go_id)
-                    if not go_index:
-                        continue
-                    for i in range(start, end):
-                        if go_index not in go_term_array[i, :]:
-                            go_term_array[i, np.argmax(go_term_array[i] != 0) + 1] = go_index # add to array 
+                    
+                    for go_id in go_ids:
+                        go_index = self.go_vocab.get(go_id)
+                        if not go_index:
+                            continue
+                        for i in range(start, end):
+                            if go_index not in go_term_array[i, :]:
+                                go_term_array[i, np.argmax(go_term_array[i] != 0) + 1] = go_index # add to array 
 
             # # get the func labels for this seq name
             # if name in self.func_idx:

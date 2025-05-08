@@ -6,7 +6,7 @@ logger:
     neptune: true
     run_id: null
     # please change "test" to something unique to your task
-    project: openprot/function
+    project: adrinatang77/meng-thesis
     # will log to workdir and neptune.ai with this name
     name: func-cond-go
     # if not null, will duplicate stdout and stderr to workdir/{name}/{logfile}

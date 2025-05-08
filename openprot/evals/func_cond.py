@@ -104,122 +104,254 @@ class FunctionConditioningEval(SequenceGenerationEval):
                 combined_df = pd.concat(dfs)
                 combined_df.to_csv(f"{savedir}/deepfri_metrics.csv")
     
+#     def run_deepfri_recall(self, idx, rank, world_size, savedir, logger, df):
+#         """
+#         Run DeepFRI evaluation on generated proteins and calculate metrics.
+#         """
+#         # Create directories
+#         deepfri_dir = f"{savedir}/rank{rank}/deepfri"
+#         os.makedirs(deepfri_dir, exist_ok=True)
+        
+#         # Create directory for FASTA files
+#         fasta_dir = f"{deepfri_dir}/fastas"
+#         os.makedirs(fasta_dir, exist_ok=True)
+        
+#         # Copy files to the directory
+#         for i in idx:
+#             sample_name = f"sample{i}"
+#             fasta_file = f"{savedir}/{sample_name}.fasta"
+            
+#             if os.path.exists(fasta_file):
+#                 cmd = ['cp', fasta_file, fasta_dir]
+#                 subprocess.run(cmd)
+        
+#         # Run DeepFRI with sequence model
+#         seq_output_dir = f"{deepfri_dir}/seq_results"
+#         os.makedirs(seq_output_dir, exist_ok=True)
+        
+#         cmd = [
+#             "bash",
+#             "openprot/scripts/switch_conda_env.sh",
+#             "deepfri",
+#             "python",
+#             "-m",
+#             "openprot.scripts.deepfri",
+#             "--fasta_dir", fasta_dir,
+#             "--outdir", seq_output_dir,
+#             "--model", "sequence",
+#             "--ontology", "mf",
+#             "--threshold", str(self.cfg.threshold),
+#         ]
+#         subprocess.run(cmd)
+        
+#         # Process results and calculate metrics
+#         seq_correct = 0
+#         seq_total = 0
+#         seq_confidences = []
+        
+#         # Track per-sample metrics
+#         results = {}
+        
+#         for i in idx:
+#             sample_name = f"sample{i}"
+            
+#             # Get target GO terms for this sample
+#             target_go_terms = self.sample_to_go_terms.get(sample_name, [])
+#             if not target_go_terms:
+#                 continue
+                
+#             # Process sequence results
+#             seq_result_file = f"{seq_output_dir}/{sample_name}_results.json"
+#             if os.path.exists(seq_result_file):
+#                 with open(seq_result_file, 'r') as f:
+#                     import json
+#                     seq_result = json.load(f)
+                    
+#                     # Get predictions above threshold
+#                     seq_predictions = seq_result.get(sample_name, {})
+                    
+#                     # Check if any target term was predicted
+#                     seq_total += 1
+#                     predicted_any = any(term in seq_predictions for term in target_go_terms)
+#                     if predicted_any:
+#                         seq_correct += 1
+                    
+# #                     # Track confidence for target terms
+# #                     sample_confidences = []
+# #                     for term in target_go_terms:
+# #                         confidence = seq_predictions.get(term, 0)
+# #                         seq_confidences.append(confidence)
+# #                         sample_confidences.append(confidence)
+#                     sample_confidences = list(seq_predictions.values())
+#                     seq_confidences.extend(sample_confidences)
+                    
+                    
+#                     # Store per-sample metrics
+#                     results[sample_name] = {
+#                         'target_terms': ','.join(target_go_terms),
+#                         'predicted': 1 if predicted_any else 0,
+#                         'avg_confidence': np.mean(sample_confidences) if sample_confidences else 0
+#                     }
+                    
+#                     # Store top predictions for reference
+#                     top_predictions = sorted(seq_predictions.items(), key=lambda x: x[1], reverse=True)[:5]
+#                     for j, (term, conf) in enumerate(top_predictions):
+#                         results[sample_name][f'top{j+1}_term'] = term
+#                         results[sample_name][f'top{j+1}_conf'] = conf
+        
+#         # Calculate aggregate metrics
+#         seq_recall = seq_correct / seq_total if seq_total > 0 else 0
+#         seq_avg_conf = np.mean(seq_confidences) if seq_confidences else 0
+        
+#         # Add metrics to dataframe
+#         df["deepfri_summary"] = {
+#             "seq_recall": seq_recall,
+#             "seq_avg_conf": seq_avg_conf,
+#             "seq_correct": seq_correct,
+#             "seq_total": seq_total
+#         }
+        
+#         # Add per-sample results
+#         for sample_name, result in results.items():
+#             df[sample_name] = result
+        
+#         # Log metrics
+#         if logger is not None:
+#             logger.log(f"{self.cfg.name}/deepfri_seq_recall", seq_recall)
+#             logger.log(f"{self.cfg.name}/deepfri_seq_avg_conf", seq_avg_conf)
+
     def run_deepfri_recall(self, idx, rank, world_size, savedir, logger, df):
-        """
-        Run DeepFRI evaluation on generated proteins and calculate metrics.
-        """
+
         # Create directories
         deepfri_dir = f"{savedir}/rank{rank}/deepfri"
         os.makedirs(deepfri_dir, exist_ok=True)
-        
-        # Create directory for FASTA files
         fasta_dir = f"{deepfri_dir}/fastas"
         os.makedirs(fasta_dir, exist_ok=True)
-        
-        # Copy files to the directory
+
         for i in idx:
             sample_name = f"sample{i}"
             fasta_file = f"{savedir}/{sample_name}.fasta"
-            
             if os.path.exists(fasta_file):
-                cmd = ['cp', fasta_file, fasta_dir]
-                subprocess.run(cmd)
-        
-        # Run DeepFRI with sequence model
+                subprocess.run(['cp', fasta_file, fasta_dir])
+
         seq_output_dir = f"{deepfri_dir}/seq_results"
         os.makedirs(seq_output_dir, exist_ok=True)
-        
-        cmd = [
-            "bash",
-            "openprot/scripts/switch_conda_env.sh",
-            "deepfri",
-            "python",
-            "-m",
-            "openprot.scripts.deepfri",
+
+        subprocess.run([
+            "bash", "openprot/scripts/switch_conda_env.sh", "deepfri",
+            "python", "-m", "openprot.scripts.deepfri",
             "--fasta_dir", fasta_dir,
             "--outdir", seq_output_dir,
             "--model", "sequence",
             "--ontology", "mf",
             "--threshold", str(self.cfg.threshold),
-        ]
-        subprocess.run(cmd)
-        
-        # Process results and calculate metrics
-        seq_correct = 0
-        seq_total = 0
+        ])
+
+        # Metrics
+        seq_total, seq_correct = 0, 0
+        total_pred_terms, total_target_terms, total_correct = 0, 0, 0
+        sample_recalls = []
+        sample_precisions = []
         seq_confidences = []
-        
-        # Track per-sample metrics
         results = {}
-        
+
         for i in idx:
             sample_name = f"sample{i}"
-            
-            # Get target GO terms for this sample
             target_go_terms = self.sample_to_go_terms.get(sample_name, [])
             if not target_go_terms:
                 continue
-                
-            # Process sequence results
+
+            # Expand target GO terms with ancestors
+            expanded_target_terms = set()
+            for term in target_go_terms:
+                expanded_target_terms |= set(self.go_ancestors.get(term, [term]))
+
             seq_result_file = f"{seq_output_dir}/{sample_name}_results.json"
-            if os.path.exists(seq_result_file):
-                with open(seq_result_file, 'r') as f:
-                    import json
-                    seq_result = json.load(f)
-                    
-                    # Get predictions above threshold
-                    seq_predictions = seq_result.get(sample_name, {})
-                    
-                    # Check if any target term was predicted
-                    seq_total += 1
-                    predicted_any = any(term in seq_predictions for term in target_go_terms)
-                    if predicted_any:
-                        seq_correct += 1
-                    
-#                     # Track confidence for target terms
-#                     sample_confidences = []
-#                     for term in target_go_terms:
-#                         confidence = seq_predictions.get(term, 0)
-#                         seq_confidences.append(confidence)
-#                         sample_confidences.append(confidence)
-                    sample_confidences = list(seq_predictions.values())
-                    seq_confidences.extend(sample_confidences)
-                    
-                    
-                    # Store per-sample metrics
-                    results[sample_name] = {
-                        'target_terms': ','.join(target_go_terms),
-                        'predicted': 1 if predicted_any else 0,
-                        'avg_confidence': np.mean(sample_confidences) if sample_confidences else 0
-                    }
-                    
-                    # Store top predictions for reference
-                    top_predictions = sorted(seq_predictions.items(), key=lambda x: x[1], reverse=True)[:5]
-                    for j, (term, conf) in enumerate(top_predictions):
-                        results[sample_name][f'top{j+1}_term'] = term
-                        results[sample_name][f'top{j+1}_conf'] = conf
-        
-        # Calculate aggregate metrics
-        seq_recall = seq_correct / seq_total if seq_total > 0 else 0
-        seq_avg_conf = np.mean(seq_confidences) if seq_confidences else 0
-        
-        # Add metrics to dataframe
+            if not os.path.exists(seq_result_file):
+                continue
+
+            with open(seq_result_file, 'r') as f:
+                seq_result = json.load(f)
+            seq_predictions = seq_result.get(sample_name, {})
+            predicted_terms = set(seq_predictions.keys())
+
+            correct_terms = predicted_terms.intersection(expanded_target_terms)
+
+            # Binary per-sample: at least one matched
+            seq_total += 1
+            if correct_terms:
+                seq_correct += 1
+
+            # Per-term metrics
+            total_pred_terms += len(predicted_terms)
+            total_target_terms += len(expanded_target_terms)
+            total_correct += len(correct_terms)
+
+            # Sample-wise precision/recall
+            recall_i = len(correct_terms) / len(expanded_target_terms) if expanded_target_terms else 0
+            precision_i = len(correct_terms) / len(predicted_terms) if predicted_terms else 0
+            sample_recalls.append(recall_i)
+            sample_precisions.append(precision_i)
+
+            # Confidence
+            sample_confidences = list(seq_predictions.values())
+            seq_confidences.extend(sample_confidences)
+
+            # Results per sample
+            results[sample_name] = {
+                'target_terms': ','.join(target_go_terms),
+                'predicted': 1 if correct_terms else 0,
+                'avg_confidence': np.mean(sample_confidences) if sample_confidences else 0
+            }
+
+            top_predictions = sorted(seq_predictions.items(), key=lambda x: x[1], reverse=True)[:5]
+            for j, (term, conf) in enumerate(top_predictions):
+                results[sample_name][f'top{j+1}_term'] = term
+                results[sample_name][f'top{j+1}_conf'] = conf
+
+        # Final metrics
+        recall = total_correct / total_target_terms if total_target_terms > 0 else 0
+        precision = total_correct / total_pred_terms if total_pred_terms > 0 else 0
+        f1 = 2 * precision * recall / (precision + recall) if (precision + recall) > 0 else 0
+        coverage = seq_correct / seq_total if seq_total > 0 else 0
+        avg_conf = np.mean(seq_confidences) if seq_confidences else 0
+
+        sample_recall = np.mean(sample_recalls) if sample_recalls else 0
+        sample_precision = np.mean(sample_precisions) if sample_precisions else 0
+        sample_f1 = (
+            2 * sample_precision * sample_recall / (sample_precision + sample_recall)
+            if (sample_precision + sample_recall) > 0 else 0
+        )
+
+        # Add to dataframe
         df["deepfri_summary"] = {
-            "seq_recall": seq_recall,
-            "seq_avg_conf": seq_avg_conf,
-            "seq_correct": seq_correct,
-            "seq_total": seq_total
+            "seq_term_recall": recall,
+            "seq_term_precision": precision,
+            "seq_term_f1": f1,
+            "seq_samplewise_recall": sample_recall,
+            "seq_samplewise_precision": sample_precision,
+            "seq_samplewise_f1": sample_f1,
+            "seq_sample_coverage": coverage,
+            "seq_avg_conf": avg_conf,
+            "seq_correct_samples": seq_correct,
+            "seq_total_samples": seq_total
         }
-        
-        # Add per-sample results
+
         for sample_name, result in results.items():
             df[sample_name] = result
-        
-        # Log metrics
+
+        # Logging
         if logger is not None:
-            logger.log(f"{self.cfg.name}/deepfri_seq_recall", seq_recall)
-            logger.log(f"{self.cfg.name}/deepfri_seq_avg_conf", seq_avg_conf)
-            
+            logger.log(f"{self.cfg.name}/deepfri_seq_term_recall", recall)
+            logger.log(f"{self.cfg.name}/deepfri_seq_term_precision", precision)
+            logger.log(f"{self.cfg.name}/deepfri_seq_term_f1", f1)
+            logger.log(f"{self.cfg.name}/deepfri_seq_samplewise_recall", sample_recall)
+            logger.log(f"{self.cfg.name}/deepfri_seq_samplewise_precision", sample_precision)
+            logger.log(f"{self.cfg.name}/deepfri_seq_samplewise_f1", sample_f1)
+            logger.log(f"{self.cfg.name}/deepfri_seq_sample_coverage", coverage)
+            logger.log(f"{self.cfg.name}/deepfri_seq_avg_conf", avg_conf)
+
+
     def run_batch(
         self,
         model,
@@ -238,6 +370,7 @@ class FunctionConditioningEval(SequenceGenerationEval):
         ])
         
         sample, extra = sampler.sample(model, noisy_batch, self.cfg.steps)
+        
         B = len(sample['aatype'])
         for i in range(B):
             name = batch["name"][i]
