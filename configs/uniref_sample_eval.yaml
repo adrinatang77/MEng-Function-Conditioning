@@ -320,7 +320,7 @@ evals:
         go_ancestors: /data/cb/scratch/datasets/func_data/mf_go_term_ancestors.json
         sequence_file: /data/cb/scratch/adrina/Code/openprot/uniref100_sample.txt # TODO: finalize 
         go_terms_file: /data/cb/scratch/adrina/Code/openprot/uniref100_sample_go_terms.txt # TODO: finalize 
-        threshold: 0.25
+        threshold: 0.125
         
 tracks:
     # register tracks here

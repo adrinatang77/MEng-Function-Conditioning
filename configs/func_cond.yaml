@@ -40,7 +40,7 @@ data:
     max_toks: 8192
     batch: null
     crop: 384
-    seed: 137
+    seed: 765 
 
 # These are the raw features which are expected to be supplied by the Datasets
 # before they are TOKENIZED by the Tracks.
@@ -189,12 +189,12 @@ tasks:
             beta: [3, 9]
             uniform_prob: 1.0
             max_noise_prob: 0.0
-        seed: 137
+        seed: 111
         datasets:
             uniref:
                 fraction: 1.0
                 start: 0
-                seed: 40
+                seed: 765
             
 evals: 
     # cameo22_diff:
